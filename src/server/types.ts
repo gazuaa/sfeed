@@ -39,6 +39,8 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   JWT_SECRET?: string;
   AI_MODEL?: string;
+  // Enables unverified email sign-in (/api/auth/google/quick). Local dev only; never set in production.
+  ALLOW_QUICK_LOGIN?: string;
 }
 
 export interface UserPreferences {

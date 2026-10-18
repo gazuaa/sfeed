@@ -36,6 +36,11 @@ const DEFAULT_PREFS: UserPreferences = {
   unreadOnly: false,
 };
 
+// Fail closed: quick login is on only when explicitly enabled (vite dev server or .dev.vars)
+function isQuickLoginEnabled(env: Env): boolean {
+  return env.ALLOW_QUICK_LOGIN === 'true';
+}
+
 function parsePreferences(jsonStr: string | null | undefined): UserPreferences {
   if (!jsonStr) return { ...DEFAULT_PREFS };
   try {
@@ -146,6 +151,7 @@ app.get('/api/auth/config', (c) => {
     googleClientId: clientId,
     workersAiAvailable: Boolean(c.env.AI),
     aiModel: c.env.AI_MODEL || '@cf/meta/llama-3.1-8b-instruct',
+    quickLoginEnabled: isQuickLoginEnabled(c.env),
   });
 });
 
@@ -181,8 +187,12 @@ app.post('/api/auth/google/credential', async (c) => {
   });
 });
 
-// Quick Google Account Sign-In (for local development or instant multi-user demo without Google Cloud keys)
+// Quick Google Account Sign-In (local development only — no identity verification)
 app.post('/api/auth/google/quick', async (c) => {
+  if (!isQuickLoginEnabled(c.env)) {
+    return c.json({ error: '빠른 로그인은 로컬 개발 환경에서만 사용할 수 있습니다.' }, 403);
+  }
+
   const body = await c.req.json<{
     email?: string;
     name?: string;

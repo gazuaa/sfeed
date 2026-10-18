@@ -38,6 +38,8 @@ function sfeedApiPlugin(): Plugin {
           devVars.AI_MODEL ||
           process.env.AI_MODEL ||
           '@cf/meta/llama-3.1-8b-instruct',
+        // configureServer only runs for the local dev server, so quick login is on by default here
+        ALLOW_QUICK_LOGIN: devVars.ALLOW_QUICK_LOGIN || 'true',
       };
 
       server.middlewares.use(async (req, res, next) => {

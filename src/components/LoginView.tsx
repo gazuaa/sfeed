@@ -57,6 +57,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [googleClientId, setGoogleClientId] = useState<string>(
     DEFAULT_GOOGLE_CLIENT_ID
   );
+  // Hidden until the server confirms quick login is enabled (local dev only)
+  const [quickLoginEnabled, setQuickLoginEnabled] = useState(false);
   const [customEmail, setCustomEmail] = useState('');
   const [customName, setCustomName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -64,9 +66,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const gsiBtnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    apiRequest<{ googleClientId: string | null }>('/api/auth/config')
+    apiRequest<{ googleClientId: string | null; quickLoginEnabled?: boolean }>(
+      '/api/auth/config'
+    )
       .then((res) => {
         if (res.googleClientId) setGoogleClientId(res.googleClientId);
+        setQuickLoginEnabled(res.quickLoginEnabled === true);
       })
       .catch(() => {});
   }, []);
@@ -293,85 +298,89 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             </span>
           </div>
 
-          {/* Quick Multi-User Switcher */}
-          <div className="pt-1">
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-slate-800"></div>
-              <span className="flex-shrink mx-3 text-xs text-slate-500 font-medium">
-                또는 원클릭 체험 / 멀티유저 프로필 선택
-              </span>
-              <div className="flex-grow border-t border-slate-800"></div>
-            </div>
+          {quickLoginEnabled && (
+            <>
+              {/* Quick Multi-User Switcher (local dev only) */}
+              <div className="pt-1">
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-slate-800"></div>
+                  <span className="flex-shrink mx-3 text-xs text-slate-500 font-medium">
+                    로컬 개발용 빠른 계정 전환
+                  </span>
+                  <div className="flex-grow border-t border-slate-800"></div>
+                </div>
 
-            <div className="space-y-2.5 mt-3">
-              {DEMO_GOOGLE_ACCOUNTS.map((acct) => (
+                <div className="space-y-2.5 mt-3">
+                  {DEMO_GOOGLE_ACCOUNTS.map((acct) => (
+                    <button
+                      key={acct.email}
+                      type="button"
+                      disabled={loading}
+                      onClick={() =>
+                        handleQuickGoogleSignIn(acct.email, acct.name, acct.picture)
+                      }
+                      className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-between text-left transition group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={acct.picture}
+                          alt={acct.name}
+                          className="w-9 h-9 rounded-full bg-slate-800 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-100 group-hover:text-emerald-300 transition truncate">
+                            {acct.name}
+                          </div>
+                          <div className="text-xs text-slate-400 truncate">
+                            {acct.email} · {acct.role}
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Google Account Form */}
+              <form
+                onSubmit={handleCustomSubmit}
+                className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3"
+              >
+                <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>이메일로 즉시 워크스페이스 시작</span>
+                  <span className="text-[11px] text-emerald-400 font-normal">
+                    기본 추천 피드 자동 세팅
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    placeholder="이름 (예: 홍길동)"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <input
+                    type="email"
+                    placeholder="이메일 (user@gmail.com)"
+                    value={customEmail}
+                    onChange={(e) => setCustomEmail(e.target.value)}
+                    required
+                    className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
                 <button
-                  key={acct.email}
-                  type="button"
-                  disabled={loading}
-                  onClick={() =>
-                    handleQuickGoogleSignIn(acct.email, acct.name, acct.picture)
-                  }
-                  className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-between text-left transition group cursor-pointer"
+                  type="submit"
+                  disabled={loading || !customEmail.trim()}
+                  className="w-full py-2.5 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={acct.picture}
-                      alt={acct.name}
-                      className="w-9 h-9 rounded-full bg-slate-800 shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-slate-100 group-hover:text-emerald-300 transition truncate">
-                        {acct.name}
-                      </div>
-                      <div className="text-xs text-slate-400 truncate">
-                        {acct.email} · {acct.role}
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition shrink-0" />
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>이 계정으로 시작하기</span>
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Custom Google Account Form */}
-          <form
-            onSubmit={handleCustomSubmit}
-            className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3"
-          >
-            <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span>이메일로 즉시 워크스페이스 시작</span>
-              <span className="text-[11px] text-emerald-400 font-normal">
-                기본 추천 피드 자동 세팅
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <input
-                type="text"
-                placeholder="이름 (예: 홍길동)"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-              />
-              <input
-                type="email"
-                placeholder="이메일 (user@gmail.com)"
-                value={customEmail}
-                onChange={(e) => setCustomEmail(e.target.value)}
-                required
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading || !customEmail.trim()}
-              className="w-full py-2.5 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>이 계정으로 시작하기</span>
-            </button>
-          </form>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>

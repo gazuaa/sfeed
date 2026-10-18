@@ -5,3 +5,7 @@ GOOGLE_CLIENT_ID="your-google-oauth-client-id.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"
 JWT_SECRET="change-this-secret-in-production"
 AI_MODEL="@cf/meta/llama-3.1-8b-instruct"
+
+# Unverified quick email sign-in for local testing (npm run dev / wrangler dev only).
+# Never add this to wrangler.toml [vars] or Cloudflare Dashboard variables.
+ALLOW_QUICK_LOGIN="true"

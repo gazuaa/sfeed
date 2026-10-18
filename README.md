@@ -7,7 +7,8 @@
 ## ✨ 주요 기능
 
 1. **Google 로그인 & 멀티유저 격리 (Cloudflare D1)**
-   - Google OAuth 2.0 인증 지원 (`GOOGLE_CLIENT_ID` 연동 시 정식 리다이렉트 동작, 미설정 시 로컬/체험용 Google 계정 빠른 전환 지원)
+   - Google OAuth 2.0 인증 지원 (`GOOGLE_CLIENT_ID` 연동 시 정식 리다이렉트 동작)
+   - 이메일만으로 로그인하는 빠른 계정 전환은 **로컬 개발 환경에서만** 동작합니다 (`npm run dev`에서는 기본 활성화, `wrangler dev`에서는 `.dev.vars`에 `ALLOW_QUICK_LOGIN="true"` 설정). 배포 환경에서는 API가 403을 반환하고 UI도 숨겨집니다.
    - 사용자별 폴더, 피드 구독, 읽음/안읽음 상태, 북마크(Read Later), 테마·레이아웃 설정이 D1에 독립 저장
 2. **카테고리(폴더) 관리 & 추천 피드 카탈로그**
    - 신규 가입 시 `국내 테크`, `Global Tech & AI`, `디자인 & 프로덕트` 폴더와 대표 피드 자동 세팅
