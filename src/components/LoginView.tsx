@@ -36,7 +36,7 @@ declare global {
 }
 
 const DEFAULT_GOOGLE_CLIENT_ID =
-  '38408804874-d42q5s2mucsh149iqtr5mv7klkuqi6k4.apps.googleusercontent.com';
+  '649668487161-f4hutlff1sc7klvplnrm3dki5u3oh3ht.apps.googleusercontent.com';
 
 const DEMO_GOOGLE_ACCOUNTS = [
   {
@@ -268,6 +268,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <span>Powered by React 19 · Hono · Cloudflare D1 · Workers AI</span>
           </div>
           <span>GitHub + Cloudflare 자동 배포 아키텍처</span>
+          <a href="/privacy" className="hover:text-slate-300 hover:underline underline-offset-2">
+            개인정보처리방침
+          </a>
         </div>
       </div>
 

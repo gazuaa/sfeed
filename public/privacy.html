@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>개인정보처리방침 — Sfeed</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        background: #020617;
+        color: #cbd5e1;
+        font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', sans-serif;
+        line-height: 1.7;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 48px 16px 64px;
+      }
+      h1 {
+        color: #fff;
+        font-size: 28px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        color: #fff;
+        font-size: 18px;
+        margin: 32px 0 8px;
+      }
+      p,
+      li {
+        font-size: 15px;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      a {
+        color: #34d399;
+      }
+      .meta {
+        color: #64748b;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>개인정보처리방침</h1>
+      <p class="meta">시행일: 2026년 10월 19일</p>
+
+      <p>
+        Sfeed(<a href="https://sfeed.jyk.workers.dev">sfeed.jyk.workers.dev</a>)는 RSS 피드를
+        구독하고 읽는 서비스입니다. 이 방침은 Sfeed가 어떤 정보를 수집하고 어떻게 사용하는지
+        설명합니다.
+      </p>
+
+      <h2>수집하는 정보</h2>
+      <ul>
+        <li>
+          Google 로그인 시 Google이 제공하는 계정 식별자, 이메일 주소, 이름, 프로필 사진 URL
+        </li>
+        <li>서비스 이용 중 만들어지는 폴더, 구독한 피드, 읽음·북마크 상태, 화면 설정</li>
+        <li>로그인 상태 유지를 위한 세션 토큰</li>
+      </ul>
+
+      <h2>이용 목적</h2>
+      <p>
+        수집한 정보는 로그인과 계정 식별, 구독 목록과 읽음 상태를 저장하고 여러 기기에서
+        동기화하는 데에만 사용합니다. 광고에 사용하거나 판매하지 않습니다.
+      </p>
+
+      <h2>보관 및 처리</h2>
+      <ul>
+        <li>정보는 Cloudflare(Workers, D1 데이터베이스)에 저장되고 처리됩니다.</li>
+        <li>세션 토큰은 로그아웃하거나 발급 후 30일이 지나면 효력을 잃습니다.</li>
+        <li>
+          AI 요약이나 원문 불러오기를 사용하면 해당 기사의 공개 본문이 Cloudflare Workers AI로
+          전달되거나 기사 사이트에서 직접 불러와집니다. 이 과정에 계정 정보는 포함되지
+          않습니다.
+        </li>
+      </ul>
+
+      <h2>Google 사용자 데이터</h2>
+      <p>
+        Sfeed가 Google API로부터 받은 정보를 사용하는 방식은 제한적 사용 요건을 포함한
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API 서비스 사용자 데이터 정책</a
+        >을 따릅니다. Google 사용자 데이터는 위 목적 외에 사용하거나 제3자에게 제공하지
+        않습니다.
+      </p>
+
+      <h2>삭제 요청 및 문의</h2>
+      <p>
+        계정과 저장된 데이터의 삭제를 원하거나 문의가 있으면
+        <a href="mailto:jonyq659@gmail.com">jonyq659@gmail.com</a>으로 연락해 주세요. 요청을
+        확인한 뒤 계정과 관련 데이터를 삭제합니다.
+      </p>
+
+      <p class="meta"><a href="/">Sfeed로 돌아가기</a></p>
+    </main>
+  </body>
+</html>

@@ -4,14 +4,11 @@
 const CERTS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
+// "Sfeed Web" OAuth client in the SFeed Google Cloud project
 export const DEFAULT_GOOGLE_CLIENT_ID =
-  '38408804874-d42q5s2mucsh149iqtr5mv7klkuqi6k4.apps.googleusercontent.com';
+  '649668487161-f4hutlff1sc7klvplnrm3dki5u3oh3ht.apps.googleusercontent.com';
 
-const DEFAULT_AUDIENCES = new Set([
-  '38408804874-d42q5s2mucsh149iqtr5mv7klkuqi6k4.apps.googleusercontent.com',
-  '38408804874-j9v4t1pdeja6kh80ebmc8a9fefuusja1.apps.googleusercontent.com',
-  '38408804874-nbnrh189vbniavli97nf50dfscufajco.apps.googleusercontent.com',
-]);
+const DEFAULT_AUDIENCES = new Set([DEFAULT_GOOGLE_CLIENT_ID]);
 
 const enc = new TextEncoder();
 

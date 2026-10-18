@@ -25,7 +25,7 @@ crons = ["0 * * * *"]
 [vars]
 OWNER_EMAIL = "jonyq659@gmail.com"
 GH_REPO = "gazuaa/sfeed"
-GOOGLE_CLIENT_ID = "38408804874-d42q5s2mucsh149iqtr5mv7klkuqi6k4.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "649668487161-f4hutlff1sc7klvplnrm3dki5u3oh3ht.apps.googleusercontent.com"
 AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 # Serve React SPA build output via Cloudflare Workers Static Assets

@@ -58,14 +58,14 @@ npx wrangler d1 create sfeed-db
 npm run db:migrate:remote
 ```
 
-### 2단계: Google OAuth 2.0 설정 (선택사항)
-1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials)에서 **OAuth 2.0 클라이언트 ID (웹 애플리케이션)**를 생성합니다.
-2. **승인된 리디렉션 URI**에 아래 주소를 추가합니다:
-   - 로컬: `http://localhost:5173/api/auth/google/callback`
-   - 배포: `https://<내-도메인-또는-workers.dev>/api/auth/google/callback`
-3. 로컬에서는 `.dev.vars` 파일에, Cloudflare에서는 **Workers & Pages -> sfeed -> Settings -> Variables and Secrets**에 아래 변수를 등록합니다:
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
+### 2단계: Google 로그인 설정
+Sfeed는 Google Identity Services(GIS) 버튼으로 ID 토큰을 받아 서버에서 RS256 서명을 검증합니다. 리디렉션 URI와 클라이언트 보안 비밀번호는 필요하지 않습니다.
+1. Google Cloud의 [Google 인증 플랫폼](https://console.cloud.google.com/auth/clients)에서 **OAuth 클라이언트 ID (웹 애플리케이션)**를 생성합니다. (현재: SFeed 프로젝트의 `Sfeed Web` 클라이언트)
+2. **승인된 JavaScript 원본**에 아래 주소를 추가합니다:
+   - 배포: `https://sfeed.jyk.workers.dev`
+   - 로컬: `http://localhost:5173`, `http://localhost`
+3. 발급된 클라이언트 ID를 `wrangler.toml`의 `GOOGLE_CLIENT_ID`에 넣습니다. 로컬에서는 `.dev.vars`로 덮어쓸 수 있습니다.
+4. 외부 사용자가 로그인하려면 **브랜딩**에 홈페이지, 개인정보처리방침 링크(`https://sfeed.jyk.workers.dev/privacy`), 승인된 도메인(`jyk.workers.dev`)을 입력한 뒤 **대상** 페이지에서 앱을 게시합니다.
 
 ### 3단계: 배포하기 (GitHub 자동 배포 또는 CLI 배포)
 - **CLI 직접 배포:**
