@@ -1,0 +1,36 @@
+name = "sfeed"
+main = "src/worker.ts"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare D1 Serverless SQLite Database (APAC)
+[[d1_databases]]
+binding = "DB"
+database_name = "sfeed"
+database_id = "3c299f5d-16ca-4ca8-8a07-e37a8565f94d"
+
+# Cloudflare Workers AI (Built-in Free LLM for Article Summarization)
+[ai]
+binding = "AI"
+
+# Observability logs (matching MUUSED configuration)
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Cron Trigger: Refresh subscribed RSS feeds every hour in the background
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+OWNER_EMAIL = "jonyq659@gmail.com"
+GH_REPO = "gazuaa/sfeed"
+GOOGLE_CLIENT_ID = "38408804874-d42q5s2mucsh149iqtr5mv7klkuqi6k4.apps.googleusercontent.com"
+AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+
+# Serve React SPA build output via Cloudflare Workers Static Assets
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"

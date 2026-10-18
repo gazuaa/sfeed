@@ -1,0 +1,7 @@
+# Copy this file to .dev.vars for local development secrets
+# For production Cloudflare deployment, configure these in Cloudflare Dashboard -> Workers -> Settings -> Variables & Secrets
+
+GOOGLE_CLIENT_ID="your-google-oauth-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"
+JWT_SECRET="change-this-secret-in-production"
+AI_MODEL="@cf/meta/llama-3.1-8b-instruct"

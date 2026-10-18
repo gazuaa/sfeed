@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard,
+      "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+/* Custom sleek scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Article Reader Typography */
+.sfeed-article-content {
+  line-height: 1.8;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.sfeed-article-content p {
+  margin-bottom: 1.25rem;
+}
+
+.sfeed-article-content h1,
+.sfeed-article-content h2,
+.sfeed-article-content h3,
+.sfeed-article-content h4 {
+  font-weight: 700;
+  margin-top: 1.85rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.35;
+}
+
+.sfeed-article-content h2 {
+  font-size: 1.35rem;
+}
+
+.sfeed-article-content h3 {
+  font-size: 1.15rem;
+}
+
+.sfeed-article-content ul,
+.sfeed-article-content ol {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+
+.sfeed-article-content ul {
+  list-style-type: disc;
+}
+
+.sfeed-article-content ol {
+  list-style-type: decimal;
+}
+
+.sfeed-article-content li {
+  margin-bottom: 0.4rem;
+}
+
+.sfeed-article-content a {
+  color: #10b981;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sfeed-article-content a:hover {
+  color: #34d399;
+}
+
+.sfeed-article-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 1.25rem auto;
+  display: block;
+}
+
+.sfeed-article-content blockquote {
+  border-left: 3px solid #10b981;
+  padding-left: 1rem;
+  margin: 1.25rem 0;
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.sfeed-article-content pre {
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  margin: 1.25rem 0;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.sfeed-article-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+  background: rgba(148, 163, 184, 0.15);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+}
+
+.sfeed-article-content pre code {
+  background: transparent;
+  padding: 0;
+}

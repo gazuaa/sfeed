@@ -1,0 +1,101 @@
+-- Sfeed Multi-User RSS Service Schema (Cloudflare D1 / SQLite)
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  picture TEXT,
+  google_id TEXT UNIQUE,
+  preferences_json TEXT DEFAULT '{"layout":"magazine","theme":"dark","unreadOnly":false}',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#10b981',
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, name),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+
+CREATE TABLE IF NOT EXISTS feeds (
+  id TEXT PRIMARY KEY,
+  xml_url TEXT UNIQUE NOT NULL,
+  html_url TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  favicon_url TEXT,
+  category_hint TEXT,
+  last_fetched_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feeds_xml_url ON feeds(xml_url);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  feed_id TEXT NOT NULL,
+  folder_id TEXT,
+  custom_title TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, feed_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
+  FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_folder ON subscriptions(folder_id);
+
+CREATE TABLE IF NOT EXISTS articles (
+  id TEXT PRIMARY KEY,
+  feed_id TEXT NOT NULL,
+  guid TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  author TEXT,
+  summary TEXT,
+  content_html TEXT,
+  full_content_html TEXT,
+  ai_summary TEXT,
+  thumbnail_url TEXT,
+  published_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(feed_id, guid),
+  FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_articles_feed_pub ON articles(feed_id, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_pub ON articles(published_at DESC);
+
+CREATE TABLE IF NOT EXISTS article_states (
+  user_id TEXT NOT NULL,
+  article_id TEXT NOT NULL,
+  is_read INTEGER DEFAULT 0,
+  is_saved INTEGER DEFAULT 0,
+  read_at TEXT,
+  saved_at TEXT,
+  PRIMARY KEY (user_id, article_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_states_user_saved ON article_states(user_id, is_saved);
+CREATE INDEX IF NOT EXISTS idx_article_states_user_read ON article_states(user_id, is_read);

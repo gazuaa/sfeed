@@ -1,0 +1,603 @@
+import React, { useState } from 'react';
+import {
+  X,
+  Compass,
+  Plus,
+  Check,
+  Rss,
+  FileCode2,
+  Upload,
+  Download,
+  Loader2,
+  Globe,
+  FolderPlus,
+} from 'lucide-react';
+import {
+  apiRequest,
+  getStoredToken,
+  type CuratedFeedItem,
+  type FolderItem,
+  type SubscriptionItem,
+} from '../client/api';
+
+interface DiscoverModalProps {
+  isOpen: boolean;
+  initialTab: 'curated' | 'custom' | 'opml';
+  onClose: () => void;
+  curatedFeeds: CuratedFeedItem[];
+  folders: FolderItem[];
+  subscriptions: SubscriptionItem[];
+  onSubscribed: () => Promise<void>;
+  isDark: boolean;
+}
+
+export const DiscoverModal: React.FC<DiscoverModalProps> = ({
+  isOpen,
+  initialTab,
+  onClose,
+  curatedFeeds,
+  folders,
+  subscriptions,
+  onSubscribed,
+  isDark,
+}) => {
+  const [tab, setTab] = useState<'curated' | 'custom' | 'opml'>(initialTab);
+  const [selectedCategory, setSelectedCategory] = useState<string>('전체');
+  const [busyUrl, setBusyUrl] = useState<string | null>(null);
+  const [customUrl, setCustomUrl] = useState('');
+  const [customTitle, setCustomTitle] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  const [newFolderName, setNewFolderName] = useState('');
+  const [opmlText, setOpmlText] = useState('');
+  const [opmlImporting, setOpmlImporting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    setTab(initialTab);
+    setFeedback(null);
+  }, [initialTab, isOpen]);
+
+  if (!isOpen) return null;
+
+  const categories = [
+    '전체',
+    ...Array.from(new Set(curatedFeeds.map((f) => f.category))),
+  ];
+
+  const filteredCurated =
+    selectedCategory === '전체'
+      ? curatedFeeds
+      : curatedFeeds.filter((f) => f.category === selectedCategory);
+
+  const isSubscribedUrl = (xmlUrl: string) =>
+    subscriptions.some(
+      (s) => s.xml_url.toLowerCase() === xmlUrl.toLowerCase()
+    );
+
+  const handleSubscribeCurated = async (feed: CuratedFeedItem) => {
+    setBusyUrl(feed.xmlUrl);
+    setFeedback(null);
+    try {
+      await apiRequest('/api/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify({
+          url: feed.xmlUrl,
+          folderName: feed.folderSuggest,
+        }),
+      });
+      await onSubscribed();
+      setFeedback({
+        type: 'success',
+        text: `"${feed.title}" 피드를 [${feed.folderSuggest}] 폴더에 추가했습니다.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : '구독 추가에 실패했습니다.',
+      });
+    } finally {
+      setBusyUrl(null);
+    }
+  };
+
+  const handleSubscribeCustom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customUrl.trim()) return;
+    setBusyUrl('custom');
+    setFeedback(null);
+
+    try {
+      const res = await apiRequest<{ title: string }>('/api/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify({
+          url: customUrl.trim(),
+          folderId: selectedFolderId || null,
+          folderName: newFolderName.trim() || null,
+          customTitle: customTitle.trim() || null,
+        }),
+      });
+      await onSubscribed();
+      setCustomUrl('');
+      setCustomTitle('');
+      setNewFolderName('');
+      setFeedback({
+        type: 'success',
+        text: `"${res.title}" 피드가 성공적으로 구독되었습니다!`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'RSS 피드를 가져오지 못했습니다.',
+      });
+    } finally {
+      setBusyUrl(null);
+    }
+  };
+
+  const handleOpmlFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setOpmlText(reader.result);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportOpml = async () => {
+    if (!opmlText.trim()) return;
+    setOpmlImporting(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiRequest<{
+        importedCount: number;
+        foldersCreated: number;
+      }>('/api/opml/import', {
+        method: 'POST',
+        body: JSON.stringify({ opmlXml: opmlText }),
+      });
+      await onSubscribed();
+      setFeedback({
+        type: 'success',
+        text: `OPML 가져오기 완료: 피드 ${res.importedCount}개 구독, 신규 폴더 ${res.foldersCreated}개 생성!`,
+      });
+      setOpmlText('');
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'OPML 가져오기에 실패했습니다.',
+      });
+    } finally {
+      setOpmlImporting(false);
+    }
+  };
+
+  const handleExportOpml = () => {
+    const token = getStoredToken();
+    const url = `/api/opml/export${
+      token ? `?token=${encodeURIComponent(token)}` : ''
+    }`;
+    window.open(url, '_blank');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="fixed inset-0 bg-black/65 backdrop-blur-xs"
+        onClick={onClose}
+      />
+
+      <div
+        className={`relative z-10 w-full max-w-3xl max-h-[88vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+          isDark
+            ? 'bg-slate-900 border-slate-800 text-slate-100'
+            : 'bg-white border-slate-200 text-slate-900'
+        }`}
+      >
+        {/* Modal Header */}
+        <div
+          className={`px-6 py-4 border-b flex items-center justify-between ${
+            isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+              <Compass className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold">
+                피드 추가 · 추천 탐색 · OPML 마이그레이션
+              </h2>
+              <p className="text-xs text-slate-400">
+                추천 기술/뉴스 피드를 구독하거나 직접 RSS 주소 및 OPML 파일을 등록하세요
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Tabs */}
+        <div
+          className={`px-6 pt-3 border-b flex items-center gap-2 ${
+            isDark ? 'border-slate-800' : 'border-slate-200'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setTab('curated')}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              tab === 'curated'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>추천 피드 카탈로그</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab('custom')}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              tab === 'custom'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Rss className="w-4 h-4" />
+            <span>직접 RSS / 웹사이트 URL 추가</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab('opml')}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              tab === 'opml'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileCode2 className="w-4 h-4" />
+            <span>OPML 가져오기 / 내보내기</span>
+          </button>
+        </div>
+
+        {/* Feedback Banner */}
+        {feedback && (
+          <div
+            className={`mx-6 mt-4 p-3 rounded-xl text-xs font-medium border ${
+              feedback.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {feedback.text}
+          </div>
+        )}
+
+        {/* Modal Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* TAB 1: Curated Feeds */}
+          {tab === 'curated' && (
+            <div className="space-y-5">
+              {/* Category Filter Pills */}
+              <div className="flex flex-wrap gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+                      selectedCategory === cat
+                        ? 'bg-emerald-500 text-slate-950 font-semibold'
+                        : isDark
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3.5">
+                {filteredCurated.map((feed) => {
+                  const subscribed = isSubscribedUrl(feed.xmlUrl);
+                  const isBusy = busyUrl === feed.xmlUrl;
+
+                  return (
+                    <div
+                      key={feed.id}
+                      className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
+                        isDark
+                          ? 'bg-slate-950/60 border-slate-800'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <img
+                              src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(
+                                new URL(feed.htmlUrl).hostname
+                              )}&sz=64`}
+                              alt=""
+                              className="w-4 h-4 rounded-sm shrink-0"
+                            />
+                            <h3 className="font-bold text-sm truncate">
+                              {feed.title}
+                            </h3>
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                              feed.language === 'KO'
+                                ? 'bg-emerald-500/15 text-emerald-400'
+                                : 'bg-blue-500/15 text-blue-400'
+                            }`}
+                          >
+                            {feed.language}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                          {feed.description}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/50">
+                        <div className="flex flex-wrap gap-1">
+                          {feed.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={subscribed || isBusy}
+                          onClick={() => handleSubscribeCurated(feed)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shrink-0 ${
+                            subscribed
+                              ? 'bg-emerald-500/15 text-emerald-400 cursor-default'
+                              : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                          }`}
+                        >
+                          {isBusy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : subscribed ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>구독 중</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>구독하기</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: Custom RSS / Website URL */}
+          {tab === 'custom' && (
+            <form onSubmit={handleSubscribeCustom} className="space-y-4 max-w-xl">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5">
+                  RSS / Atom 피드 URL 또는 웹사이트 주소 *
+                </label>
+                <div className="relative">
+                  <Globe className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="예: https://news.hada.io/rss/news 또는 https://toss.tech"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                      isDark
+                        ? 'bg-slate-950 border-slate-800 text-white'
+                        : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  일반 웹사이트 주소를 입력해도 페이지 내 RSS/Atom 링크를 자동으로
+                  탐색합니다.
+                </p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5">
+                    기존 폴더 선택 (선택사항)
+                  </label>
+                  <select
+                    value={selectedFolderId}
+                    onChange={(e) => setSelectedFolderId(e.target.value)}
+                    className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                      isDark
+                        ? 'bg-slate-950 border-slate-800 text-white'
+                        : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value="">미분류 (폴더 없음)</option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5">
+                    또는 새 폴더 이름으로 생성
+                  </label>
+                  <div className="relative">
+                    <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="예: AI 논문, 개발 블로그..."
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                        isDark
+                          ? 'bg-slate-950 border-slate-800 text-white'
+                          : 'bg-slate-50 border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1.5">
+                  사용자 지정 피드 이름 (선택사항)
+                </label>
+                <input
+                  type="text"
+                  placeholder="비워두면 RSS 피드 원본 제목을 사용합니다"
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                    isDark
+                      ? 'bg-slate-950 border-slate-800 text-white'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={busyUrl === 'custom' || !customUrl.trim()}
+                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm inline-flex items-center gap-2 transition cursor-pointer disabled:opacity-40"
+              >
+                {busyUrl === 'custom' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                <span>피드 구독하기</span>
+              </button>
+            </form>
+          )}
+
+          {/* TAB 3: OPML Import / Export */}
+          {tab === 'opml' && (
+            <div className="space-y-6">
+              {/* Export Card */}
+              <div
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                  isDark
+                    ? 'bg-slate-950/60 border-slate-800'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div>
+                  <h3 className="text-sm font-bold mb-1">
+                    내 구독 목록 OPML 내보내기 (Export)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    현재 구독 중인 모든 폴더와 RSS 피드 목록을 표준 OPML 2.0 XML 파일로
+                    다운로드합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportOpml}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>OPML 다운로드 (.opml)</span>
+                </button>
+              </div>
+
+              {/* Import Card */}
+              <div
+                className={`p-4 rounded-2xl border space-y-3 ${
+                  isDark
+                    ? 'bg-slate-950/60 border-slate-800'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold">
+                      OPML 파일 가져오기 (Feedly / Inoreader 마이그레이션)
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      .opml 또는 .xml 파일을 선택하거나 아래 텍스트 영역에 붙여넣으세요.
+                    </p>
+                  </div>
+
+                  <label className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>파일 선택</span>
+                    <input
+                      type="file"
+                      accept=".opml,.xml,text/xml"
+                      onChange={handleOpmlFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <textarea
+                  rows={6}
+                  placeholder={`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0">\n  <body>\n    <outline text="Tech" title="Tech">\n      <outline type="rss" title="GeekNews" xmlUrl="https://news.hada.io/rss/news" />\n    </outline>\n  </body>\n</opml>`}
+                  value={opmlText}
+                  onChange={(e) => setOpmlText(e.target.value)}
+                  className={`w-full p-3 rounded-xl font-mono text-xs border focus:outline-none focus:border-emerald-500 ${
+                    isDark
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
+                      : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                />
+
+                <button
+                  type="button"
+                  disabled={opmlImporting || !opmlText.trim()}
+                  onClick={handleImportOpml}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                >
+                  {opmlImporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  <span>OPML 구독 일괄 등록하기</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,528 @@
+import React from 'react';
+import {
+  Bookmark,
+  CheckCircle2,
+  Circle,
+  ExternalLink,
+  Sparkles,
+  Rss,
+  Inbox,
+  Plus,
+} from 'lucide-react';
+import {
+  formatRelativeTime,
+  type ArticleItem,
+  type LayoutMode,
+} from '../client/api';
+
+interface ArticleListProps {
+  articles: ArticleItem[];
+  layout: LayoutMode;
+  selectedArticleId: string | null;
+  onSelectArticle: (article: ArticleItem) => void;
+  onToggleRead: (article: ArticleItem, e: React.MouseEvent) => void;
+  onToggleSaved: (article: ArticleItem, e: React.MouseEvent) => void;
+  onOpenDiscover: () => void;
+  isDark: boolean;
+  loading: boolean;
+}
+
+export const ArticleList: React.FC<ArticleListProps> = ({
+  articles,
+  layout,
+  selectedArticleId,
+  onSelectArticle,
+  onToggleRead,
+  onToggleSaved,
+  onOpenDiscover,
+  isDark,
+  loading,
+}) => {
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 space-y-4 max-w-5xl mx-auto">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <div
+            key={n}
+            className={`h-28 rounded-2xl animate-pulse border ${
+              isDark
+                ? 'bg-slate-900/60 border-slate-800/80'
+                : 'bg-slate-100 border-slate-200'
+            }`}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (articles.length === 0) {
+    return (
+      <div className="py-24 px-6 text-center max-w-md mx-auto">
+        <div
+          className={`w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
+            isDark
+              ? 'bg-slate-900 border border-slate-800 text-emerald-400'
+              : 'bg-emerald-50 text-emerald-600'
+          }`}
+        >
+          <Inbox className="w-7 h-7" />
+        </div>
+        <h3
+          className={`text-lg font-bold mb-1.5 ${
+            isDark ? 'text-white' : 'text-slate-900'
+          }`}
+        >
+          표시할 아티클이 없습니다
+        </h3>
+        <p className="text-xs text-slate-400 leading-relaxed mb-6">
+          모든 아티클을 다 읽었거나 검색 조건에 맞는 글이 없습니다. 새로운 RSS 피드를
+          추가하거나 안읽음 필터를 해제해 보세요.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenDiscover}
+          className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer transition"
+        >
+          <Plus className="w-4 h-4" />
+          <span>추천 피드 추가하기</span>
+        </button>
+      </div>
+    );
+  }
+
+  // 1. COMPACT LIST VIEW (Feedly Title-Only View)
+  if (layout === 'list') {
+    return (
+      <div className="p-4 lg:p-8 max-w-6xl mx-auto">
+        <div
+          className={`rounded-2xl border overflow-hidden divide-y ${
+            isDark
+              ? 'bg-slate-900/50 border-slate-800/80 divide-slate-800/70'
+              : 'bg-white border-slate-200 divide-slate-100 shadow-xs'
+          }`}
+        >
+          {articles.map((article) => {
+            const isSelected = selectedArticleId === article.id;
+            return (
+              <div
+                key={article.id}
+                onClick={() => onSelectArticle(article)}
+                className={`group flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition cursor-pointer ${
+                  isSelected
+                    ? isDark
+                      ? 'bg-emerald-500/10'
+                      : 'bg-emerald-50/80'
+                    : isDark
+                    ? 'hover:bg-slate-800/60'
+                    : 'hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* Unread / Read Status Toggle */}
+                  <button
+                    type="button"
+                    onClick={(e) => onToggleRead(article, e)}
+                    title={article.is_read ? '안읽음으로 표시' : '읽음으로 표시'}
+                    className="shrink-0 text-slate-400 hover:text-emerald-400 cursor-pointer"
+                  >
+                    {article.is_read ? (
+                      <CheckCircle2 className="w-4 h-4 text-slate-600" />
+                    ) : (
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 block mx-0.5" />
+                    )}
+                  </button>
+
+                  {/* Feed Source */}
+                  <div className="flex items-center gap-1.5 w-32 sm:w-40 shrink-0 truncate">
+                    {article.feed_favicon ? (
+                      <img
+                        src={article.feed_favicon}
+                        alt=""
+                        className="w-3.5 h-3.5 rounded-sm shrink-0"
+                      />
+                    ) : (
+                      <Rss className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    )}
+                    <span className="text-xs font-medium text-slate-400 truncate">
+                      {article.feed_title}
+                    </span>
+                  </div>
+
+                  {/* Title & Inline Snippet */}
+                  <div className="min-w-0 flex-1 truncate">
+                    <span
+                      className={`${
+                        article.is_read
+                          ? isDark
+                            ? 'text-slate-400 font-normal'
+                            : 'text-slate-500 font-normal'
+                          : isDark
+                          ? 'text-slate-100 font-semibold'
+                          : 'text-slate-900 font-semibold'
+                      }`}
+                    >
+                      {article.title}
+                    </span>
+                    {article.ai_summary && (
+                      <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400">
+                        <Sparkles className="w-2.5 h-2.5" /> AI 요약됨
+                      </span>
+                    )}
+                    {article.summary && (
+                      <span className="ml-2 text-xs text-slate-500">
+                        — {article.summary}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Timestamp & Quick Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                    {formatRelativeTime(article.published_at)}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => onToggleSaved(article, e)}
+                    title="나중에 읽기(북마크)"
+                    className={`p-1 rounded transition cursor-pointer ${
+                      article.is_saved
+                        ? 'text-indigo-400'
+                        : 'text-slate-500 opacity-0 group-hover:opacity-100 hover:text-indigo-400'
+                    }`}
+                  >
+                    <Bookmark
+                      className={`w-3.5 h-3.5 ${
+                        article.is_saved ? 'fill-current' : ''
+                      }`}
+                    />
+                  </button>
+
+                  <a
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="원문 새 창 열기"
+                    className="p-1 rounded text-slate-500 opacity-0 group-hover:opacity-100 hover:text-emerald-400 transition"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // 2. CARDS VIEW (Grid Layout)
+  if (layout === 'cards') {
+    return (
+      <div className="p-4 lg:p-8 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {articles.map((article) => {
+          const isSelected = selectedArticleId === article.id;
+          return (
+            <article
+              key={article.id}
+              onClick={() => onSelectArticle(article)}
+              className={`group rounded-2xl border overflow-hidden flex flex-col justify-between transition duration-200 cursor-pointer ${
+                isSelected
+                  ? 'ring-2 ring-emerald-500 border-emerald-500/50'
+                  : isDark
+                  ? 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+              }`}
+            >
+              <div>
+                {/* Cover Image or Stylish Gradient Banner */}
+                <div className="h-44 w-full overflow-hidden relative bg-gradient-to-br from-slate-800 via-slate-900 to-emerald-950">
+                  {article.thumbnail_url ? (
+                    <img
+                      src={article.thumbnail_url}
+                      alt={article.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center p-6 text-center">
+                      <Rss className="w-10 h-10 text-emerald-500/30" />
+                    </div>
+                  )}
+
+                  {!article.is_read && (
+                    <span className="absolute top-3 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-slate-950 shadow">
+                      NEW
+                    </span>
+                  )}
+
+                  {article.ai_summary && (
+                    <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-950/85 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 backdrop-blur-xs">
+                      <Sparkles className="w-3 h-3" /> AI 요약
+                    </span>
+                  )}
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-2 text-xs text-slate-400 mb-2">
+                    <div className="flex items-center gap-1.5 truncate">
+                      {article.feed_favicon ? (
+                        <img
+                          src={article.feed_favicon}
+                          alt=""
+                          className="w-3.5 h-3.5 rounded-sm shrink-0"
+                        />
+                      ) : (
+                        <Rss className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      )}
+                      <span className="font-medium truncate">{article.feed_title}</span>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-slate-500">
+                      {formatRelativeTime(article.published_at)}
+                    </span>
+                  </div>
+
+                  <h2
+                    className={`text-base leading-snug mb-2 line-clamp-2 ${
+                      article.is_read
+                        ? isDark
+                          ? 'text-slate-400 font-medium'
+                          : 'text-slate-500 font-medium'
+                        : isDark
+                        ? 'text-slate-100 font-bold group-hover:text-emerald-300'
+                        : 'text-slate-900 font-bold group-hover:text-emerald-600'
+                    }`}
+                  >
+                    {article.title}
+                  </h2>
+
+                  {article.summary && (
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
+                      {article.summary}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Card Footer */}
+              <div
+                className={`px-4 py-2.5 border-t flex items-center justify-between text-xs ${
+                  isDark ? 'border-slate-800/70' : 'border-slate-100'
+                }`}
+              >
+                <span className="text-slate-500 truncate max-w-[160px]">
+                  {article.author || article.folder_name || 'RSS 아티클'}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => onToggleRead(article, e)}
+                    title={article.is_read ? '안읽음으로 표시' : '읽음으로 표시'}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800/40 transition cursor-pointer"
+                  >
+                    {article.is_read ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500/70" />
+                    ) : (
+                      <Circle className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => onToggleSaved(article, e)}
+                    title="나중에 읽기(북마크)"
+                    className={`p-1.5 rounded-lg transition cursor-pointer ${
+                      article.is_saved
+                        ? 'text-indigo-400 bg-indigo-500/10'
+                        : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <Bookmark
+                      className={`w-4 h-4 ${article.is_saved ? 'fill-current' : ''}`}
+                    />
+                  </button>
+
+                  <a
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="원문 보기"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800/40 transition"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // 3. MAGAZINE VIEW (Default Feedly Classic Layout)
+  return (
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-3.5">
+      {articles.map((article) => {
+        const isSelected = selectedArticleId === article.id;
+        return (
+          <article
+            key={article.id}
+            onClick={() => onSelectArticle(article)}
+            className={`group rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:items-center justify-between transition duration-150 cursor-pointer ${
+              isSelected
+                ? 'ring-2 ring-emerald-500 border-emerald-500/50'
+                : isDark
+                ? 'bg-slate-900/55 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/90'
+                : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+            }`}
+          >
+            {/* Left Text Content */}
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {!article.is_read && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                )}
+                <div className="flex items-center gap-1.5 font-medium text-emerald-400">
+                  {article.feed_favicon ? (
+                    <img
+                      src={article.feed_favicon}
+                      alt=""
+                      className="w-3.5 h-3.5 rounded-sm"
+                    />
+                  ) : (
+                    <Rss className="w-3.5 h-3.5" />
+                  )}
+                  <span>{article.feed_title}</span>
+                </div>
+
+                {article.folder_name && (
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[11px] ${
+                      isDark
+                        ? 'bg-slate-800 text-slate-300'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {article.folder_name}
+                  </span>
+                )}
+
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-400">
+                  {formatRelativeTime(article.published_at)}
+                </span>
+
+                {article.author && (
+                  <>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-400 truncate max-w-[180px]">
+                      {article.author}
+                    </span>
+                  </>
+                )}
+
+                {article.ai_summary && (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> AI 요약 완료
+                  </span>
+                )}
+              </div>
+
+              <h2
+                className={`text-base sm:text-lg leading-snug transition ${
+                  article.is_read
+                    ? isDark
+                      ? 'text-slate-400 font-medium'
+                      : 'text-slate-500 font-medium'
+                    : isDark
+                    ? 'text-slate-100 font-bold group-hover:text-emerald-300'
+                    : 'text-slate-900 font-bold group-hover:text-emerald-600'
+                }`}
+              >
+                {article.title}
+              </h2>
+
+              {article.summary && (
+                <p className="text-xs sm:text-sm text-slate-400 leading-relaxed line-clamp-2">
+                  {article.summary}
+                </p>
+              )}
+
+              {/* Bottom Quick Action Buttons */}
+              <div className="pt-1 flex items-center gap-3 text-xs text-slate-400">
+                <button
+                  type="button"
+                  onClick={(e) => onToggleRead(article, e)}
+                  className="inline-flex items-center gap-1 hover:text-emerald-400 transition cursor-pointer"
+                >
+                  {article.is_read ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>읽음</span>
+                    </>
+                  ) : (
+                    <>
+                      <Circle className="w-3.5 h-3.5" />
+                      <span>안읽음</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => onToggleSaved(article, e)}
+                  className={`inline-flex items-center gap-1 transition cursor-pointer ${
+                    article.is_saved
+                      ? 'text-indigo-400 font-medium'
+                      : 'hover:text-indigo-400'
+                  }`}
+                >
+                  <Bookmark
+                    className={`w-3.5 h-3.5 ${article.is_saved ? 'fill-current' : ''}`}
+                  />
+                  <span>{article.is_saved ? '저장됨' : '나중에 읽기'}</span>
+                </button>
+
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 hover:text-emerald-400 transition"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>원문 열기</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Right Thumbnail */}
+            {article.thumbnail_url && (
+              <div className="sm:w-44 sm:h-28 h-44 w-full rounded-xl overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
+                <img
+                  src={article.thumbnail_url}
+                  alt={article.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).parentElement!.style.display =
+                      'none';
+                  }}
+                />
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+};
