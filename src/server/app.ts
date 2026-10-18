@@ -9,6 +9,8 @@ import type {
   ArticleItem,
 } from './types';
 import { CURATED_FEEDS } from './curatedFeeds';
+import type { OpmlFeed } from '../shared/opml';
+import { importOpmlFeed } from './opmlImporter';
 import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -958,74 +960,49 @@ app.post('/api/articles/:id/summarize', async (c) => {
   });
 });
 
-// OPML Import
-app.post('/api/opml/import', async (c) => {
-  const user = c.get('user');
+// Parse the entire OPML before writing anything; the client imports every item individually.
+app.post('/api/opml/parse', async (c) => {
   const body = await c.req.json<{ opmlXml?: string }>();
-  if (!body.opmlXml || !body.opmlXml.trim()) {
+  if (typeof body.opmlXml !== 'string' || !body.opmlXml.trim()) {
     return c.json({ error: 'OPML XML 내용이 비어 있습니다.' }, 400);
   }
-
-  const outlines = parseOpml(body.opmlXml);
-  if (outlines.length === 0) {
-    return c.json({ error: 'OPML 파일에서 RSS 피드 항목을 찾지 못했습니다.' }, 400);
-  }
-
-  const now = new Date().toISOString();
-  const folderNameMap = new Map<string, string>();
-
-  const existingFolders = await c.env.DB.prepare(
-    'SELECT id, name FROM folders WHERE user_id = ?'
-  )
-    .bind(user.id)
-    .all<{ id: string; name: string }>();
-
-  for (const f of existingFolders.results || []) {
-    folderNameMap.set(f.name.toLowerCase(), f.id);
-  }
-
-  let foldersCreated = 0;
-  let importedCount = 0;
-
-  for (const item of outlines.slice(0, 60)) {
-    let folderId: string | null = null;
-    if (item.folderName) {
-      const key = item.folderName.trim().toLowerCase();
-      if (folderNameMap.has(key)) {
-        folderId = folderNameMap.get(key)!;
-      } else {
-        folderId = generateId('fld');
-        await c.env.DB.prepare(
-          `INSERT OR IGNORE INTO folders (id, user_id, name, color, sort_order, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-          .bind(folderId, user.id, item.folderName.trim(), '#10b981', 10, now)
-          .run();
-        folderNameMap.set(key, folderId);
-        foldersCreated++;
-      }
+  try {
+    const items = parseOpml(body.opmlXml);
+    if (items.length === 0) {
+      return c.json({ error: 'OPML 파일에서 RSS 피드 항목을 찾지 못했습니다.' }, 400);
     }
-
-    try {
-      const parsed = await fetchAndParseFeed(item.xmlUrl);
-      const { feedId } = await upsertFeedAndArticles(c.env.DB, parsed);
-      await c.env.DB.prepare(
-        `INSERT OR IGNORE INTO subscriptions (id, user_id, feed_id, folder_id, custom_title, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-        .bind(generateId('sub'), user.id, feedId, folderId, item.title || null, now)
-        .run();
-      importedCount++;
-    } catch {
-      // Skip broken feed in batch import
-    }
+    return c.json({ items, totalFound: items.length });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'OPML 파일을 읽지 못했습니다.' }, 400);
   }
+});
 
-  return c.json({
-    importedCount,
-    foldersCreated,
-    totalFound: outlines.length,
-  });
+// One feed per request avoids a large file exhausting Worker time or query budgets.
+app.post('/api/opml/import', async (c) => {
+  const body = await c.req.json<{ item?: OpmlFeed }>();
+  const item = body.item;
+  if (!item || typeof item.xmlUrl !== 'string' ||
+      (item.title != null && typeof item.title !== 'string') ||
+      (item.folderName != null && typeof item.folderName !== 'string')) {
+    return c.json({ error: '가져오기 화면을 새로고침한 뒤 OPML 파일을 다시 선택해 주세요.' }, 400);
+  }
+  let xmlUrl: string;
+  try {
+    const url = new URL(item.xmlUrl.trim());
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    xmlUrl = url.href;
+  } catch {
+    return c.json({ error: '올바른 HTTP 또는 HTTPS RSS 주소가 아닙니다.' }, 400);
+  }
+  try {
+    return c.json(await importOpmlFeed(c.env.DB, c.get('user').id, { ...item, xmlUrl }));
+  } catch {
+    return c.json({
+      status: 'failed' as const,
+      foldersCreated: 0,
+      error: '피드를 가져오지 못했습니다. 주소와 연결 상태를 확인한 뒤 다시 시도해 주세요.',
+    });
+  }
 });
 
 // OPML Export

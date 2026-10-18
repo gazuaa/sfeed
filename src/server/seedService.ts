@@ -57,49 +57,41 @@ export async function upsertFeedAndArticles(
       .run();
   }
 
-  let insertedCount = 0;
-  for (const art of parsed.articles) {
-    const existingArt = await db
-      .prepare('SELECT id FROM articles WHERE feed_id = ? AND guid = ?')
-      .bind(feedId, art.guid)
-      .first<{ id: string }>();
-
-    if (!existingArt) {
-      const artId = generateId('art');
-      await db
-        .prepare(
-          `INSERT INTO articles (
-            id, feed_id, guid, title, url, author, summary, content_html, thumbnail_url, published_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          artId,
-          feedId,
-          art.guid,
-          art.title,
-          art.url,
-          art.author,
-          art.summary,
-          art.contentHtml,
-          art.thumbnailUrl,
-          art.publishedAt,
-          now
-        )
-        .run();
-      insertedCount++;
-    } else {
-      // Update thumbnail or content if previously missing
-      await db
-        .prepare(
-          `UPDATE articles
-           SET thumbnail_url = COALESCE(thumbnail_url, ?),
-               content_html = COALESCE(content_html, ?)
-           WHERE id = ?`
-        )
-        .bind(art.thumbnailUrl, art.contentHtml, existingArt.id)
-        .run();
-    }
+  // Fetch existing GUIDs together and write up to eight articles per statement.
+  // This keeps a feed refresh well below Workers/D1 query limits (88 parameters).
+  const existingGuids = new Set<string>();
+  for (let offset = 0; offset < parsed.articles.length; offset += 80) {
+    const chunk = parsed.articles.slice(offset, offset + 80);
+    const rows = await db.prepare(
+      `SELECT guid FROM articles WHERE feed_id = ? AND guid IN (${chunk.map(() => '?').join(', ')})`
+    ).bind(feedId, ...chunk.map((article) => article.guid)).all<{ guid: string }>();
+    for (const row of rows.results || []) existingGuids.add(row.guid);
   }
+
+  let insertedCount = 0;
+  const statements = [];
+  for (let offset = 0; offset < parsed.articles.length; offset += 8) {
+    const chunk = parsed.articles.slice(offset, offset + 8);
+    const values: unknown[] = [];
+    for (const article of chunk) {
+      if (!existingGuids.has(article.guid)) insertedCount++;
+      existingGuids.add(article.guid);
+      values.push(
+        generateId('art'), feedId, article.guid, article.title, article.url,
+        article.author, article.summary, article.contentHtml, article.thumbnailUrl,
+        article.publishedAt, now
+      );
+    }
+    statements.push(db.prepare(
+      `INSERT INTO articles (
+        id, feed_id, guid, title, url, author, summary, content_html, thumbnail_url, published_at, created_at
+      ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+      ON CONFLICT(feed_id, guid) DO UPDATE SET
+        thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
+        content_html = COALESCE(articles.content_html, excluded.content_html)`
+    ).bind(...values));
+  }
+  if (statements.length > 0) await db.batch(statements);
 
   return { feedId, insertedCount };
 }

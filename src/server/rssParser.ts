@@ -1,4 +1,5 @@
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import type { OpmlFeed } from '../shared/opml';
 import { CURATED_FEEDS, FALLBACK_ARTICLES_BY_FEED_URL } from './curatedFeeds';
 
 export interface ParsedArticle {
@@ -19,13 +20,6 @@ export interface ParsedFeed {
   description: string | null;
   faviconUrl: string | null;
   articles: ParsedArticle[];
-}
-
-export interface OpmlOutlineFeed {
-  title: string;
-  xmlUrl: string;
-  htmlUrl: string | null;
-  folderName: string | null;
 }
 
 const xmlParser = new XMLParser({
@@ -493,7 +487,10 @@ export async function fetchAndParseFeed(
   }
 }
 
-export function parseOpml(opmlXml: string): OpmlOutlineFeed[] {
+export function parseOpml(opmlXml: string): OpmlFeed[] {
+  if (XMLValidator.validate(opmlXml) !== true) {
+    throw new Error('유효하지 않은 OPML XML입니다. 파일 내용을 확인해 주세요.');
+  }
   const parsed = xmlParser.parse(opmlXml) as Record<string, unknown>;
   const opml = parsed.opml as Record<string, unknown> | undefined;
   const body = opml?.body as Record<string, unknown> | undefined;
@@ -501,7 +498,7 @@ export function parseOpml(opmlXml: string): OpmlOutlineFeed[] {
     throw new Error('유효하지 않은 OPML 파일입니다.');
   }
 
-  const results: OpmlOutlineFeed[] = [];
+  const results: OpmlFeed[] = [];
 
   function walkOutlines(node: unknown, parentFolder: string | null) {
     if (!node) return;

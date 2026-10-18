@@ -6,7 +6,6 @@ import {
   Check,
   Rss,
   FileCode2,
-  Upload,
   Download,
   Loader2,
   Globe,
@@ -14,6 +13,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { FeedPreview } from './FeedPreview';
+import { OpmlImporter } from './OpmlImporter';
 import {
   apiRequest,
   getStoredToken,
@@ -52,7 +52,6 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   const [customTitle, setCustomTitle] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState('');
-  const [opmlText, setOpmlText] = useState('');
   const [opmlImporting, setOpmlImporting] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
@@ -149,47 +148,6 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     }
   };
 
-  const handleOpmlFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setOpmlText(reader.result);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleImportOpml = async () => {
-    if (!opmlText.trim()) return;
-    setOpmlImporting(true);
-    setFeedback(null);
-
-    try {
-      const res = await apiRequest<{
-        importedCount: number;
-        foldersCreated: number;
-      }>('/api/opml/import', {
-        method: 'POST',
-        body: JSON.stringify({ opmlXml: opmlText }),
-      });
-      await onSubscribed();
-      setFeedback({
-        type: 'success',
-        text: `OPML 가져오기 완료: 피드 ${res.importedCount}개 구독, 신규 폴더 ${res.foldersCreated}개 생성!`,
-      });
-      setOpmlText('');
-    } catch (err) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'OPML 가져오기에 실패했습니다.',
-      });
-    } finally {
-      setOpmlImporting(false);
-    }
-  };
-
   const handleExportOpml = () => {
     const token = getStoredToken();
     const url = `/api/opml/export${
@@ -226,7 +184,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="fixed inset-0 bg-black/65 backdrop-blur-xs"
-        onClick={onClose}
+        onClick={() => { if (!opmlImporting) onClose(); }}
       />
 
       <div
@@ -258,7 +216,9 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            aria-label="닫기"
+            disabled={opmlImporting}
+            onClick={() => { if (!opmlImporting) onClose(); }}
             className="p-2 rounded-lg text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -273,6 +233,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         >
           <button
             type="button"
+            disabled={opmlImporting}
             onClick={() => { setTab('curated'); setPreviewFeed(null); }}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'curated'
@@ -286,6 +247,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
           <button
             type="button"
+            disabled={opmlImporting}
             onClick={() => setTab('custom')}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'custom'
@@ -299,6 +261,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
           <button
             type="button"
+            disabled={opmlImporting}
             onClick={() => setTab('opml')}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'opml'
@@ -533,8 +496,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
           )}
 
           {/* TAB 3: OPML Import / Export */}
-          {tab === 'opml' && (
-            <div className="space-y-6">
+          <div className={tab === 'opml' ? 'space-y-6' : 'hidden'}>
               {/* Export Card */}
               <div
                 className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
@@ -554,6 +516,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                 </div>
                 <button
                   type="button"
+                  disabled={opmlImporting}
                   onClick={handleExportOpml}
                   className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
                 >
@@ -562,64 +525,12 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                 </button>
               </div>
 
-              {/* Import Card */}
-              <div
-                className={`p-4 rounded-2xl border space-y-3 ${
-                  isDark
-                    ? 'bg-slate-950/60 border-slate-800'
-                    : 'bg-slate-50 border-slate-200'
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold">
-                      OPML 파일 가져오기 (Feedly / Inoreader 마이그레이션)
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      .opml 또는 .xml 파일을 선택하거나 아래 텍스트 영역에 붙여넣으세요.
-                    </p>
-                  </div>
-
-                  <label className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer">
-                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>파일 선택</span>
-                    <input
-                      type="file"
-                      accept=".opml,.xml,text/xml"
-                      onChange={handleOpmlFileUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                <textarea
-                  rows={6}
-                  placeholder={`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0">\n  <body>\n    <outline text="Tech" title="Tech">\n      <outline type="rss" title="GeekNews" xmlUrl="https://news.hada.io/rss/news" />\n    </outline>\n  </body>\n</opml>`}
-                  value={opmlText}
-                  onChange={(e) => setOpmlText(e.target.value)}
-                  className={`w-full p-3 rounded-xl font-mono text-xs border focus:outline-none focus:border-emerald-500 ${
-                    isDark
-                      ? 'bg-slate-950 border-slate-800 text-slate-200'
-                      : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-
-                <button
-                  type="button"
-                  disabled={opmlImporting || !opmlText.trim()}
-                  onClick={handleImportOpml}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-                >
-                  {opmlImporting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                  <span>OPML 구독 일괄 등록하기</span>
-                </button>
-              </div>
-            </div>
-          )}
+              <OpmlImporter
+                isDark={isDark}
+                onBusyChange={setOpmlImporting}
+                onSubscribed={onSubscribed}
+              />
+          </div>
         </div>
       </div>
     </div>

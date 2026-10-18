@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:opml": "node scripts/verify-opml.mjs",
     "preview": "vite preview",
     "cf:dev": "vite build && wrangler dev",
     "cf:deploy": "vite build && wrangler deploy",
