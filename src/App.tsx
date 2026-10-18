@@ -33,6 +33,7 @@ export const App: React.FC = () => {
     todayCount: 0,
   });
   const [curatedFeeds, setCuratedFeeds] = useState<CuratedFeedItem[]>([]);
+  const [loadingBootstrap, setLoadingBootstrap] = useState(true);
 
   // Active Navigation & Filters
   const [activeScope, setActiveScope] = useState<ScopeType>('all');
@@ -108,6 +109,8 @@ export const App: React.FC = () => {
       setCuratedFeeds(data.curatedFeeds);
     } catch {
       // ignore
+    } finally {
+      setLoadingBootstrap(false);
     }
   }, [user]);
 
@@ -330,6 +333,7 @@ export const App: React.FC = () => {
     }
     setStoredToken(null);
     setUser(null);
+    setLoadingBootstrap(true);
     setSelectedArticleId(null);
   };
 
@@ -527,7 +531,8 @@ export const App: React.FC = () => {
               setDiscoverOpen(true);
             }}
             isDark={isDark}
-            loading={loadingArticles}
+            loading={loadingArticles || loadingBootstrap}
+            hasSubscriptions={subscriptions.length > 0}
           />
         </main>
 

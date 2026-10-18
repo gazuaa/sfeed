@@ -42,7 +42,7 @@ const DEMO_GOOGLE_ACCOUNTS = [
   {
     name: '김태현 (Product Engineer)',
     email: 'taehyun.kim@gmail.com',
-    role: '기본 추천 피드 (국내/글로벌 테크 & 디자인)',
+    role: '추천 피드를 직접 선택하는 개인 워크스페이스',
     picture: 'https://api.dicebear.com/9.x/glass/svg?seed=taehyun',
   },
   {
@@ -353,7 +353,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                   <span>이메일로 즉시 워크스페이스 시작</span>
                   <span className="text-[11px] text-emerald-400 font-normal">
-                    기본 추천 피드 자동 세팅
+                    원하는 추천 피드만 선택해 구독
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

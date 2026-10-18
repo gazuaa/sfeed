@@ -25,6 +25,7 @@ interface ArticleListProps {
   onOpenDiscover: () => void;
   isDark: boolean;
   loading: boolean;
+  hasSubscriptions: boolean;
 }
 
 export const ArticleList: React.FC<ArticleListProps> = ({
@@ -37,6 +38,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   onOpenDiscover,
   isDark,
   loading,
+  hasSubscriptions,
 }) => {
   if (loading) {
     return (
@@ -72,11 +74,12 @@ export const ArticleList: React.FC<ArticleListProps> = ({
             isDark ? 'text-white' : 'text-slate-900'
           }`}
         >
-          표시할 아티클이 없습니다
+          {hasSubscriptions ? '표시할 아티클이 없습니다' : '관심 있는 피드로 시작하세요'}
         </h3>
         <p className="text-xs text-slate-400 leading-relaxed mb-6">
-          모든 아티클을 다 읽었거나 검색 조건에 맞는 글이 없습니다. 새로운 RSS 피드를
-          추가하거나 안읽음 필터를 해제해 보세요.
+          {hasSubscriptions
+            ? '모든 아티클을 다 읽었거나 검색 조건에 맞는 글이 없습니다. 새로운 RSS 피드를 추가하거나 안읽음 필터를 해제해 보세요.'
+            : '아직 구독 중인 피드가 없습니다. 추천 목록에서 원하는 피드를 골라 구독해 보세요. 선택한 피드만 내 목록에 추가됩니다.'}
         </p>
         <button
           type="button"

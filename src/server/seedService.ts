@@ -1,5 +1,5 @@
 import type { D1DatabaseLike } from './types';
-import { fetchAndParseFeed, type ParsedFeed } from './rssParser';
+import type { ParsedFeed } from './rssParser';
 
 export function generateId(prefix = ''): string {
   const uuid = crypto.randomUUID();
@@ -102,66 +102,4 @@ export async function upsertFeedAndArticles(
   }
 
   return { feedId, insertedCount };
-}
-
-export async function seedStarterDataForNewUser(
-  db: D1DatabaseLike,
-  userId: string
-): Promise<void> {
-  const now = new Date().toISOString();
-
-  // Check if user already has folders or subscriptions
-  const countRow = await db
-    .prepare('SELECT COUNT(*) as cnt FROM subscriptions WHERE user_id = ?')
-    .bind(userId)
-    .first<{ cnt: number }>();
-
-  if (countRow && Number(countRow.cnt) > 0) {
-    return;
-  }
-
-  const starterFolders = [
-    { id: generateId('fld'), name: '국내 테크', color: '#10b981', sortOrder: 1 },
-    { id: generateId('fld'), name: 'Global Tech & AI', color: '#3b82f6', sortOrder: 2 },
-    { id: generateId('fld'), name: '디자인 & 프로덕트', color: '#8b5cf6', sortOrder: 3 },
-  ];
-
-  const folderMap = new Map<string, string>();
-  for (const f of starterFolders) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO folders (id, user_id, name, color, sort_order, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .bind(f.id, userId, f.name, f.color, f.sortOrder, now)
-      .run();
-    folderMap.set(f.name, f.id);
-  }
-
-  const starterFeeds = [
-    { xmlUrl: 'https://news.hada.io/rss/news', folderName: '국내 테크' },
-    { xmlUrl: 'https://toss.tech/rss.xml', folderName: '국내 테크' },
-    { xmlUrl: 'https://blog.cloudflare.com/rss/', folderName: 'Global Tech & AI' },
-    { xmlUrl: 'https://hnrss.org/frontpage', folderName: 'Global Tech & AI' },
-    { xmlUrl: 'https://www.smashingmagazine.com/feed/', folderName: '디자인 & 프로덕트' },
-  ];
-
-  await Promise.all(
-    starterFeeds.map(async (item) => {
-      try {
-        const parsed = await fetchAndParseFeed(item.xmlUrl);
-        const { feedId } = await upsertFeedAndArticles(db, parsed);
-        const folderId = folderMap.get(item.folderName) || null;
-        await db
-          .prepare(
-            `INSERT OR IGNORE INTO subscriptions (id, user_id, feed_id, folder_id, created_at)
-             VALUES (?, ?, ?, ?, ?)`
-          )
-          .bind(generateId('sub'), userId, feedId, folderId, now)
-          .run();
-      } catch {
-        // Ignore individual starter feed errors
-      }
-    })
-  );
 }

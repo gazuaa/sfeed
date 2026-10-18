@@ -218,7 +218,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                 피드 추가 · 추천 탐색 · OPML 마이그레이션
               </h2>
               <p className="text-xs text-slate-400">
-                추천 기술/뉴스 피드를 구독하거나 직접 RSS 주소 및 OPML 파일을 등록하세요
+                추천 목록에서 원하는 피드만 선택하거나 RSS 주소 및 OPML 파일을 직접 등록하세요
               </p>
             </div>
           </div>

@@ -15,7 +15,6 @@ import { summarizeArticleWithAI } from './aiSummarizer';
 import {
   generateId,
   upsertFeedAndArticles,
-  seedStarterDataForNewUser,
 } from './seedService';
 import {
   DEFAULT_GOOGLE_CLIENT_ID,
@@ -129,9 +128,6 @@ async function findOrCreateGoogleUser(
       now
     )
     .run();
-
-  // Seed starter folders & feeds for new user
-  await seedStarterDataForNewUser(db, userId);
 
   const created = await db
     .prepare('SELECT * FROM users WHERE id = ?')
