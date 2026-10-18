@@ -374,6 +374,29 @@ app.get('/api/bootstrap', async (c) => {
   });
 });
 
+// Read-only preview of a catalogued feed: never creates folders, feeds or subscriptions.
+app.get('/api/discover/feeds/:id/preview', async (c) => {
+  const feed = CURATED_FEEDS.find((item) => item.id === c.req.param('id'));
+  if (!feed) return c.json({ error: '추천 피드를 찾을 수 없습니다.' }, 404);
+
+  try {
+    const parsed = await fetchAndParseFeed(feed.xmlUrl, { allowFallback: false });
+    const articles = parsed.articles
+      .filter((article) => /^https?:\/\//i.test(article.url))
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+      .slice(0, 10)
+      .map((article) => ({
+        title: article.title,
+        url: article.url,
+        summary: article.summary,
+        publishedAt: article.publishedAt,
+      }));
+    return c.json({ articles });
+  } catch {
+    return c.json({ error: '최근 글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 502);
+  }
+});
+
 // Folder CRUD
 app.post('/api/folders', async (c) => {
   const user = c.get('user');

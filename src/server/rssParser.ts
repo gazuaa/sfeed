@@ -406,7 +406,10 @@ function buildFallbackFeed(xmlUrl: string): ParsedFeed {
   };
 }
 
-export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
+export async function fetchAndParseFeed(
+  inputUrl: string,
+  options: { allowFallback?: boolean } = {}
+): Promise<ParsedFeed> {
   let normalizedUrl = inputUrl.trim();
   if (!/^https?:\/\//i.test(normalizedUrl)) {
     normalizedUrl = `https://${normalizedUrl}`;
@@ -428,15 +431,14 @@ export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
       'application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.9, */*;q=0.8',
   };
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
     const response = await fetch(normalizedUrl, {
       headers,
       signal: controller.signal,
       redirect: 'follow',
     });
-    clearTimeout(timer);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -457,7 +459,7 @@ export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
 
       if (linkMatch && linkMatch[1]) {
         const discoveredUrl = resolveUrl(linkMatch[1], normalizedUrl);
-        const subRes = await fetch(discoveredUrl, { headers, redirect: 'follow' });
+        const subRes = await fetch(discoveredUrl, { headers, redirect: 'follow', signal: controller.signal });
         if (subRes.ok) {
           const subXml = await subRes.text();
           return parseXmlFeedContent(subXml, discoveredUrl);
@@ -470,7 +472,7 @@ export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
       for (const suffix of commonPaths) {
         try {
           const candidateUrl = `${origin}${suffix}`;
-          const res = await fetch(candidateUrl, { headers, redirect: 'follow' });
+          const res = await fetch(candidateUrl, { headers, redirect: 'follow', signal: controller.signal });
           if (res.ok) {
             const xml = await res.text();
             return parseXmlFeedContent(xml, candidateUrl);
@@ -482,9 +484,12 @@ export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
     }
 
     return parseXmlFeedContent(text, normalizedUrl);
-  } catch {
+  } catch (err) {
+    if (options.allowFallback === false) throw err;
     // Graceful fallback when running in offline sandbox or if target server blocks automated requests
     return buildFallbackFeed(normalizedUrl);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

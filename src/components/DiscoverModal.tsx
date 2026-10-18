@@ -11,7 +11,9 @@ import {
   Loader2,
   Globe,
   FolderPlus,
+  Eye,
 } from 'lucide-react';
+import { FeedPreview } from './FeedPreview';
 import {
   apiRequest,
   getStoredToken,
@@ -43,6 +45,8 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 }) => {
   const [tab, setTab] = useState<'curated' | 'custom' | 'opml'>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
+  const [previewFeed, setPreviewFeed] = useState<CuratedFeedItem | null>(null);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
   const [busyUrl, setBusyUrl] = useState<string | null>(null);
   const [customUrl, setCustomUrl] = useState('');
   const [customTitle, setCustomTitle] = useState('');
@@ -58,7 +62,12 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   React.useEffect(() => {
     setTab(initialTab);
     setFeedback(null);
+    setPreviewFeed(null);
   }, [initialTab, isOpen]);
+
+  React.useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, [previewFeed, tab]);
 
   if (!isOpen) return null;
 
@@ -189,6 +198,30 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     window.open(url, '_blank');
   };
 
+  const subscribeButton = (feed: CuratedFeedItem) => {
+    const subscribed = isSubscribedUrl(feed.xmlUrl);
+    return (
+      <button
+        type="button"
+        disabled={subscribed || busyUrl !== null}
+        onClick={() => handleSubscribeCurated(feed)}
+        className={`relative z-10 pointer-events-auto px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shrink-0 disabled:cursor-default ${
+          subscribed
+            ? 'bg-emerald-500/15 text-emerald-400'
+            : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+        }`}
+      >
+        {busyUrl === feed.xmlUrl ? (
+          <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>구독 중…</span></>
+        ) : subscribed ? (
+          <><Check className="w-3.5 h-3.5" /><span>구독 중</span></>
+        ) : (
+          <><Plus className="w-3.5 h-3.5" /><span>구독하기</span></>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
@@ -240,7 +273,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         >
           <button
             type="button"
-            onClick={() => setTab('curated')}
+            onClick={() => { setTab('curated'); setPreviewFeed(null); }}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'curated'
                 ? 'border-emerald-500 text-emerald-400'
@@ -292,10 +325,18 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         )}
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto p-6">
           {/* TAB 1: Curated Feeds */}
           {tab === 'curated' && (
-            <div className="space-y-5">
+            previewFeed ? (
+              <FeedPreview
+                key={previewFeed.id}
+                feed={previewFeed}
+                onBack={() => setPreviewFeed(null)}
+                subscribeButton={subscribeButton(previewFeed)}
+                isDark={isDark}
+              />
+            ) : <div className="space-y-5">
               {/* Category Filter Pills */}
               <div className="flex flex-wrap gap-2">
                 {categories.map((cat) => (
@@ -318,19 +359,22 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
               <div className="grid sm:grid-cols-2 gap-3.5">
                 {filteredCurated.map((feed) => {
-                  const subscribed = isSubscribedUrl(feed.xmlUrl);
-                  const isBusy = busyUrl === feed.xmlUrl;
-
                   return (
                     <div
                       key={feed.id}
-                      className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
+                      className={`relative group p-4 rounded-2xl border flex flex-col justify-between gap-3 transition hover:border-emerald-500/50 ${
                         isDark
                           ? 'bg-slate-950/60 border-slate-800'
                           : 'bg-slate-50 border-slate-200'
                       }`}
                     >
-                      <div>
+                      <button
+                        type="button"
+                        aria-label={`${feed.title} 미리보기`}
+                        onClick={() => setPreviewFeed(feed)}
+                        className="absolute inset-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
+                      />
+                      <div className="relative pointer-events-none">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2 min-w-0">
                             <img
@@ -358,9 +402,12 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                         <p className="text-xs text-slate-400 leading-relaxed mb-3">
                           {feed.description}
                         </p>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 group-hover:text-emerald-400">
+                          <Eye className="w-3.5 h-3.5" /> 최근 글 미리보기
+                        </span>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/50">
+                      <div className="relative pointer-events-none flex items-center justify-between gap-2 pt-2 border-t border-slate-800/50">
                         <div className="flex flex-wrap gap-1">
                           {feed.tags.slice(0, 3).map((tag) => (
                             <span
@@ -372,30 +419,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                           ))}
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={subscribed || isBusy}
-                          onClick={() => handleSubscribeCurated(feed)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shrink-0 ${
-                            subscribed
-                              ? 'bg-emerald-500/15 text-emerald-400 cursor-default'
-                              : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
-                          }`}
-                        >
-                          {isBusy ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : subscribed ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>구독 중</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>구독하기</span>
-                            </>
-                          )}
-                        </button>
+                        {subscribeButton(feed)}
                       </div>
                     </div>
                   );

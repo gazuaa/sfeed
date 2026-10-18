@@ -85,6 +85,15 @@ export interface BootstrapResponse {
   curatedFeeds: CuratedFeedItem[];
 }
 
+export interface FeedPreviewResponse {
+  articles: {
+    title: string;
+    url: string;
+    summary: string | null;
+    publishedAt: string;
+  }[];
+}
+
 const SESSION_STORAGE_KEY = 'sfeed_session_token';
 
 export function getStoredToken(): string | null {
