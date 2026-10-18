@@ -72,7 +72,8 @@ npm run db:migrate:remote
   ```bash
   npm run cf:deploy
   ```
-- **GitHub 연동 자동 배포:**
+- **GitHub 연동 자동 배포 (Workers Builds):**
   1. 이 프로젝트를 GitHub 저장소에 푸시합니다.
-  2. Cloudflare 대시보드에서 **Workers & Pages -> Create -> Import a repository**를 선택해 GitHub 저장소를 연결합니다.
-  3. Build command: `npm run build` / Deploy command: `npx wrangler deploy`로 설정하면 `git push`마다 자동 배포됩니다.
+  2. Cloudflare 대시보드에서 **Workers & Pages -> sfeed -> Settings -> Builds -> Connect**로 GitHub 저장소를 연결합니다. (워커가 아직 없다면 **Create -> Import a repository**)
+  3. Build command: `npm run build` / Deploy command: `npx wrangler deploy`로 설정하면 `main`에 `git push`할 때마다 자동 배포됩니다.
+  4. GitHub의 **Cloudflare Workers and Pages** 앱이 "Only select repositories"로 설치되어 있다면 **GitHub Settings -> Applications -> Cloudflare Workers and Pages -> Configure**에서 이 저장소를 추가해야 합니다. 빠져 있으면 Cloudflare에서 저장소 선택은 되지만 푸시 이벤트를 받지 못해 빌드가 시작되지 않습니다.
