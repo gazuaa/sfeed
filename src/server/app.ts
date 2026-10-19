@@ -38,6 +38,13 @@ const DEFAULT_PREFS: UserPreferences = {
   unreadOnly: false,
 };
 
+// Like Feedly, articles older than this count as read unless marked otherwise.
+// Bounding unread queries to recent articles also keeps them fast when feeds
+// carry years of imported history.
+const UNREAD_WINDOW_DAYS = 30;
+const unreadCutoff = () =>
+  new Date(Date.now() - UNREAD_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
 // Fail closed: quick login is on only when explicitly enabled (vite dev server or .dev.vars)
 function isQuickLoginEnabled(env: Env): boolean {
   return env.ALLOW_QUICK_LOGIN === 'true';
@@ -327,14 +334,14 @@ app.get('/api/bootstrap', async (c) => {
          SELECT COUNT(*)
          FROM articles a
          LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
-         WHERE a.feed_id = f.id AND COALESCE(st.is_read, 0) = 0
+         WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0
        ) as unread_count
      FROM subscriptions s
      JOIN feeds f ON f.id = s.feed_id
      WHERE s.user_id = ?
      ORDER BY title ASC`
   )
-    .bind(user.id)
+    .bind(unreadCutoff(), user.id)
     .all<SubscriptionItem>();
 
   const subscriptions = (subsRes.results || []).map((s) => ({
@@ -654,9 +661,11 @@ app.get('/api/articles', async (c) => {
   // Keyset cursor: the last article of the previous page (published_at, id).
   const before = c.req.query('before') || '';
   const beforeId = c.req.query('beforeId') || '';
+  const cutoff = unreadCutoff();
 
   const conditions: string[] = ['s.user_id = ?'];
-  const params: unknown[] = [user.id];
+  // The first placeholder sits in the SELECT list: the default read state by age.
+  const params: unknown[] = [cutoff, user.id];
 
   if (scope === 'folder' && folderId) {
     conditions.push('s.folder_id = ?');
@@ -673,7 +682,8 @@ app.get('/api/articles', async (c) => {
   }
 
   if (unreadOnly && scope !== 'saved') {
-    conditions.push('COALESCE(st.is_read, 0) = 0');
+    conditions.push('a.published_at >= ? AND COALESCE(st.is_read, 0) = 0');
+    params.push(cutoff);
   }
 
   if (search) {
@@ -711,7 +721,7 @@ app.get('/api/articles', async (c) => {
       a.ai_summary,
       a.thumbnail_url,
       a.published_at,
-      COALESCE(st.is_read, 0) as is_read,
+      COALESCE(st.is_read, CASE WHEN a.published_at < ? THEN 1 ELSE 0 END) as is_read,
       COALESCE(st.is_saved, 0) as is_saved
     FROM articles a
     JOIN subscriptions s ON s.feed_id = a.feed_id
@@ -835,30 +845,23 @@ app.post('/api/articles/mark-all-read', async (c) => {
     params.push(twentyFourHoursAgo);
   }
 
-  const unreadRes = await c.env.DB.prepare(
-    `SELECT a.id
+  // Older articles already count as read, so only the unread window needs
+  // marking — in one statement, as a per-article loop exceeds D1's query budget.
+  conditions.push('a.published_at >= ?');
+  params.push(unreadCutoff());
+  const res = await c.env.DB.prepare(
+    `INSERT INTO article_states (user_id, article_id, is_read, read_at)
+     SELECT s.user_id, a.id, 1, ?
      FROM articles a
      JOIN subscriptions s ON s.feed_id = a.feed_id
      LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
-     WHERE ${conditions.join(' AND ')} AND COALESCE(st.is_read, 0) = 0`
+     WHERE ${conditions.join(' AND ')} AND COALESCE(st.is_read, 0) = 0
+     ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at`
   )
-    .bind(...params)
-    .all<{ id: string }>();
+    .bind(new Date().toISOString(), ...params)
+    .run();
 
-  const rows = unreadRes.results || [];
-  const now = new Date().toISOString();
-
-  for (const r of rows) {
-    await c.env.DB.prepare(
-      `INSERT INTO article_states (user_id, article_id, is_read, read_at)
-       VALUES (?, ?, 1, ?)
-       ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at`
-    )
-      .bind(user.id, r.id, now)
-      .run();
-  }
-
-  return c.json({ markedCount: rows.length });
+  return c.json({ markedCount: Number(res.meta?.changes ?? 0) });
 });
 
 // Reader View: Scrape full article body from original URL

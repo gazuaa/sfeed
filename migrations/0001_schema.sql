@@ -82,8 +82,12 @@ CREATE TABLE IF NOT EXISTS articles (
   FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_feed_pub ON articles(feed_id, published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_articles_pub ON articles(published_at DESC);
+-- id breaks published_at ties so keyset pagination can walk these indexes
+-- instead of sorting every article (feeds may carry years of history).
+CREATE INDEX IF NOT EXISTS idx_articles_feed_pub_id ON articles(feed_id, published_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_pub_id ON articles(published_at DESC, id DESC);
+DROP INDEX IF EXISTS idx_articles_feed_pub;
+DROP INDEX IF EXISTS idx_articles_pub;
 
 CREATE TABLE IF NOT EXISTS article_states (
   user_id TEXT NOT NULL,
