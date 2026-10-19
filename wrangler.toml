@@ -18,9 +18,10 @@ binding = "AI"
 enabled = true
 head_sampling_rate = 1
 
-# Cron Trigger: Refresh subscribed RSS feeds every hour in the background
+# Cron Trigger: Refresh subscribed RSS feeds every 15 minutes in the background.
+# News feeds only carry their latest 10-50 items, so slower refreshes miss articles.
 [triggers]
-crons = ["0 * * * *"]
+crons = ["*/15 * * * *"]
 
 [vars]
 OWNER_EMAIL = "jonyq659@gmail.com"

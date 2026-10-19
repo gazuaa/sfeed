@@ -32,7 +32,7 @@ export default {
   async scheduled(_event: unknown, env: Env, _ctx: unknown): Promise<void> {
     if (!env.DB) return;
     const res = await env.DB.prepare(
-      'SELECT id, xml_url FROM feeds ORDER BY last_fetched_at ASC LIMIT 30'
+      'SELECT id, xml_url FROM feeds ORDER BY last_fetched_at ASC LIMIT 100'
     ).all<{ id: string; xml_url: string }>();
 
     const feeds = res.results || [];
