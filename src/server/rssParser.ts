@@ -155,6 +155,22 @@ function resolveUrl(url: string, baseUrl?: string): string {
   return url;
 }
 
+// Keep every item a publisher exposes (some feeds carry their whole archive);
+// the cap only guards against pathological feeds.
+const MAX_FEED_ITEMS = 1000;
+
+// RSS uses pubDate/dc:date, Atom 1.0 published/updated, and Atom 0.3 (still
+// served by Naver blogs) issued/created/modified. Publication dates come first.
+const ITEM_DATE_FIELDS = ['pubDate', 'published', 'dc:date', 'issued', 'created', 'updated', 'modified'];
+
+function extractItemDate(item: Record<string, unknown>): string {
+  for (const field of ITEM_DATE_FIELDS) {
+    const text = extractText(item[field]);
+    if (text) return text;
+  }
+  return '';
+}
+
 function parseDateSafe(raw: string): string {
   if (!raw) return new Date().toISOString();
   const parsed = new Date(raw);
@@ -211,7 +227,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
     const items = Array.isArray(rawItems) ? rawItems : [rawItems];
 
     const articles: ParsedArticle[] = [];
-    for (const rawItem of items.slice(0, 40)) {
+    for (const rawItem of items.slice(0, MAX_FEED_ITEMS)) {
       if (!rawItem || typeof rawItem !== 'object') continue;
       const item = rawItem as Record<string, unknown>;
       const itemTitle = decodeHtmlEntities(extractText(item.title)) || 'Untitled Article';
@@ -238,9 +254,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
       const contentHtml = sanitizeContentHtml(rawContent || rawDesc, itemUrl || htmlUrl || xmlUrl);
       const summary = stripHtmlToSummary(rawDesc || rawContent);
       const thumbnailUrl = extractThumbnail(item, rawContent || rawDesc, itemUrl || htmlUrl || xmlUrl);
-      const pubDateRaw = extractText(
-        item.pubDate || item.published || item['dc:date'] || item.updated
-      );
+      const pubDateRaw = extractItemDate(item);
 
       articles.push({
         guid,
@@ -288,7 +302,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
     const entries = Array.isArray(rawEntries) ? rawEntries : [rawEntries];
     const articles: ParsedArticle[] = [];
 
-    for (const rawEntry of entries.slice(0, 40)) {
+    for (const rawEntry of entries.slice(0, MAX_FEED_ITEMS)) {
       if (!rawEntry || typeof rawEntry !== 'object') continue;
       const entry = rawEntry as Record<string, unknown>;
       const entryTitle = decodeHtmlEntities(extractText(entry.title)) || 'Untitled Article';
@@ -325,7 +339,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
       const contentHtml = sanitizeContentHtml(rawContent || rawSummary, entryUrl || htmlUrl || xmlUrl);
       const summary = stripHtmlToSummary(rawSummary || rawContent);
       const thumbnailUrl = extractThumbnail(entry, rawContent || rawSummary, entryUrl || htmlUrl || xmlUrl);
-      const pubDateRaw = extractText(entry.published || entry.updated);
+      const pubDateRaw = extractItemDate(entry);
 
       articles.push({
         guid,

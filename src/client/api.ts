@@ -151,7 +151,9 @@ export function formatRelativeTime(isoDate: string): string {
     if (diffHours < 24) return `${diffHours}시간 전`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays < 7) return `${diffDays}일 전`;
+    // Older posts from past years need the year, or 2018 reads as this year.
     return date.toLocaleDateString('ko-KR', {
+      ...(date.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }),
       month: 'short',
       day: 'numeric',
     });

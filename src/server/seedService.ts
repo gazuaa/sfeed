@@ -68,6 +68,10 @@ export async function upsertFeedAndArticles(
     for (const row of rows.results || []) existingGuids.add(row.guid);
   }
 
+  // published_at repair: rows saved before a feed's date field was recognised
+  // carry their fetch time (published_at ≈ created_at). Once the feed yields a
+  // real, clearly earlier date, move them back to it. Undated items fall back
+  // to "now", which is never earlier, so they never overwrite a stored date.
   let insertedCount = 0;
   const statements = [];
   for (let offset = 0; offset < parsed.articles.length; offset += 8) {
@@ -88,7 +92,13 @@ export async function upsertFeedAndArticles(
       ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
       ON CONFLICT(feed_id, guid) DO UPDATE SET
         thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
-        content_html = COALESCE(articles.content_html, excluded.content_html)`
+        content_html = COALESCE(articles.content_html, excluded.content_html),
+        published_at = CASE
+          WHEN abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
+            AND julianday(excluded.published_at) < julianday(articles.published_at) - 1.0 / 24
+          THEN excluded.published_at
+          ELSE articles.published_at
+        END`
     ).bind(...values));
   }
   if (statements.length > 0) await db.batch(statements);

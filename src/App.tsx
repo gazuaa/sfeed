@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   apiRequest,
   getStoredToken,
@@ -17,6 +17,7 @@ import { LoginView } from './components/LoginView';
 import { Sidebar } from './components/Sidebar';
 import { HeaderBar } from './components/HeaderBar';
 import { ArticleList } from './components/ArticleList';
+import { LoadMoreArticles } from './components/LoadMoreArticles';
 import { ArticleDrawer } from './components/ArticleDrawer';
 import { DiscoverModal } from './components/DiscoverModal';
 
@@ -49,6 +50,10 @@ export const App: React.FC = () => {
   // Articles & Reader State
   const [articles, setArticles] = useState<ArticleItem[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(false);
+  const [hasMoreArticles, setHasMoreArticles] = useState(false);
+  const [loadingMoreArticles, setLoadingMoreArticles] = useState(false);
+  // Query of the list currently shown; an older page is dropped if the view changed meanwhile.
+  const articleQueryRef = useRef('');
   const [refreshingFeeds, setRefreshingFeeds] = useState(false);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
@@ -114,34 +119,65 @@ export const App: React.FC = () => {
     }
   }, [user]);
 
+  const buildArticleQuery = useCallback(() => {
+    const qs = new URLSearchParams({
+      scope: activeScope,
+      unreadOnly: String(unreadOnly),
+    });
+    if (activeScope === 'folder' && activeFolderId) {
+      qs.set('folderId', activeFolderId);
+    }
+    if (activeScope === 'feed' && activeFeedId) {
+      qs.set('feedId', activeFeedId);
+    }
+    if (searchQuery.trim()) {
+      qs.set('search', searchQuery.trim());
+    }
+    return qs;
+  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+
   const fetchArticles = useCallback(async () => {
     if (!user) return;
     setLoadingArticles(true);
     try {
-      const qs = new URLSearchParams({
-        scope: activeScope,
-        unreadOnly: String(unreadOnly),
-      });
-      if (activeScope === 'folder' && activeFolderId) {
-        qs.set('folderId', activeFolderId);
-      }
-      if (activeScope === 'feed' && activeFeedId) {
-        qs.set('feedId', activeFeedId);
-      }
-      if (searchQuery.trim()) {
-        qs.set('search', searchQuery.trim());
-      }
-
-      const res = await apiRequest<{ articles: ArticleItem[] }>(
+      const qs = buildArticleQuery();
+      articleQueryRef.current = qs.toString();
+      const res = await apiRequest<{ articles: ArticleItem[]; hasMore?: boolean }>(
         `/api/articles?${qs.toString()}`
       );
       setArticles(res.articles);
+      setHasMoreArticles(Boolean(res.hasMore));
     } catch {
       // ignore
     } finally {
       setLoadingArticles(false);
     }
-  }, [user, activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+  }, [user, buildArticleQuery]);
+
+  const loadMoreArticles = useCallback(async () => {
+    const last = articles[articles.length - 1];
+    if (!user || !last || !hasMoreArticles || loadingMoreArticles) return;
+    setLoadingMoreArticles(true);
+    const query = articleQueryRef.current;
+    try {
+      const qs = new URLSearchParams(query);
+      qs.set('before', last.published_at);
+      qs.set('beforeId', last.id);
+      const res = await apiRequest<{ articles: ArticleItem[]; hasMore?: boolean }>(
+        `/api/articles?${qs.toString()}`
+      );
+      if (articleQueryRef.current !== query) return;
+      setArticles((prev) => {
+        const seen = new Set(prev.map((a) => a.id));
+        return [...prev, ...res.articles.filter((a) => !seen.has(a.id))];
+      });
+      setHasMoreArticles(Boolean(res.hasMore));
+    } catch {
+      // ignore; the button stays available for another try
+    } finally {
+      setLoadingMoreArticles(false);
+    }
+  }, [user, articles, hasMoreArticles, loadingMoreArticles]);
 
   useEffect(() => {
     if (user) {
@@ -534,6 +570,13 @@ export const App: React.FC = () => {
             loading={loadingArticles || loadingBootstrap}
             hasSubscriptions={subscriptions.length > 0}
           />
+          {hasMoreArticles && articles.length > 0 && !loadingArticles && !loadingBootstrap && (
+            <LoadMoreArticles
+              loading={loadingMoreArticles}
+              isDark={isDark}
+              onLoadMore={loadMoreArticles}
+            />
+          )}
         </main>
 
         {/* Bottom Keyboard Shortcut Hint Bar */}

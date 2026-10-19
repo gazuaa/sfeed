@@ -651,6 +651,9 @@ app.get('/api/articles', async (c) => {
   const unreadOnly = c.req.query('unreadOnly') === 'true';
   const search = (c.req.query('search') || '').trim();
   const limit = Math.min(Number(c.req.query('limit') || 80), 200);
+  // Keyset cursor: the last article of the previous page (published_at, id).
+  const before = c.req.query('before') || '';
+  const beforeId = c.req.query('beforeId') || '';
 
   const conditions: string[] = ['s.user_id = ?'];
   const params: unknown[] = [user.id];
@@ -681,7 +684,13 @@ app.get('/api/articles', async (c) => {
     params.push(likePattern, likePattern, likePattern, likePattern);
   }
 
-  params.push(limit);
+  if (before) {
+    conditions.push('(a.published_at < ? OR (a.published_at = ? AND a.id < ?))');
+    params.push(before, before, beforeId);
+  }
+
+  // One extra row tells the client whether an older page exists.
+  params.push(limit + 1);
 
   const sql = `
     SELECT
@@ -710,7 +719,7 @@ app.get('/api/articles', async (c) => {
     LEFT JOIN folders fl ON fl.id = s.folder_id
     LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
     WHERE ${conditions.join(' AND ')}
-    ORDER BY a.published_at DESC
+    ORDER BY a.published_at DESC, a.id DESC
     LIMIT ?
   `;
 
@@ -718,7 +727,9 @@ app.get('/api/articles', async (c) => {
     .bind(...params)
     .all<Record<string, unknown>>();
 
-  const articles: ArticleItem[] = (res.results || []).map((row) => ({
+  const rows = res.results || [];
+  const hasMore = rows.length > limit;
+  const articles: ArticleItem[] = rows.slice(0, limit).map((row) => ({
     id: String(row.id),
     feed_id: String(row.feed_id),
     feed_title: String(row.feed_title || ''),
@@ -740,7 +751,7 @@ app.get('/api/articles', async (c) => {
     is_saved: Boolean(Number(row.is_saved)),
   }));
 
-  return c.json({ articles });
+  return c.json({ articles, hasMore });
 });
 
 // Toggle read / saved state on an article
