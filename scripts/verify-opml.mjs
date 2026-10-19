@@ -70,6 +70,7 @@ try {
     const beforeQueries = queries;
     const response = await request('/api/opml/import', { item });
     const result = await response.json();
+    if (item.xmlUrl.endsWith('/broken')) assert.match(result.error, /HTTP 503/, 'Upstream failure reason must reach the UI');
     const status = response.ok ? result.status : 'failed';
     counts[status]++;
     counts.folders += result.foldersCreated || 0;

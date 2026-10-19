@@ -10,7 +10,7 @@ import type {
 } from './types';
 import { CURATED_FEEDS } from './curatedFeeds';
 import type { OpmlFeed } from '../shared/opml';
-import { importOpmlFeed } from './opmlImporter';
+import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
 import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -996,11 +996,21 @@ app.post('/api/opml/import', async (c) => {
   }
   try {
     return c.json(await importOpmlFeed(c.env.DB, c.get('user').id, { ...item, xmlUrl }));
-  } catch {
+  } catch (error) {
+    const sourceError = error instanceof OpmlSourceError;
+    const detail = error instanceof Error ? error.message : 'Unknown error';
+    console.warn('OPML import failed', {
+      stage: sourceError ? 'fetch' : 'database',
+      sourceHost: new URL(xmlUrl).hostname,
+      // Never log feed URL paths/queries, which may contain private feed tokens.
+      reason: detail.replace(/https?:\/\/[^\s]+/gi, '[feed URL]').slice(0, 300),
+    });
     return c.json({
       status: 'failed' as const,
       foldersCreated: 0,
-      error: '피드를 가져오지 못했습니다. 주소와 연결 상태를 확인한 뒤 다시 시도해 주세요.',
+      error: sourceError
+        ? error.message
+        : '구독 정보를 조회하거나 저장하는 중 오류가 발생했습니다. 서버 오류 기록을 확인해야 합니다.',
     });
   }
 });

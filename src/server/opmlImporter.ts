@@ -3,6 +3,25 @@ import type { D1DatabaseLike } from './types';
 import { fetchAndParseFeed } from './rssParser';
 import { generateId, upsertFeedAndArticles } from './seedService';
 
+export class OpmlSourceError extends Error {
+  constructor(error: unknown) {
+    const message = error instanceof Error ? error.message : '';
+    const status = message.match(/^HTTP (\d{3})$/)?.[1];
+    let reason = '원본 피드 서버에 연결하거나 응답을 읽지 못했습니다.';
+    if (status === '403') reason = '원본 사이트가 서버의 접근을 거부했습니다 (HTTP 403).';
+    else if (status === '404' || status === '410') reason = `RSS 주소를 찾을 수 없습니다 (HTTP ${status}). 주소가 변경되었거나 폐쇄됐을 수 있습니다.`;
+    else if (status === '429') reason = '원본 사이트의 요청 제한에 걸렸습니다 (HTTP 429). 잠시 후 다시 시도해 주세요.';
+    else if (status) reason = `원본 사이트가 오류를 반환했습니다 (HTTP ${status}).`;
+    else if ((error instanceof Error && error.name === 'AbortError') || /abort|timed?\s*out/i.test(message)) {
+      reason = '원본 사이트의 응답 시간이 7초를 초과했습니다.';
+    } else if (message.includes('유효한 RSS 또는 Atom')) {
+      reason = '해당 주소가 RSS 또는 Atom 피드 대신 다른 내용을 반환했습니다. RSS 주소를 확인해 주세요.';
+    }
+    super(reason, { cause: error });
+    this.name = 'OpmlSourceError';
+  }
+}
+
 export async function importOpmlFeed(
   db: D1DatabaseLike,
   userId: string,
@@ -15,7 +34,12 @@ export async function importOpmlFeed(
   if (existing) return { status: 'existing', foldersCreated: 0 };
 
   // A failed fetch is reported, never replaced with demo articles.
-  const parsed = await fetchAndParseFeed(item.xmlUrl, { allowFallback: false });
+  let parsed;
+  try {
+    parsed = await fetchAndParseFeed(item.xmlUrl, { allowFallback: false });
+  } catch (error) {
+    throw new OpmlSourceError(error);
+  }
   const { feedId } = await upsertFeedAndArticles(db, parsed);
   const canonicalSubscription = await db.prepare(
     'SELECT id FROM subscriptions WHERE user_id = ? AND feed_id = ?'
