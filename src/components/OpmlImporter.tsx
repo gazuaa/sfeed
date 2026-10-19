@@ -1,7 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
 import { apiRequest } from '../client/api';
-import type { OpmlFeed, OpmlImportResult } from '../shared/opml';
+import type { OpmlFeed, OpmlImportFailure, OpmlImportResult } from '../shared/opml';
+import { SavedOpmlFailures } from './SavedOpmlFailures';
+
+interface QueueItem { item: OpmlFeed; previousUrl?: string }
 
 interface ImportReport {
   total: number;
@@ -9,7 +12,7 @@ interface ImportReport {
   imported: number;
   existing: number;
   foldersCreated: number;
-  failures: { item: OpmlFeed; error: string }[];
+  failures: { item: OpmlFeed; error: string; saved: boolean }[];
 }
 
 interface OpmlImporterProps {
@@ -24,9 +27,24 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
-  const [pending, setPending] = useState<OpmlFeed[]>([]);
+  const [pending, setPending] = useState<QueueItem[]>([]);
+  const [savedFailures, setSavedFailures] = useState<OpmlImportFailure[]>([]);
+  const [savedError, setSavedError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const stopRequested = useRef(false);
   const busy = useRef(false);
+
+  const reloadFailures = useCallback(async () => {
+    try {
+      const result = await apiRequest<{ failures: OpmlImportFailure[] }>('/api/opml/failures');
+      setSavedFailures(result.failures);
+      setSavedError(null);
+    } catch {
+      setSavedError('저장된 실패 목록을 불러오지 못했습니다. 목록 새로고침을 눌러 주세요.');
+    }
+  }, []);
+
+  useEffect(() => { void reloadFailures(); }, [reloadFailures]);
 
   const changeText = (value: string) => {
     setText(value);
@@ -46,7 +64,7 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
     event.target.value = '';
   };
 
-  const startImport = async (retryFailed = false) => {
+  const startImport = async (retryQueue?: QueueItem[], keepReport = false) => {
     if (busy.current) return;
     busy.current = true;
     stopRequested.current = false;
@@ -55,11 +73,13 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
     setError(null);
     onBusyChange(true);
     try {
-      let queue: OpmlFeed[];
+      let queue: QueueItem[];
       let current: ImportReport;
-      if (retryFailed && report) {
-        queue = report.failures.map((failure) => failure.item);
-        current = { ...report, processed: report.processed - queue.length, failures: [] };
+      if (retryQueue) {
+        queue = retryQueue;
+        current = keepReport && report
+          ? { ...report, processed: report.processed - queue.length, failures: [] }
+          : { total: queue.length, processed: 0, imported: 0, existing: 0, foldersCreated: 0, failures: [] };
       } else if (pending.length > 0 && report) {
         queue = pending;
         current = { ...report };
@@ -67,21 +87,30 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
         const parsed = await apiRequest<{ items: OpmlFeed[]; totalFound: number }>('/api/opml/parse', {
           method: 'POST', body: JSON.stringify({ opmlXml: text }),
         });
-        queue = parsed.items;
+        queue = parsed.items.map((item) => ({ item }));
         current = { total: parsed.totalFound, processed: 0, imported: 0, existing: 0, foldersCreated: 0, failures: [] };
       }
       setReport(current);
       let index = 0;
       for (; index < queue.length; index++) {
         if (stopRequested.current) break;
-        const item = queue[index];
+        const { item, previousUrl } = queue[index];
         let result: OpmlImportResult;
         try {
           result = await apiRequest<OpmlImportResult>('/api/opml/import', {
-            method: 'POST', body: JSON.stringify({ item }),
+            method: 'POST', body: JSON.stringify({ item, previousUrl }),
           });
         } catch (err) {
           result = { status: 'failed', foldersCreated: 0, error: err instanceof Error ? err.message : '가져오기에 실패했습니다.' };
+        }
+        let saved = result.failureSaved === true;
+        if (result.status === 'failed' && !saved) {
+          try {
+            await apiRequest('/api/opml/failures', {
+              method: 'POST', body: JSON.stringify({ item, error: result.error || '가져오기에 실패했습니다.' }),
+            });
+            saved = true;
+          } catch { /* Keep an explicit unsaved marker in this screen. */ }
         }
         current = {
           ...current,
@@ -90,7 +119,7 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
           existing: current.existing + (result.status === 'existing' ? 1 : 0),
           foldersCreated: current.foldersCreated + result.foldersCreated,
           failures: result.status === 'failed'
-            ? [...current.failures, { item, error: result.error || '가져오기에 실패했습니다.' }]
+            ? [...current.failures, { item, error: result.error || '가져오기에 실패했습니다.', saved }]
             : current.failures,
         };
         setReport(current);
@@ -101,6 +130,7 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
     } finally {
       // Refresh the workspace once, rather than after every imported feed.
       try { await onSubscribed(); } catch { /* The next refresh will reload the workspace. */ }
+      await reloadFailures();
       busy.current = false;
       setRunning(false);
       setStopping(false);
@@ -109,6 +139,7 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
   };
 
   return (
+    <div className="space-y-6">
     <div className={`p-4 rounded-2xl border space-y-3 ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -170,7 +201,7 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
         {!running && pending.length === 0 && report && report.failures.length > 0 && (
           <button
             type="button"
-            onClick={() => startImport(true)}
+            onClick={() => startImport(report.failures.map((failure) => ({ item: failure.item })), true)}
             className="px-3 py-2 rounded-xl border border-emerald-500/40 text-emerald-500 text-xs cursor-pointer"
           >
             실패한 피드 {report.failures.length}개 다시 시도
@@ -182,16 +213,31 @@ export const OpmlImporter: React.FC<OpmlImporterProps> = ({ isDark, onBusyChange
         <details className="text-xs">
           <summary className="text-rose-400 cursor-pointer">가져오지 못한 피드 {report.failures.length}개 확인</summary>
           <ul className="mt-3 space-y-3">
-            {report.failures.map(({ item, error: reason }, index) => (
+            {report.failures.map(({ item, error: reason, saved }, index) => (
               <li key={`${item.xmlUrl}-${index}`}>
                 <p className="font-semibold break-words">{item.title}</p>
                 <p className="text-slate-400 break-all">{item.xmlUrl}</p>
                 <p className="mt-1 text-rose-400">{reason}</p>
+                <p className={saved ? 'text-slate-400' : 'text-amber-500'}>{saved ? '계정에 저장됨' : '실패 기록을 저장하지 못했습니다. 화면을 닫기 전에 주소를 복사해 주세요.'}</p>
               </li>
             ))}
           </ul>
         </details>
       )}
+    </div>
+    <SavedOpmlFailures
+      failures={savedFailures}
+      drafts={drafts}
+      busy={running}
+      error={savedError}
+      onDraft={(url, value) => setDrafts((current) => ({ ...current, [url]: value }))}
+      onReload={() => { void reloadFailures(); }}
+      onRetry={(failures) => startImport(failures.map((failure) => ({
+        item: { ...failure.item, xmlUrl: (drafts[failure.item.xmlUrl] ?? failure.item.xmlUrl).trim() },
+        previousUrl: failure.item.xmlUrl,
+      })))}
+      isDark={isDark}
+    />
     </div>
   );
 };

@@ -78,19 +78,47 @@ try {
     assert.ok(queries - beforeQueries < 25, 'One feed must fit comfortably within a Worker query budget');
   }
   assert.deepEqual(counts, { imported: 125, existing: 1, failed: 2, folders: 1 });
+  let failures = (await (await request('/api/opml/failures')).json()).failures;
+  assert.equal(failures.length, 2, 'Failed imports must survive a fresh API read');
+  const firstFailure = failures.find((failure) => failure.item.xmlUrl.endsWith('/broken'));
+  assert.match(firstFailure.error, /HTTP 503/);
+  await request('/api/opml/import', { item: failed[0] });
+  failures = (await (await request('/api/opml/failures')).json()).failures;
+  const repeated = failures.find((failure) => failure.item.xmlUrl.endsWith('/broken'));
+  assert.equal(repeated.attempts, 2);
+  assert.equal(repeated.firstFailedAt, firstFailure.firstFailedAt);
+  const otherLogin = await app.request('/api/auth/google/quick', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'other-import-user@example.test' }),
+  }, env);
+  const otherToken = (await otherLogin.json()).token;
+  const otherFailures = await app.request('/api/opml/failures', { headers: { authorization: `Bearer ${otherToken}` } }, env);
+  assert.deepEqual((await otherFailures.json()).failures, [], 'Failure lists must be isolated per account');
   let state = await (await request('/api/bootstrap')).json();
   assert.equal(state.subscriptions.length, 125);
   assert.equal(state.folders.length, 1, 'A failed feed must not create an empty folder');
   assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM articles').first()).count, 5000);
   assert.ok(maxParameters <= 100, `Too many bound parameters: ${maxParameters}`);
 
-  const beforeFetches = fetches;
+  const beforeCheckSubscriptions = state.subscriptions.length;
+  const checkResult = await (await request('/api/opml/check', { url: 'https://example.test/check-only' })).json();
+  assert.equal(checkResult.ok, true);
+  assert.equal((await (await request('/api/bootstrap')).json()).subscriptions.length, beforeCheckSubscriptions, 'Connection checks must not subscribe');
+  assert.equal((await (await request('/api/opml/check', { url: 'https://example.test/broken' })).json()).ok, false);
+  const beforeExistingFetches = fetches;
   assert.equal((await (await request('/api/opml/import', { item: parsed.items[124] })).json()).status, 'existing');
-  assert.equal(fetches, beforeFetches, 'Existing subscriptions must not be fetched again');
+  assert.equal(fetches, beforeExistingFetches, 'Existing subscriptions must not be fetched again');
   broken = false;
   assert.equal((await (await request('/api/opml/import', { item: failed[0] })).json()).status, 'imported');
   state = await (await request('/api/bootstrap')).json();
   assert.equal(state.subscriptions.length, 126);
+  failures = (await (await request('/api/opml/failures')).json()).failures;
+  assert.equal(failures.length, 1, 'Successful retry must remove only the resolved failure');
+  assert.equal(failures[0].item.xmlUrl, 'not a URL');
+  assert.equal((await (await request('/api/opml/import', {
+    item: { ...failed[1], xmlUrl: 'https://example.test/corrected-feed' }, previousUrl: 'not a URL',
+  })).json()).status, 'imported');
+  assert.deepEqual((await (await request('/api/opml/failures')).json()).failures, [], 'Correcting a URL must clear the original unresolved entry');
 
   // Bulk article writes must preserve IDs, saved/read state and fill missing content.
   const article = await db.prepare('SELECT id FROM articles ORDER BY id LIMIT 1').first();
@@ -105,7 +133,13 @@ try {
   assert.equal((await db.prepare('SELECT content_html FROM articles WHERE id = ?').bind(article.id).first()).content_html, 'Real article content');
   const saved = await db.prepare('SELECT is_read, is_saved FROM article_states WHERE article_id = ?').bind(article.id).first();
   assert.deepEqual({ ...saved }, { is_read: 1, is_saved: 1 });
-  console.log('PASS: all 128 OPML entries processed; 125 new, 1 existing, 2 reported failures; retry works; folders preserved; 5,000 articles fit query/parameter budgets; refresh preserves read/bookmark state.');
+  const { parseXmlFeedContent } = await vite.ssrLoadModule('/src/server/rssParser.ts');
+  const movedFeed = parseXmlFeedContent('<rss><channel><title>Vitalik</title><link>https://vitalik.ca/</link><item><guid>stable-id</guid><title>Post</title><link>https://vitalik.ca/general/post.html</link><description><![CDATA[<a href="https://vitalik.ca/general/related.html">Related</a>]]></description></item></channel></rss>', 'https://vitalik.eth.limo/feed.xml');
+  assert.equal(movedFeed.htmlUrl, 'https://vitalik.eth.limo/');
+  assert.equal(movedFeed.articles[0].url, 'https://vitalik.eth.limo/general/post.html');
+  assert.equal(movedFeed.articles[0].guid, 'stable-id');
+  assert.ok(movedFeed.articles[0].contentHtml.includes('https://vitalik.eth.limo/general/related.html'));
+  console.log('PASS: 128 OPML entries; durable account-isolated failures with attempt counts; retry and URL correction clear resolved entries; 5,000 articles fit query/parameter budgets; read/bookmark states and moved Vitalik links preserved.');
 } finally {
   globalThis.fetch = originalFetch;
   await vite.close();

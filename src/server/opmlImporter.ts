@@ -12,6 +12,10 @@ export class OpmlSourceError extends Error {
     else if (status === '404' || status === '410') reason = `RSS 주소를 찾을 수 없습니다 (HTTP ${status}). 주소가 변경되었거나 폐쇄됐을 수 있습니다.`;
     else if (status === '429') reason = '원본 사이트의 요청 제한에 걸렸습니다 (HTTP 429). 잠시 후 다시 시도해 주세요.';
     else if (status) reason = `원본 사이트가 오류를 반환했습니다 (HTTP ${status}).`;
+    else if (/ENOTFOUND|EAI_AGAIN|DNS|resolve/i.test(message) ||
+      (error instanceof Error && /ENOTFOUND|EAI_AGAIN/.test(String((error.cause as { code?: string })?.code)))) {
+      reason = 'RSS 도메인을 찾을 수 없습니다 (DNS 조회 실패). 주소 변경 또는 도메인 상태를 확인해 주세요.';
+    }
     else if ((error instanceof Error && error.name === 'AbortError') || /abort|timed?\s*out/i.test(message)) {
       reason = '원본 사이트의 응답 시간이 7초를 초과했습니다.';
     } else if (message.includes('유효한 RSS 또는 Atom')) {

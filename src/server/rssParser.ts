@@ -174,7 +174,7 @@ export function getFaviconForSite(siteUrl: string | null, xmlUrl: string): strin
   }
 }
 
-export function parseXmlFeedContent(xmlText: string, xmlUrl: string): ParsedFeed {
+function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
   const parsed = xmlParser.parse(xmlText) as Record<string, unknown>;
 
   // RSS 2.0 or RDF
@@ -350,6 +350,37 @@ export function parseXmlFeedContent(xmlText: string, xmlUrl: string): ParsedFeed
   }
 
   throw new Error('유효한 RSS 또는 Atom 피드 형식이 아닙니다.');
+}
+
+export function parseXmlFeedContent(xmlText: string, xmlUrl: string): ParsedFeed {
+  const parsed = parseXmlFeedContentRaw(xmlText, xmlUrl);
+  // The publisher's live feed still contains vitalik.ca links, whose DNS no
+  // longer resolves. Only repair that publisher's old host, preserving GUIDs.
+  if (/^https?:\/\/vitalik\.eth\.limo\//i.test(xmlUrl)) {
+    const repairUrl = (value: string | null): string | null => {
+      if (!value) return value;
+      try {
+        const url = new URL(value);
+        if (url.hostname === 'vitalik.ca' || url.hostname === 'www.vitalik.ca') {
+          url.protocol = 'https:';
+          url.host = 'vitalik.eth.limo';
+          return url.href;
+        }
+      } catch { /* Keep unrelated relative or malformed URLs unchanged. */ }
+      return value;
+    };
+    parsed.htmlUrl = repairUrl(parsed.htmlUrl);
+    parsed.articles = parsed.articles.map((article) => ({
+      ...article,
+      url: repairUrl(article.url)!,
+      thumbnailUrl: repairUrl(article.thumbnailUrl),
+      contentHtml: article.contentHtml?.replace(
+        /https?:\/\/(?:www\.)?vitalik\.ca(?=\/|["'\s<])/gi,
+        'https://vitalik.eth.limo'
+      ) || null,
+    }));
+  }
+  return parsed;
 }
 
 function buildFallbackFeed(xmlUrl: string): ParsedFeed {

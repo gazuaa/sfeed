@@ -11,6 +11,7 @@ import type {
 import { CURATED_FEEDS } from './curatedFeeds';
 import type { OpmlFeed } from '../shared/opml';
 import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
+import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFailures';
 import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -977,13 +978,53 @@ app.post('/api/opml/parse', async (c) => {
   }
 });
 
+function validOpmlItem(item: OpmlFeed | undefined): item is OpmlFeed {
+  return Boolean(item && typeof item.xmlUrl === 'string' && item.xmlUrl.trim() &&
+    (item.title == null || typeof item.title === 'string') &&
+    (item.htmlUrl == null || typeof item.htmlUrl === 'string') &&
+    (item.folderName == null || typeof item.folderName === 'string'));
+}
+
+app.get('/api/opml/failures', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ failures: await listOpmlFailures(c.env.DB, c.get('user').id) });
+});
+
+// Diagnose a migrated URL in the same Worker environment without subscribing.
+app.post('/api/opml/check', async (c) => {
+  const body = await c.req.json<{ url?: string }>();
+  let url: URL;
+  try {
+    if (typeof body.url !== 'string') throw new Error();
+    url = new URL(body.url.trim());
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+  } catch {
+    return c.json({ error: '올바른 HTTP 또는 HTTPS RSS 주소가 아닙니다.' }, 400);
+  }
+  try {
+    const parsed = await fetchAndParseFeed(url.href, { allowFallback: false });
+    return c.json({ ok: true, title: parsed.title, articles: parsed.articles.length });
+  } catch (error) {
+    return c.json({ ok: false, error: new OpmlSourceError(error).message });
+  }
+});
+
+// The client can also record a network/interrupted-response failure, without
+// exposing its private feed URL to any service other than the user's own account.
+app.post('/api/opml/failures', async (c) => {
+  const body = await c.req.json<{ item?: OpmlFeed; error?: string }>();
+  if (!validOpmlItem(body.item) || typeof body.error !== 'string' || !body.error.trim()) {
+    return c.json({ error: '저장할 실패 항목을 확인해 주세요.' }, 400);
+  }
+  await recordOpmlFailure(c.env.DB, c.get('user').id, body.item, body.error);
+  return c.json({ saved: true });
+});
+
 // One feed per request avoids a large file exhausting Worker time or query budgets.
 app.post('/api/opml/import', async (c) => {
-  const body = await c.req.json<{ item?: OpmlFeed }>();
+  const body = await c.req.json<{ item?: OpmlFeed; previousUrl?: string }>();
   const item = body.item;
-  if (!item || typeof item.xmlUrl !== 'string' ||
-      (item.title != null && typeof item.title !== 'string') ||
-      (item.folderName != null && typeof item.folderName !== 'string')) {
+  if (!validOpmlItem(item) || (body.previousUrl != null && typeof body.previousUrl !== 'string')) {
     return c.json({ error: '가져오기 화면을 새로고침한 뒤 OPML 파일을 다시 선택해 주세요.' }, 400);
   }
   let xmlUrl: string;
@@ -992,10 +1033,17 @@ app.post('/api/opml/import', async (c) => {
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
     xmlUrl = url.href;
   } catch {
-    return c.json({ error: '올바른 HTTP 또는 HTTPS RSS 주소가 아닙니다.' }, 400);
+    const error = '올바른 HTTP 또는 HTTPS RSS 주소가 아닙니다.';
+    await recordOpmlFailure(c.env.DB, c.get('user').id, item, error);
+    if (body.previousUrl && body.previousUrl !== item.xmlUrl) {
+      await clearOpmlFailure(c.env.DB, c.get('user').id, body.previousUrl);
+    }
+    return c.json({ status: 'failed' as const, foldersCreated: 0, error, failureSaved: true });
   }
   try {
-    return c.json(await importOpmlFeed(c.env.DB, c.get('user').id, { ...item, xmlUrl }));
+    const result = await importOpmlFeed(c.env.DB, c.get('user').id, { ...item, xmlUrl });
+    await clearOpmlFailure(c.env.DB, c.get('user').id, xmlUrl, body.previousUrl || item.xmlUrl);
+    return c.json(result);
   } catch (error) {
     const sourceError = error instanceof OpmlSourceError;
     const detail = error instanceof Error ? error.message : 'Unknown error';
@@ -1005,12 +1053,24 @@ app.post('/api/opml/import', async (c) => {
       // Never log feed URL paths/queries, which may contain private feed tokens.
       reason: detail.replace(/https?:\/\/[^\s]+/gi, '[feed URL]').slice(0, 300),
     });
+    const message = sourceError
+      ? error.message
+      : '구독 정보를 조회하거나 저장하는 중 오류가 발생했습니다. 서버 오류 기록을 확인해야 합니다.';
+    let failureSaved = false;
+    try {
+      await recordOpmlFailure(c.env.DB, c.get('user').id, { ...item, xmlUrl }, message);
+      if (body.previousUrl && body.previousUrl !== xmlUrl) {
+        await clearOpmlFailure(c.env.DB, c.get('user').id, body.previousUrl);
+      }
+      failureSaved = true;
+    } catch {
+      console.error('Could not persist OPML import failure');
+    }
     return c.json({
       status: 'failed' as const,
       foldersCreated: 0,
-      error: sourceError
-        ? error.message
-        : '구독 정보를 조회하거나 저장하는 중 오류가 발생했습니다. 서버 오류 기록을 확인해야 합니다.',
+      error: message,
+      failureSaved,
     });
   }
 });

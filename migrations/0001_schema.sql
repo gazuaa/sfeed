@@ -99,3 +99,18 @@ CREATE TABLE IF NOT EXISTS article_states (
 
 CREATE INDEX IF NOT EXISTS idx_article_states_user_saved ON article_states(user_id, is_saved);
 CREATE INDEX IF NOT EXISTS idx_article_states_user_read ON article_states(user_id, is_read);
+
+-- Unresolved import failures are private to the signed-in user.
+CREATE TABLE IF NOT EXISTS opml_import_failures (
+  user_id TEXT NOT NULL,
+  xml_url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  html_url TEXT,
+  folder_name TEXT,
+  error_message TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  first_failed_at TEXT NOT NULL,
+  last_failed_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, xml_url),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

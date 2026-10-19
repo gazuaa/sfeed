@@ -9,4 +9,14 @@ export interface OpmlImportResult {
   status: 'imported' | 'existing' | 'failed';
   foldersCreated: number;
   error?: string;
+  failureSaved?: boolean;
+}
+
+export interface OpmlImportFailure {
+  item: OpmlFeed;
+  error: string;
+  attempts: number;
+  firstFailedAt: string;
+  lastFailedAt: string;
+  suggestedUrl: string | null;
 }
