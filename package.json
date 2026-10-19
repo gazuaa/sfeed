@@ -13,7 +13,9 @@
     "cf:dev": "vite build && wrangler dev",
     "cf:deploy": "vite build && wrangler deploy",
     "db:migrate:local": "wrangler d1 execute sfeed --local --file=./migrations/0001_schema.sql",
-    "db:migrate:remote": "wrangler d1 execute sfeed --remote --file=./migrations/0001_schema.sql"
+    "db:migrate:remote": "wrangler d1 execute sfeed --remote --file=./migrations/0001_schema.sql",
+    "test:feedly": "node --test scripts/verify-feedly-import.mjs",
+    "import:feedly:sync": "node scripts/sync-feedly-history.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.0.8",

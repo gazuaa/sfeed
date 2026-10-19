@@ -33,6 +33,8 @@
 7. **Feedly 과거 기록 가져오기 (1회성 스크립트)**
    - RSS는 최신 글 일부만 담으므로, Feedly 공개 스트림에서 구독 피드의 전체 기록(제목·요약·링크·썸네일·날짜)을 받아 저장합니다. 기존 글과는 원래 글 ID로 맞춰 중복 없이 합칩니다.
    - `npm run import:feedly -- download --db remote --user <userId>` 로 `.local/feedly-import/`에 내려받고(이어받기 지원), `npm run import:feedly -- write --db remote --user <userId>` 로 D1에 기록합니다.
+   - `npm run import:feedly:sync -- --db remote --user <userId>` 는 다운로드와 10분 간격 D1 반영을 함께 실행합니다. 다운로드 중이거나 요청 제한으로 대기 중이어도 이미 받은 글을 반영하며, 다운로드 진행과 DB 반영 위치는 별도 파일에 저장합니다.
+   - 요청 간격은 최소 5초이며, 429 응답의 `Retry-After`·`X-Ratelimit-Reset`을 따릅니다. 반복 제한 시 15분부터 최대 6시간까지 대기를 늘리고(서버가 더 긴 시간을 요구하면 해당 시간을 적용), 재시작해도 대기 시각을 유지합니다.
    - Feedly처럼 30일이 지난 글은 따로 표시하지 않아도 읽은 글로 취급하며, 안읽음 수·안읽음 필터·모두 읽음은 최근 30일 글만 대상으로 합니다.
 
 ---

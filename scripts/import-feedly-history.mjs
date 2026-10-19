@@ -20,10 +20,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'vite';
+import { acquireLock, createFeedlyClient, readEntries as readCompleteEntries, saveJson } from './feedly-import-support.mjs';
 
-const FEEDLY_STREAM = 'https://cloud.feedly.com/v3/streams/contents';
-const PAGE_SIZE = 50; // the unauthenticated maximum
-const REQUEST_GAP_MS = 1000;
 const DIR = '.local/feedly-import';
 const LOCAL_DB = '.local/sfeed.sqlite';
 const ROWS_PER_STATEMENT = 25; // keeps each INSERT well under D1's 100 KB statement limit
@@ -38,16 +36,19 @@ if (!['download', 'write'].includes(command) || !opts.user || !['local', 'remote
 }
 mkdirSync(DIR, { recursive: true });
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sql = (value) => (value == null ? 'NULL' : `'${String(value).replace(/\u0000/g, '').replace(/'/g, "''")}'`);
 const feedKey = (xmlUrl) => createHash('sha1').update(xmlUrl).digest('hex').slice(0, 16);
 const statePath = (xmlUrl) => join(DIR, `${feedKey(xmlUrl)}.state.json`);
 const dataPath = (xmlUrl) => join(DIR, `${feedKey(xmlUrl)}.jsonl`);
 const readState = (xmlUrl) =>
   existsSync(statePath(xmlUrl)) ? JSON.parse(readFileSync(statePath(xmlUrl), 'utf8')) : { xmlUrl, cursor: null, done: false, count: 0, written: {} };
-const saveState = (state) => writeFileSync(statePath(state.xmlUrl), JSON.stringify(state, null, 2));
-const readEntries = (xmlUrl) =>
-  existsSync(dataPath(xmlUrl)) ? readFileSync(dataPath(xmlUrl), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
+const saveState = (state) => saveJson(statePath(state.xmlUrl), state);
+const readEntries = (xmlUrl) => readCompleteEntries(dataPath(xmlUrl));
+const ratePath = join(DIR, 'rate-limit.json');
+const fetchPage = createFeedlyClient({
+  load: () => existsSync(ratePath) ? JSON.parse(readFileSync(ratePath, 'utf8')) : {},
+  save: (state) => saveJson(ratePath, state),
+});
 
 function query(statement) {
   if (opts.db === 'local') {
@@ -90,36 +91,6 @@ function subscribedFeeds() {
   return opts.feed ? feeds.filter((feed) => feed.xml_url.includes(opts.feed)) : feeds;
 }
 
-async function fetchPage(xmlUrl, newerThan) {
-  const params = new URLSearchParams({ streamId: `feed/${xmlUrl}`, count: String(PAGE_SIZE), ranked: 'oldest' });
-  if (newerThan != null) params.set('newerThan', String(newerThan));
-  for (let attempt = 0; ; attempt++) {
-    await sleep(REQUEST_GAP_MS);
-    let res;
-    try {
-      res = await fetch(`${FEEDLY_STREAM}?${params}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Sfeed history import)' } });
-    } catch (error) {
-      if (attempt >= 5) throw error;
-      await sleep(15_000);
-      continue;
-    }
-    if (res.status === 429) {
-      // Feedly throttles anonymous bursts for a few minutes; back off and resume.
-      const wait = Math.min(10 * 60_000, 60_000 * 2 ** Math.min(attempt, 3));
-      console.log(`  ⏸  rate limited, waiting ${wait / 1000}s`);
-      await sleep(wait);
-      continue;
-    }
-    if (res.status === 404) return [];
-    if (!res.ok) {
-      if (attempt >= 3) throw new Error(`Feedly HTTP ${res.status}`);
-      await sleep(5_000);
-      continue;
-    }
-    return (await res.json()).items || [];
-  }
-}
-
 async function download(stripHtmlToSummary, decodeHtmlEntities) {
   const feeds = subscribedFeeds();
   console.log(`${feeds.length} subscribed feeds`);
@@ -130,7 +101,9 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
       console.log(`✓ ${feed.title}: ${state.count} entries (already downloaded)`);
       continue;
     }
-    const seen = new Set(readEntries(feed.xml_url).map((entry) => entry.feedlyId));
+    const existing = readCompleteEntries(dataPath(feed.xml_url), { repair: true });
+    const seen = new Set(existing.map((entry) => entry.feedlyId));
+    state.count = existing.length;
     let stalled = 0;
     console.log(`↓ ${feed.title}`);
     for (;;) {
@@ -177,17 +150,14 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
 
 function write() {
   const now = new Date().toISOString();
-  let downloading = 0;
   for (const feed of subscribedFeeds()) {
     const state = readState(feed.xml_url);
-    // Skip feeds still downloading: the download process keeps rewriting their
-    // state file, which would drop the write offset recorded here.
-    if (!state.done) {
-      if (existsSync(dataPath(feed.xml_url))) downloading++;
-      continue;
-    }
-    const entries = readEntries(feed.xml_url);
-    let offset = state.written[opts.db] || 0;
+    // Writers own a separate checkpoint: downloading may continue and replace
+    // its state without rolling back the committed database offset.
+    const progressPath = join(DIR, `${feedKey(feed.xml_url)}.${opts.db}.written.json`);
+    const progress = existsSync(progressPath) ? JSON.parse(readFileSync(progressPath, 'utf8')) : {};
+    const entries = readEntries(feed.xml_url).slice(0, state.count);
+    let offset = progress.offset ?? state.written?.[opts.db] ?? 0;
     if (offset >= entries.length) continue;
     console.log(`→ ${feed.title}: writing ${entries.length - offset} entries`);
     const fileRows = opts.db === 'remote' ? ROWS_PER_REMOTE_FILE : entries.length;
@@ -208,23 +178,26 @@ function write() {
       }
       execute(statements);
       offset += chunk.length;
-      state.written[opts.db] = offset;
-      saveState(state);
+      saveJson(progressPath, { offset, updatedAt: new Date().toISOString() });
       process.stdout.write(`  ${offset}/${entries.length}\r`);
     }
     console.log('');
   }
-  if (downloading) console.log(`${downloading} feed(s) still downloading; run write again once they finish.`);
 }
 
-if (command === 'download') {
-  const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
-  try {
-    const { stripHtmlToSummary, decodeHtmlEntities } = await vite.ssrLoadModule('/src/server/rssParser.ts');
-    await download(stripHtmlToSummary, decodeHtmlEntities);
-  } finally {
-    await vite.close();
+const release = acquireLock(DIR, command);
+try {
+  if (command === 'download') {
+    const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+    try {
+      const { stripHtmlToSummary, decodeHtmlEntities } = await vite.ssrLoadModule('/src/server/rssParser.ts');
+      await download(stripHtmlToSummary, decodeHtmlEntities);
+    } finally {
+      await vite.close();
+    }
+  } else {
+    write();
   }
-} else {
-  write();
+} finally {
+  release();
 }
