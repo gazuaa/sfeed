@@ -42,6 +42,9 @@ export function acquireLock(directory, name) {
 const MIN_GAP = 5_000;
 const BASE_COOLDOWN = 15 * 60_000;
 const MAX_COOLDOWN = 6 * 60 * 60_000;
+// Successful pages in a row before easing off: halve the spacing and forget
+// one strike, so a recovered quota is used at full speed again.
+const RECOVERY_STREAK = 20;
 
 export function retryDelay(headers, now) {
   const retryAfter = headers.get('retry-after');
@@ -56,7 +59,7 @@ export function createFeedlyClient({
   now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   random = Math.random, log = console.log,
 } = {}) {
-  const state = { notBefore: 0, gapMs: MIN_GAP, strikes: 0, ...load() };
+  const state = { notBefore: 0, gapMs: MIN_GAP, strikes: 0, okStreak: 0, ...load() };
   state.gapMs = Math.max(MIN_GAP, state.gapMs);
   return async function fetchPage(xmlUrl, newerThan) {
     const params = new URLSearchParams({ streamId: `feed/${xmlUrl}`, count: '50', ranked: 'oldest' });
@@ -86,6 +89,7 @@ export function createFeedlyClient({
       }
       if (response.status === 429) {
         state.strikes++;
+        state.okStreak = 0;
         state.gapMs = Math.min(60_000, Math.max(MIN_GAP, state.gapMs * 2));
         const backoff = Math.min(MAX_COOLDOWN, BASE_COOLDOWN * 2 ** Math.min(state.strikes - 1, 5));
         // Server deadlines are a minimum, even when longer than our own cap.
@@ -108,6 +112,13 @@ export function createFeedlyClient({
       transientErrors = 0;
       // Retain strikes across successful pages: one success does not mean the
       // anonymous quota has recovered. This also survives process restarts.
+      // Only a sustained run of successes eases the spacing back down.
+      state.okStreak = (state.okStreak || 0) + 1;
+      if (state.okStreak >= RECOVERY_STREAK && (state.strikes > 0 || state.gapMs > MIN_GAP)) {
+        state.gapMs = Math.max(MIN_GAP, Math.floor(state.gapMs / 2));
+        state.strikes = Math.max(0, state.strikes - 1);
+        state.okStreak = 0;
+      }
       state.notBefore = now() + state.gapMs;
       save(state);
       return items;

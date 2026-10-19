@@ -47,6 +47,28 @@ test('429 backoff persists across pages/restarts and respects long server waits'
   assert.equal(saved.strikes, 3);
 });
 
+test('a sustained run of successes eases spacing and strikes back down', async () => {
+  let clock = 0;
+  let saved = { gapMs: 40_000, strikes: 3, okStreak: 0 };
+  const requests = [];
+  const client = createFeedlyClient({
+    now: () => clock, sleep: async (ms) => { clock += ms; }, random: () => 0, log: () => {},
+    load: () => saved, save: (state) => { saved = structuredClone(state); },
+    fetchImpl: async () => { requests.push(clock); return new Response('{"items":[]}'); },
+  });
+  for (let i = 0; i < 19; i++) await client('https://example.test/feed', i);
+  assert.equal(saved.gapMs, 40_000, 'fewer than 20 successes keep the spacing');
+  assert.equal(saved.strikes, 3);
+  await client('https://example.test/feed', 19);
+  assert.equal(saved.gapMs, 20_000);
+  assert.equal(saved.strikes, 2);
+  await client('https://example.test/feed', 20);
+  assert.equal(requests[20] - requests[19], 20_000, 'the next request uses the halved spacing');
+  for (let i = 0; i < 100; i++) await client('https://example.test/feed', 21 + i);
+  assert.equal(saved.gapMs, 5_000, 'spacing never drops below the minimum');
+  assert.equal(saved.strikes, 0);
+});
+
 test('a persisted cooldown is honored before the first request', async () => {
   let clock = 1000;
   let requestedAt;

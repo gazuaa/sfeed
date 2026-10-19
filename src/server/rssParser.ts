@@ -171,9 +171,21 @@ function extractItemDate(item: Record<string, unknown>): string {
   return '';
 }
 
+// Feeds that omit the time zone are Korean CMS feeds (AI타임스 sends
+// "2026-10-19 14:46:44"), whose times are KST. Parse them as +09:00
+// explicitly: Workers run in UTC and would otherwise date them 9 hours ahead.
+const HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2}|\b[A-Z]{2,5})\s*$/;
+const ISO_LOCAL = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?$/;
+
 function parseDateSafe(raw: string): string {
   if (!raw) return new Date().toISOString();
-  const parsed = new Date(raw);
+  const text = raw.trim();
+  let parsed = new Date(text);
+  if (!HAS_ZONE.test(text)) {
+    const iso = text.match(ISO_LOCAL);
+    const kst = new Date(iso ? `${iso[1]}T${iso[2] ?? '00:00:00'}+09:00` : `${text} +0900`);
+    if (!isNaN(kst.getTime())) parsed = kst;
+  }
   if (!isNaN(parsed.getTime())) {
     return parsed.toISOString();
   }

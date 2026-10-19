@@ -15,16 +15,20 @@ interface ExistingArticle {
 }
 
 const FETCH_TIME_TOLERANCE_MS = 5 * 60_000;
+const FUTURE_AT_FETCH_MS = 10 * 60_000;
 const DATE_REPAIR_MIN_SHIFT_MS = 60 * 60_000;
+const KST_OFFSET_MS = 9 * 60 * 60_000;
 
 // Mirrors the published_at CASE in the upsert below.
 function needsDateRepair(row: ExistingArticle, feedDate: string): boolean {
   const stored = Date.parse(row.published_at);
   const fetched = Date.parse(row.created_at);
   const fromFeed = Date.parse(feedDate);
+  const suspect =
+    Math.abs(stored - fetched) < FETCH_TIME_TOLERANCE_MS || stored > fetched + FUTURE_AT_FETCH_MS;
   return (
-    Math.abs(stored - fetched) < FETCH_TIME_TOLERANCE_MS &&
-    fromFeed < stored - DATE_REPAIR_MIN_SHIFT_MS
+    (suspect && fromFeed < stored - DATE_REPAIR_MIN_SHIFT_MS) ||
+    Math.abs(stored - fromFeed - KST_OFFSET_MS) < 1000
   );
 }
 
@@ -106,9 +110,12 @@ export async function upsertFeedAndArticles(
   });
 
   // published_at repair: rows saved before a feed's date field was recognised
-  // carry their fetch time (published_at ≈ created_at). Once the feed yields a
-  // real, clearly earlier date, move them back to it. Undated items fall back
-  // to "now", which is never earlier, so they never overwrite a stored date.
+  // carry their fetch time (published_at ≈ created_at), and rows whose zone-less
+  // KST time was read as UTC sit after their own fetch time. Once the feed
+  // yields a real, clearly earlier date, move them back to it. A stored date
+  // exactly 9 hours past the feed's is that same KST misread, even when it is
+  // already in the past. Undated items fall back to "now", which is never
+  // earlier, so they never overwrite a date.
   let insertedCount = 0;
   const seenGuids = new Set(existing.keys());
   const statements = [];
@@ -132,8 +139,10 @@ export async function upsertFeedAndArticles(
         thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
         content_html = COALESCE(articles.content_html, excluded.content_html),
         published_at = CASE
-          WHEN abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
-            AND julianday(excluded.published_at) < julianday(articles.published_at) - 1.0 / 24
+          WHEN ((abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
+                OR julianday(articles.published_at) > julianday(articles.created_at) + 10.0 / 1440)
+              AND julianday(excluded.published_at) < julianday(articles.published_at) - 1.0 / 24)
+            OR abs(julianday(articles.published_at) - julianday(excluded.published_at) - 9.0 / 24) < 1.0 / 86400
           THEN excluded.published_at
           ELSE articles.published_at
         END`
