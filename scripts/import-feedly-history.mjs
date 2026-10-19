@@ -177,8 +177,15 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
 
 function write() {
   const now = new Date().toISOString();
+  let downloading = 0;
   for (const feed of subscribedFeeds()) {
     const state = readState(feed.xml_url);
+    // Skip feeds still downloading: the download process keeps rewriting their
+    // state file, which would drop the write offset recorded here.
+    if (!state.done) {
+      if (existsSync(dataPath(feed.xml_url))) downloading++;
+      continue;
+    }
     const entries = readEntries(feed.xml_url);
     let offset = state.written[opts.db] || 0;
     if (offset >= entries.length) continue;
@@ -207,6 +214,7 @@ function write() {
     }
     console.log('');
   }
+  if (downloading) console.log(`${downloading} feed(s) still downloading; run write again once they finish.`);
 }
 
 if (command === 'download') {
