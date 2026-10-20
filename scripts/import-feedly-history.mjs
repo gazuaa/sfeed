@@ -20,7 +20,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'vite';
-import { acquireLock, createFeedlyClient, readEntries as readCompleteEntries, saveJson } from './feedly-import-support.mjs';
+import { acquireLock, createFeedlyClient, readEntries as readCompleteEntries, runFeedQueue, saveJson } from './feedly-import-support.mjs';
 
 const DIR = '.local/feedly-import';
 const LOCAL_DB = '.local/sfeed.sqlite';
@@ -48,7 +48,9 @@ const ratePath = join(DIR, 'rate-limit.json');
 const fetchPage = createFeedlyClient({
   load: () => existsSync(ratePath) ? JSON.parse(readFileSync(ratePath, 'utf8')) : {},
   save: (state) => saveJson(ratePath, state),
+  ...(opts['requests-per-day'] ? { requestBudget: Number(opts['requests-per-day']) } : {}),
 });
+const manifestPath = join(DIR, `${opts.db}.${feedKey(opts.user)}.feeds.json`);
 
 function query(statement) {
   if (opts.db === 'local') {
@@ -88,27 +90,33 @@ function subscribedFeeds() {
     `SELECT f.id, f.xml_url, f.title FROM feeds f JOIN subscriptions s ON s.feed_id = f.id
      WHERE s.user_id = ${sql(opts.user)} ORDER BY f.title`
   );
+  saveJson(manifestPath, feeds);
   return opts.feed ? feeds.filter((feed) => feed.xml_url.includes(opts.feed)) : feeds;
 }
 
 async function download(stripHtmlToSummary, decodeHtmlEntities) {
   const feeds = subscribedFeeds();
   console.log(`${feeds.length} subscribed feeds`);
-  for (const feed of feeds) {
-    const state = readState(feed.xml_url);
-    state.title = feed.title;
-    if (state.done) {
-      console.log(`✓ ${feed.title}: ${state.count} entries (already downloaded)`);
-      continue;
-    }
-    const existing = readCompleteEntries(dataPath(feed.xml_url), { repair: true });
-    const seen = new Set(existing.map((entry) => entry.feedlyId));
-    state.count = existing.length;
-    let stalled = 0;
-    console.log(`↓ ${feed.title}`);
-    for (;;) {
+  const schedulePath = join(DIR, `${opts.db}.${feedKey(opts.user)}.schedule.json`);
+  const schedule = existsSync(schedulePath) ? JSON.parse(readFileSync(schedulePath, 'utf8')) : {};
+  await runFeedQueue(feeds, {
+    lastUrl: schedule.lastUrl,
+    isDone: (feed) => readState(feed.xml_url).done,
+    saveLast: (lastUrl) => saveJson(schedulePath, { lastUrl, updatedAt: new Date().toISOString() }),
+    step: async (feed) => {
+      const state = readState(feed.xml_url);
+      state.title = feed.title;
+      const existing = readCompleteEntries(dataPath(feed.xml_url), { repair: true });
+      const seen = new Set(existing.map((entry) => entry.feedlyId));
+      state.count = existing.length;
+      console.log(`↓ ${feed.title}`);
       const page = await fetchPage(feed.xml_url, state.cursor);
-      if (page.length === 0) break;
+      if (page.length === 0) {
+        state.done = true;
+        saveState(state);
+        console.log(`✓ ${feed.title}: ${state.count} entries`);
+        return;
+      }
       const fresh = page.filter((entry) => !seen.has(entry.id));
       const lines = fresh.map((entry) => {
         seen.add(entry.id);
@@ -132,24 +140,35 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
       // to keep entries that share it; once a page brings nothing new, step past.
       const newest = Math.max(...page.map((entry) => entry.crawled || entry.published || 0));
       const next = fresh.length > 0 ? newest - 1 : newest;
-      stalled = next <= (state.cursor ?? -1) ? stalled + 1 : 0;
+      state.stalled = next <= (state.cursor ?? -1) ? (state.stalled || 0) + 1 : 0;
       state.cursor = Math.max(next, state.cursor ?? -1);
       saveState(state);
-      if (stalled >= 3) {
-        console.log('  ! cursor stopped advancing; ending this feed early');
-        break;
+      if (state.stalled >= 3) {
+        // Keep the feed visibly incomplete instead of silently losing history.
+        throw new Error(`${feed.title}: cursor stopped advancing; saved progress retained`);
       }
       const last = page.reduce((a, b) => ((a.crawled || 0) > (b.crawled || 0) ? a : b));
-      process.stdout.write(`  ${state.count} entries, now at ${new Date(last.crawled || last.published).toISOString().slice(0, 10)}\r`);
-    }
-    state.done = true;
-    saveState(state);
-    console.log(`\n✓ ${feed.title}: ${state.count} entries`);
-  }
+      console.log(`  ${state.count} entries, now at ${new Date(last.crawled || last.published).toISOString().slice(0, 10)}`);
+    },
+  });
 }
 
 function write() {
   const now = new Date().toISOString();
+  if (existsSync(manifestPath)) {
+    const cached = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const selected = opts.feed ? cached.filter((feed) => feed.xml_url.includes(opts.feed)) : cached;
+    const pending = selected.some((feed) => {
+      const state = readState(feed.xml_url);
+      const path = join(DIR, `${feedKey(feed.xml_url)}.${opts.db}.written.json`);
+      const offset = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).offset : state.written?.[opts.db] || 0;
+      return (state.count || 0) > offset;
+    });
+    if (!pending) {
+      console.log('All downloaded entries have already been published.');
+      return;
+    }
+  }
   for (const feed of subscribedFeeds()) {
     const state = readState(feed.xml_url);
     // Writers own a separate checkpoint: downloading may continue and replace

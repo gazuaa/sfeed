@@ -45,6 +45,33 @@ const MAX_COOLDOWN = 6 * 60 * 60_000;
 // Successful pages in a row before easing off: halve the spacing and forget
 // one strike, so a recovered quota is used at full speed again.
 const RECOVERY_STREAK = 20;
+export const DAY_MS = 24 * 60 * 60_000;
+export const DEFAULT_REQUEST_BUDGET = 800; // Our safety budget, not a claimed Feedly quota.
+
+export function requestDeadline(state, now, budget) {
+  const recent = (state.requests || []).filter((at) => at > now - DAY_MS);
+  return Math.max(
+    state.notBefore || 0,
+    recent.length ? recent.at(-1) + Math.ceil(DAY_MS / budget) : 0,
+    recent.length >= budget ? recent[recent.length - budget] + DAY_MS : 0,
+  );
+}
+
+// Resume after the last visited feed, including when its download is incomplete.
+export function rotateFeeds(feeds, lastUrl) {
+  const index = feeds.findIndex((feed) => feed.xml_url === lastUrl);
+  return index < 0 ? feeds : [...feeds.slice(index + 1), ...feeds.slice(0, index + 1)];
+}
+
+export async function runFeedQueue(feeds, { lastUrl, isDone, step, saveLast }) {
+  const queue = rotateFeeds(feeds, lastUrl).filter((feed) => !isDone(feed));
+  while (queue.length) {
+    const feed = queue.shift();
+    await step(feed);
+    saveLast(feed.xml_url);
+    if (!isDone(feed)) queue.push(feed);
+  }
+}
 
 export function retryDelay(headers, now) {
   const retryAfter = headers.get('retry-after');
@@ -58,7 +85,11 @@ export function createFeedlyClient({
   load = () => ({}), save = () => {}, fetchImpl = fetch,
   now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   random = Math.random, log = console.log,
+  requestBudget = DEFAULT_REQUEST_BUDGET,
 } = {}) {
+  if (!Number.isInteger(requestBudget) || requestBudget < 1 || requestBudget > 10_000) {
+    throw new Error('requests-per-day must be an integer from 1 to 10000');
+  }
   const state = { notBefore: 0, gapMs: MIN_GAP, strikes: 0, okStreak: 0, ...load() };
   state.gapMs = Math.max(MIN_GAP, state.gapMs);
   return async function fetchPage(xmlUrl, newerThan) {
@@ -66,15 +97,24 @@ export function createFeedlyClient({
     if (newerThan != null) params.set('newerThan', String(newerThan));
     let transientErrors = 0;
     for (;;) {
-      const wait = Math.max(0, state.notBefore - now());
+      state.requests = (state.requests || []).filter((at) => at > now() - DAY_MS);
+      state.requestBudget = requestBudget;
+      const deadline = requestDeadline(state, now(), requestBudget);
+      const wait = Math.max(0, deadline - now());
       if (wait) {
-        if (wait > 60_000) log(`  ⏸ Feedly next request at ${new Date(state.notBefore).toISOString()}`);
+        state.nextRequestAt = deadline;
+        save(state);
+        if (wait > 60_000) log(`  ⏸ Feedly next request at ${new Date(deadline).toISOString()} (${state.requests.length}/${requestBudget} requests in 24h)`);
         // Node timers overflow above ~24 days. Chunking also handles long quota resets.
-        while (state.notBefore > now()) await sleep(Math.min(60_000, state.notBefore - now()));
+        while (deadline > now()) await sleep(Math.min(60_000, deadline - now()));
       }
       let response;
       // Persist before making the request, so a restart cannot discard spacing.
       state.notBefore = now() + state.gapMs;
+      state.requests = (state.requests || []).filter((at) => at > now() - DAY_MS);
+      state.requests.push(now());
+      state.totalRequests = (state.totalRequests || 0) + 1;
+      state.nextRequestAt = requestDeadline(state, now(), requestBudget);
       save(state);
       try {
         response = await fetchImpl(`https://cloud.feedly.com/v3/streams/contents?${params}`, {
@@ -84,9 +124,21 @@ export function createFeedlyClient({
       } catch (error) {
         if (++transientErrors > 5) throw error;
         state.notBefore = now() + 30_000 * transientErrors;
+        state.lastError = { at: now(), message: error.message };
         save(state);
         continue;
       }
+      state.lastResponse = {
+        at: now(), status: response.status,
+        retryAfter: response.headers.get('retry-after'),
+        count: response.headers.get('x-ratelimit-count'),
+        limit: response.headers.get('x-ratelimit-limit'),
+        reset: response.headers.get('x-ratelimit-reset'),
+      };
+      const limit = Number(state.lastResponse.limit);
+      const count = Number(state.lastResponse.count);
+      const quotaNotBefore = limit > 0 && count >= limit ? now() + retryDelay(response.headers, now()) : 0;
+      save(state);
       if (response.status === 429) {
         state.strikes++;
         state.okStreak = 0;
@@ -95,6 +147,7 @@ export function createFeedlyClient({
         // Server deadlines are a minimum, even when longer than our own cap.
         const delay = Math.max(backoff, retryDelay(response.headers, now())) + Math.floor(random() * 30_000);
         state.notBefore = now() + delay;
+        state.nextRequestAt = requestDeadline(state, now(), requestBudget);
         save(state);
         log(`  ⏸ Feedly HTTP 429 (#${state.strikes}); retry at ${new Date(state.notBefore).toISOString()}`);
         await response.body?.cancel();
@@ -119,7 +172,8 @@ export function createFeedlyClient({
         state.strikes = Math.max(0, state.strikes - 1);
         state.okStreak = 0;
       }
-      state.notBefore = now() + state.gapMs;
+      state.notBefore = Math.max(quotaNotBefore, now() + state.gapMs);
+      state.nextRequestAt = requestDeadline(state, now(), requestBudget);
       save(state);
       return items;
     }

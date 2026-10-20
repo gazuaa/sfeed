@@ -7,7 +7,58 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { acquireLock, createFeedlyClient, readEntries, retryDelay, saveJson } from './feedly-import-support.mjs';
+import { acquireLock, createFeedlyClient, readEntries, retryDelay, saveJson, requestDeadline, runFeedQueue, DAY_MS } from './feedly-import-support.mjs';
+
+test('budget spaces requests over 24 hours and survives restarts', async () => {
+  let clock = 0;
+  let saved = {};
+  const requests = [];
+  const options = {
+    requestBudget: 2, now: () => clock, sleep: async (ms) => { clock += ms; }, log: () => {},
+    load: () => saved, save: (state) => { saved = structuredClone(state); },
+    fetchImpl: async () => { requests.push(clock); return new Response('{"items":[]}'); },
+  };
+  const client = createFeedlyClient(options);
+  await client('https://example.test/feed');
+  await client('https://example.test/feed');
+  await createFeedlyClient(options)('https://example.test/feed');
+  assert.deepEqual(requests, [0, DAY_MS / 2, DAY_MS]);
+  assert.equal(saved.totalRequests, 3);
+  assert.equal(saved.requests.length, 2);
+  assert.equal(requestDeadline({ requests: [0, 60_000] }, 3_600_000, 2), DAY_MS, 'old bursts also obey the rolling budget');
+});
+
+test('a full quota reported on a successful response pauses the next request', async () => {
+  let clock = 0;
+  let saved = {};
+  const requests = [];
+  const client = createFeedlyClient({
+    now: () => clock, sleep: async (ms) => { clock += ms; }, log: () => {},
+    save: (state) => { saved = structuredClone(state); },
+    fetchImpl: async () => {
+      requests.push(clock);
+      return new Response('{"items":[]}', { headers: { 'x-ratelimit-count': '900', 'x-ratelimit-limit': '900', 'x-ratelimit-reset': '7200' } });
+    },
+  });
+  await client('https://example.test/feed');
+  assert.equal(saved.lastResponse.count, '900');
+  await client('https://example.test/feed');
+  assert.deepEqual(requests, [0, 7_200_000]);
+});
+
+test('large feeds take turns with small feeds and resume after the last visited feed', async () => {
+  const feeds = ['large', 'small', 'medium'].map((xml_url) => ({ xml_url }));
+  const remaining = { large: 4, small: 1, medium: 2 };
+  const visits = [];
+  let last;
+  await runFeedQueue(feeds, {
+    lastUrl: 'large', isDone: (feed) => remaining[feed.xml_url] === 0,
+    step: async (feed) => { visits.push(feed.xml_url); remaining[feed.xml_url]--; },
+    saveLast: (url) => { last = url; },
+  });
+  assert.deepEqual(visits, ['small', 'medium', 'large', 'medium', 'large', 'large', 'large']);
+  assert.equal(last, 'large');
+});
 
 test('Retry-After seconds/date and quota reset are minimum wait times', () => {
   const now = Date.parse('2026-10-19T05:00:00Z');
@@ -30,7 +81,7 @@ test('429 backoff persists across pages/restarts and respects long server waits'
     new Response(JSON.stringify({ items: [] })),
   ];
   const options = {
-    now: () => clock, sleep: async (ms) => { clock += ms; }, random: () => 0,
+    now: () => clock, sleep: async (ms) => { clock += ms; }, random: () => 0, requestBudget: 10000,
     load: () => saved, save: (state) => { saved = structuredClone(state); }, log: () => {},
     fetchImpl: async () => { requests.push(clock); return responses.shift(); },
   };
@@ -52,7 +103,7 @@ test('a sustained run of successes eases spacing and strikes back down', async (
   let saved = { gapMs: 40_000, strikes: 3, okStreak: 0 };
   const requests = [];
   const client = createFeedlyClient({
-    now: () => clock, sleep: async (ms) => { clock += ms; }, random: () => 0, log: () => {},
+    now: () => clock, sleep: async (ms) => { clock += ms; }, random: () => 0, requestBudget: 10000, log: () => {},
     load: () => saved, save: (state) => { saved = structuredClone(state); },
     fetchImpl: async () => { requests.push(clock); return new Response('{"items":[]}'); },
   });
@@ -125,6 +176,9 @@ test('publish an unfinished feed, resume checkpoints, and preserve existing arti
     assert.equal(db.prepare("SELECT id FROM articles WHERE guid='g1'").get().id, 'keep-original');
     assert.equal(JSON.parse(readFileSync(progressPath)).offset, 3);
     assert.deepEqual(JSON.parse(readFileSync(statePath)), state);
+    db.exec('ALTER TABLE subscriptions RENAME TO subscriptions_temporarily_unavailable');
+    run(); // Nothing new: do not query the database just to discover that again.
+    db.exec('ALTER TABLE subscriptions_temporarily_unavailable RENAME TO subscriptions');
     const release = acquireLock(dataDir, 'write');
     assert.throws(() => acquireLock(dataDir, 'write'), /Another Feedly write/);
     release();
