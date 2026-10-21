@@ -9,6 +9,22 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, createFeedlyClient, readEntries, retryDelay, saveJson, requestDeadline, runFeedQueue, DAY_MS } from './feedly-import-support.mjs';
 
+test('default mode resumes a full local budget without dropping request history or server waits', async () => {
+  let clock = 10_000;
+  let saved = { requestBudget: 800, requests: Array.from({ length: 800 }, (_, i) => i), notBefore: 60_000, nextRequestAt: DAY_MS, gapMs: 5000 };
+  const requests = [];
+  const options = {
+    now: () => clock, sleep: async (ms) => { clock += ms; }, log: () => {},
+    load: () => saved, save: (state) => { saved = structuredClone(state); },
+    fetchImpl: async () => { requests.push(clock); return new Response('{"items":[]}'); },
+  };
+  await createFeedlyClient(options)('https://example.test/feed');
+  await createFeedlyClient(options)('https://example.test/feed');
+  assert.deepEqual(requests, [60_000, 65_000]);
+  assert.equal(saved.requestBudget, 0);
+  assert.equal(saved.requests.length, 802);
+});
+
 test('healthy requests run five seconds apart while the rolling cap survives restarts', async () => {
   let clock = 0;
   let saved = {};
