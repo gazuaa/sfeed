@@ -396,7 +396,7 @@ app.get('/api/discover/feeds/:id/preview', async (c) => {
   if (!feed) return c.json({ error: '추천 피드를 찾을 수 없습니다.' }, 404);
 
   try {
-    const parsed = await fetchAndParseFeed(feed.xmlUrl, { allowFallback: false });
+    const parsed = await fetchAndParseFeed(feed.xmlUrl);
     const articles = parsed.articles
       .filter((article) => /^https?:\/\//i.test(article.url))
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
@@ -501,6 +501,14 @@ app.post('/api/subscriptions', async (c) => {
     return c.json({ error: '구독할 RSS URL 또는 웹사이트 주소를 입력해 주세요.' }, 400);
   }
 
+  let parsed;
+  try {
+    parsed = await fetchAndParseFeed(rawUrl);
+  } catch (error) {
+    return c.json({ error: new OpmlSourceError(error).message }, 502);
+  }
+  const { feedId, insertedCount } = await upsertFeedAndArticles(c.env.DB, parsed);
+
   let folderId = body.folderId || null;
   if (!folderId && body.folderName) {
     const folderName = body.folderName.trim();
@@ -522,9 +530,6 @@ app.post('/api/subscriptions', async (c) => {
         .run();
     }
   }
-
-  const parsed = await fetchAndParseFeed(rawUrl);
-  const { feedId, insertedCount } = await upsertFeedAndArticles(c.env.DB, parsed);
 
   const existingSub = await c.env.DB.prepare(
     'SELECT id FROM subscriptions WHERE user_id = ? AND feed_id = ?'
@@ -1024,7 +1029,7 @@ app.post('/api/opml/check', async (c) => {
     return c.json({ error: '올바른 HTTP 또는 HTTPS RSS 주소가 아닙니다.' }, 400);
   }
   try {
-    const parsed = await fetchAndParseFeed(url.href, { allowFallback: false });
+    const parsed = await fetchAndParseFeed(url.href);
     return c.json({ ok: true, title: parsed.title, articles: parsed.articles.length });
   } catch (error) {
     return c.json({ ok: false, error: new OpmlSourceError(error).message });

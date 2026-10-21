@@ -1,6 +1,6 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { OpmlFeed } from '../shared/opml';
-import { CURATED_FEEDS, FALLBACK_ARTICLES_BY_FEED_URL } from './curatedFeeds';
+import { CURATED_FEEDS } from './curatedFeeds';
 
 export interface ParsedArticle {
   guid: string;
@@ -409,58 +409,7 @@ export function parseXmlFeedContent(xmlText: string, xmlUrl: string): ParsedFeed
   return parsed;
 }
 
-function buildFallbackFeed(xmlUrl: string): ParsedFeed {
-  const curated = CURATED_FEEDS.find(
-    (f) => f.xmlUrl.toLowerCase() === xmlUrl.toLowerCase() || f.htmlUrl.toLowerCase() === xmlUrl.toLowerCase()
-  );
-  const canonicalXmlUrl = curated ? curated.xmlUrl : xmlUrl;
-  const htmlUrl = curated ? curated.htmlUrl : xmlUrl;
-  let hostname = 'RSS Feed';
-  try {
-    hostname = new URL(canonicalXmlUrl).hostname;
-  } catch {
-    // ignore
-  }
-  const title = curated ? curated.title : hostname;
-  const description = curated ? curated.description : `${title} RSS 피드`;
-
-  const seeds = FALLBACK_ARTICLES_BY_FEED_URL[canonicalXmlUrl] || [
-    {
-      guid: `${canonicalXmlUrl}-welcome-1`,
-      title: `${title} - 최신 업데이트 및 주요 기술 트렌드 아티클`,
-      url: htmlUrl,
-      author: title,
-      summary: `${title}에서 발행된 최신 소식입니다. 상단 새로고침 버튼이나 원문 보기(Reader View), AI 요약 기능을 활용해 빠르게 핵심 내용을 확인해 보세요.`,
-      contentHtml: `<p><strong>${title}</strong> 피드가 성공적으로 구독되었습니다.</p><p>${description}</p><p>클라우드플레어 배포 환경 및 인터넷 연결 상태에서 새로고침 시 실시간 피드 XML을 가져오며, 우측 상단의 <strong>AI 핵심 요약</strong>과 <strong>원문 전체 스크래핑(Reader View)</strong>을 바로 사용할 수 있습니다.</p>`,
-      thumbnailUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80',
-      publishedAtOffsetMinutes: 30,
-    },
-  ];
-
-  const now = Date.now();
-  return {
-    xmlUrl: canonicalXmlUrl,
-    htmlUrl,
-    title,
-    description,
-    faviconUrl: getFaviconForSite(htmlUrl, canonicalXmlUrl),
-    articles: seeds.map((s) => ({
-      guid: s.guid,
-      title: s.title,
-      url: s.url,
-      author: s.author,
-      summary: s.summary,
-      contentHtml: s.contentHtml,
-      thumbnailUrl: s.thumbnailUrl,
-      publishedAt: new Date(now - s.publishedAtOffsetMinutes * 60_000).toISOString(),
-    })),
-  };
-}
-
-export async function fetchAndParseFeed(
-  inputUrl: string,
-  options: { allowFallback?: boolean } = {}
-): Promise<ParsedFeed> {
+export async function fetchAndParseFeed(inputUrl: string): Promise<ParsedFeed> {
   let normalizedUrl = inputUrl.trim();
   if (!/^https?:\/\//i.test(normalizedUrl)) {
     normalizedUrl = `https://${normalizedUrl}`;
@@ -535,10 +484,6 @@ export async function fetchAndParseFeed(
     }
 
     return parseXmlFeedContent(text, normalizedUrl);
-  } catch (err) {
-    if (options.allowFallback === false) throw err;
-    // Graceful fallback when running in offline sandbox or if target server blocks automated requests
-    return buildFallbackFeed(normalizedUrl);
   } finally {
     clearTimeout(timer);
   }

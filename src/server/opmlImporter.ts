@@ -40,7 +40,7 @@ export async function importOpmlFeed(
   // A failed fetch is reported, never replaced with demo articles.
   let parsed;
   try {
-    parsed = await fetchAndParseFeed(item.xmlUrl, { allowFallback: false });
+    parsed = await fetchAndParseFeed(item.xmlUrl);
   } catch (error) {
     throw new OpmlSourceError(error);
   }

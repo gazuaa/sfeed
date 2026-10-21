@@ -128,7 +128,7 @@ try {
   const { fetchAndParseFeed } = await vite.ssrLoadModule('/src/server/rssParser.ts');
   const { upsertFeedAndArticles } = await vite.ssrLoadModule('/src/server/seedService.ts');
   fillMissingContent = true;
-  const refreshed = await upsertFeedAndArticles(db, await fetchAndParseFeed(feedUrl, { allowFallback: false }));
+  const refreshed = await upsertFeedAndArticles(db, await fetchAndParseFeed(feedUrl));
   assert.equal(refreshed.insertedCount, 0);
   assert.equal((await db.prepare('SELECT content_html FROM articles WHERE id = ?').bind(article.id).first()).content_html, 'Real article content');
   const saved = await db.prepare('SELECT is_read, is_saved FROM article_states WHERE article_id = ?').bind(article.id).first();
