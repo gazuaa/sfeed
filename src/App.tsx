@@ -20,6 +20,7 @@ import { ArticleList } from './components/ArticleList';
 import { LoadMoreArticles } from './components/LoadMoreArticles';
 import { ArticleDrawer } from './components/ArticleDrawer';
 import { DiscoverModal } from './components/DiscoverModal';
+import { MarkAllReadDialog } from './components/MarkAllReadDialog';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -65,6 +66,16 @@ export const App: React.FC = () => {
     'curated'
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [markReadTarget, setMarkReadTarget] = useState<{
+    scope: ScopeType;
+    folderId: string | null;
+    feedId: string | null;
+    name: string;
+    searching: boolean;
+  } | null>(null);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const markingAllReadRef = useRef(false);
+  const [markReadError, setMarkReadError] = useState<string | null>(null);
 
   // Sync HTML root class with theme
   useEffect(() => {
@@ -321,20 +332,35 @@ export const App: React.FC = () => {
     }
   }, [activeScope, activeFeedId, fetchBootstrap, fetchArticles]);
 
-  const handleMarkAllRead = async () => {
+  const handleMarkAllRead = () => {
+    setMarkReadError(null);
+    setMarkReadTarget({
+      scope: activeScope, folderId: activeFolderId, feedId: activeFeedId,
+      name: headerInfo.title, searching: Boolean(searchQuery.trim()),
+    });
+  };
+
+  const confirmMarkAllRead = async () => {
+    if (!markReadTarget || markingAllReadRef.current) return;
+    markingAllReadRef.current = true;
+    setMarkingAllRead(true);
+    setMarkReadError(null);
     try {
       await apiRequest('/api/articles/mark-all-read', {
         method: 'POST',
         body: JSON.stringify({
-          scope: activeScope,
-          folderId: activeFolderId,
-          feedId: activeFeedId,
+          scope: markReadTarget.scope,
+          folderId: markReadTarget.folderId,
+          feedId: markReadTarget.feedId,
         }),
       });
-      setArticles((prev) => prev.map((a) => ({ ...a, is_read: true })));
-      fetchBootstrap();
+      await Promise.all([fetchBootstrap(), fetchArticles()]);
+      setMarkReadTarget(null);
     } catch {
-      // ignore
+      setMarkReadError('읽음 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      markingAllReadRef.current = false;
+      setMarkingAllRead(false);
     }
   };
 
@@ -405,7 +431,7 @@ export const App: React.FC = () => {
 
   // Global Keyboard Shortcuts (J/K/M/S/R/ESC)
   useEffect(() => {
-    if (!user) return;
+    if (!user || markReadTarget) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (
@@ -446,6 +472,7 @@ export const App: React.FC = () => {
     selectedArticleId,
     selectedArticle,
     discoverOpen,
+    markReadTarget,
     handleNavigateRelative,
     handleToggleRead,
     handleToggleSaved,
@@ -623,6 +650,18 @@ export const App: React.FC = () => {
         hasNext={selectedIndex >= 0 && selectedIndex < articles.length - 1}
         isDark={isDark}
       />
+
+      {markReadTarget && (
+        <MarkAllReadDialog
+          scopeName={markReadTarget.name}
+          searching={markReadTarget.searching}
+          isDark={isDark}
+          busy={markingAllRead}
+          error={markReadError}
+          onCancel={() => { if (!markingAllRead) setMarkReadTarget(null); }}
+          onConfirm={confirmMarkAllRead}
+        />
+      )}
 
       {/* Discover / Add Feed / OPML Modal */}
       <DiscoverModal

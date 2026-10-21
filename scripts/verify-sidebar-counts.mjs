@@ -47,6 +47,17 @@ try {
   assert.equal(otherData.counts.totalArticles, 1);
   assert.equal(otherData.counts.totalUnread, 1);
   assert.equal(otherData.counts.savedCount, 0);
+  const markSaved = async () => (await app.request('/api/articles/mark-all-read', {
+    method: 'POST', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ scope: 'saved' }),
+  }, env)).json();
+  assert.equal((await markSaved()).markedCount, 0, 'saved view must not mark unread articles outside bookmarks');
+  assert.equal((await bootstrap(owner.token)).counts.totalUnread, 2);
+  await db.prepare('INSERT INTO article_states(user_id,article_id,is_read,is_saved) VALUES(?,?,0,1)').bind(owner.user.id, 'a').run();
+  assert.equal((await markSaved()).markedCount, 1);
+  assert.equal((await bootstrap(owner.token)).counts.totalUnread, 1);
+  assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'a').first()).is_read, 1);
+  assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'd').first()), null);
   console.log('PASS: total/unread counts across all, today, folders and feeds; old history included only in totals; saved count stable; users isolated.');
 } finally {
   await vite.close();

@@ -845,6 +845,8 @@ app.post('/api/articles/mark-all-read', async (c) => {
   } else if (scope === 'feed' && body.feedId) {
     conditions.push('s.feed_id = ?');
     params.push(body.feedId);
+  } else if (scope === 'saved') {
+    conditions.push('COALESCE(st.is_saved, 0) = 1');
   } else if (scope === 'today') {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     conditions.push('a.published_at >= ?');
