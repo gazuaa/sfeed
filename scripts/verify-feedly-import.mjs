@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, createFeedlyClient, readEntries, retryDelay, saveJson, requestDeadline, runFeedQueue, DAY_MS } from './feedly-import-support.mjs';
 
-test('budget spaces requests over 24 hours and survives restarts', async () => {
+test('healthy requests run five seconds apart while the rolling cap survives restarts', async () => {
   let clock = 0;
   let saved = {};
   const requests = [];
@@ -22,7 +22,7 @@ test('budget spaces requests over 24 hours and survives restarts', async () => {
   await client('https://example.test/feed');
   await client('https://example.test/feed');
   await createFeedlyClient(options)('https://example.test/feed');
-  assert.deepEqual(requests, [0, DAY_MS / 2, DAY_MS]);
+  assert.deepEqual(requests, [0, 5000, DAY_MS]);
   assert.equal(saved.totalRequests, 3);
   assert.equal(saved.requests.length, 2);
   assert.equal(requestDeadline({ requests: [0, 60_000] }, 3_600_000, 2), DAY_MS, 'old bursts also obey the rolling budget');

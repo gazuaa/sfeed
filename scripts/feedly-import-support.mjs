@@ -52,7 +52,6 @@ export function requestDeadline(state, now, budget) {
   const recent = (state.requests || []).filter((at) => at > now - DAY_MS);
   return Math.max(
     state.notBefore || 0,
-    recent.length ? recent.at(-1) + Math.ceil(DAY_MS / budget) : 0,
     recent.length >= budget ? recent[recent.length - budget] + DAY_MS : 0,
   );
 }
