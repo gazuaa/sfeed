@@ -30,8 +30,10 @@ export const App: React.FC = () => {
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [counts, setCounts] = useState({
     totalUnread: 0,
+    totalArticles: 0,
     savedCount: 0,
     todayCount: 0,
+    todayTotal: 0,
   });
   const [curatedFeeds, setCuratedFeeds] = useState<CuratedFeedItem[]>([]);
   const [loadingBootstrap, setLoadingBootstrap] = useState(true);
@@ -518,6 +520,7 @@ export const App: React.FC = () => {
         folders={folders}
         subscriptions={subscriptions}
         counts={counts}
+        unreadOnly={unreadOnly}
         activeScope={activeScope}
         activeFolderId={activeFolderId}
         activeFeedId={activeFeedId}

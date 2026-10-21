@@ -113,6 +113,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           <button
             type="button"
             onClick={onToggleUnreadOnly}
+            aria-pressed={unreadOnly}
             title="안읽은 아티클만 필터링"
             className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer ${
               unreadOnly

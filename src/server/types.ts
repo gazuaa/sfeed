@@ -81,6 +81,7 @@ export interface SubscriptionItem {
   last_fetched_at: string | null;
   last_error: string | null;
   unread_count: number;
+  total_count: number;
 }
 
 export interface ArticleItem {

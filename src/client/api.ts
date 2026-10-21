@@ -38,6 +38,7 @@ export interface SubscriptionItem {
   last_fetched_at: string | null;
   last_error: string | null;
   unread_count: number;
+  total_count: number;
 }
 
 export interface ArticleItem {
@@ -79,8 +80,10 @@ export interface BootstrapResponse {
   subscriptions: SubscriptionItem[];
   counts: {
     totalUnread: number;
+    totalArticles: number;
     savedCount: number;
     todayCount: number;
+    todayTotal: number;
   };
   curatedFeeds: CuratedFeedItem[];
 }

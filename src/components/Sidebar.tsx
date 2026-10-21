@@ -21,17 +21,15 @@ import type {
   SubscriptionItem,
   ScopeType,
   UserProfile,
+  BootstrapResponse,
 } from '../client/api';
 
 interface SidebarProps {
   user: UserProfile;
   folders: FolderItem[];
   subscriptions: SubscriptionItem[];
-  counts: {
-    totalUnread: number;
-    savedCount: number;
-    todayCount: number;
-  };
+  counts: BootstrapResponse['counts'];
+  unreadOnly: boolean;
   activeScope: ScopeType;
   activeFolderId: string | null;
   activeFeedId: string | null;
@@ -55,6 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   folders,
   subscriptions,
   counts,
+  unreadOnly,
   activeScope,
   activeFolderId,
   activeFeedId,
@@ -91,6 +90,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const uncategorizedSubs = subscriptions.filter(
     (s) => !s.folder_id || !folders.some((f) => f.id === s.folder_id)
   );
+  const getFeedCount = (sub: SubscriptionItem) => unreadOnly ? sub.unread_count : sub.total_count;
+  const allCount = unreadOnly ? counts.totalUnread : counts.totalArticles;
+  const todayCount = unreadOnly ? counts.todayCount : counts.todayTotal;
 
   const navItemClass = (isActive: boolean) =>
     `w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition cursor-pointer ${
@@ -179,9 +181,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Sun className="w-4 h-4 text-amber-400" />
                 <span>오늘의 아티클 (Today)</span>
               </div>
-              {counts.todayCount > 0 && (
+              {todayCount > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-semibold">
-                  {counts.todayCount}
+                  {todayCount}
                 </span>
               )}
             </button>
@@ -198,9 +200,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Layers className="w-4 h-4 text-emerald-400" />
                 <span>전체 피드 (All)</span>
               </div>
-              {counts.totalUnread > 0 && (
+              {allCount > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
-                  {counts.totalUnread}
+                  {allCount}
                 </span>
               )}
             </button>
@@ -272,8 +274,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 const folderSubs = subscriptions.filter(
                   (s) => s.folder_id === folder.id
                 );
-                const folderUnread = folderSubs.reduce(
-                  (sum, s) => sum + s.unread_count,
+                const folderCount = folderSubs.reduce(
+                  (sum, s) => sum + getFeedCount(s),
                   0
                 );
                 const isCollapsed = Boolean(collapsedFolders[folder.id]);
@@ -316,9 +318,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        {folderUnread > 0 && (
+                        {folderCount > 0 && (
                           <span className="text-[11px] text-slate-400 font-medium">
-                            {folderUnread}
+                            {folderCount}
                           </span>
                         )}
                         <button
@@ -377,9 +379,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   <span className="truncate">{sub.title}</span>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
-                                  {sub.unread_count > 0 && (
+                                  {getFeedCount(sub) > 0 && (
                                     <span className="text-[11px] text-slate-500">
-                                      {sub.unread_count}
+                                      {getFeedCount(sub)}
                                     </span>
                                   )}
                                   <button
@@ -441,9 +443,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span className="truncate">{sub.title}</span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          {sub.unread_count > 0 && (
+                          {getFeedCount(sub) > 0 && (
                             <span className="text-[11px] text-slate-500">
-                              {sub.unread_count}
+                              {getFeedCount(sub)}
                             </span>
                           )}
                           <button

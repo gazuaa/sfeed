@@ -307,7 +307,7 @@ app.post('/api/user/logout', async (c) => {
   return c.json({ success: true });
 });
 
-// Bootstrap endpoint: folders, subscriptions with unread counts, global counters, curated feeds
+// Bootstrap includes both totals and unread counts so filters can switch instantly.
 app.get('/api/bootstrap', async (c) => {
   const user = c.get('user');
 
@@ -335,7 +335,8 @@ app.get('/api/bootstrap', async (c) => {
          FROM articles a
          LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
          WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0
-       ) as unread_count
+       ) as unread_count,
+       (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id) as total_count
      FROM subscriptions s
      JOIN feeds f ON f.id = s.feed_id
      WHERE s.user_id = ?
@@ -347,9 +348,11 @@ app.get('/api/bootstrap', async (c) => {
   const subscriptions = (subsRes.results || []).map((s) => ({
     ...s,
     unread_count: Number(s.unread_count || 0),
+    total_count: Number(s.total_count || 0),
   }));
 
   const totalUnread = subscriptions.reduce((sum, s) => sum + s.unread_count, 0);
+  const totalArticles = subscriptions.reduce((sum, s) => sum + s.total_count, 0);
 
   const savedRow = await c.env.DB.prepare(
     `SELECT COUNT(*) as cnt
@@ -363,22 +366,25 @@ app.get('/api/bootstrap', async (c) => {
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const todayRow = await c.env.DB.prepare(
-    `SELECT COUNT(*) as cnt
+    `SELECT COUNT(*) as cnt,
+            COALESCE(SUM(CASE WHEN COALESCE(st.is_read, 0) = 0 THEN 1 ELSE 0 END), 0) as unread
      FROM articles a
      JOIN subscriptions s ON s.feed_id = a.feed_id
      LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
-     WHERE s.user_id = ? AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0`
+     WHERE s.user_id = ? AND a.published_at >= ?`
   )
     .bind(user.id, twentyFourHoursAgo)
-    .first<{ cnt: number }>();
+    .first<{ cnt: number; unread: number }>();
 
   return c.json({
     folders: foldersRes.results || [],
     subscriptions,
     counts: {
       totalUnread,
+      totalArticles,
       savedCount: Number(savedRow?.cnt || 0),
-      todayCount: Number(todayRow?.cnt || 0),
+      todayCount: Number(todayRow?.unread || 0),
+      todayTotal: Number(todayRow?.cnt || 0),
     },
     curatedFeeds: CURATED_FEEDS,
   });
