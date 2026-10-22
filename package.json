@@ -20,7 +20,8 @@
     "test:real-feeds": "node scripts/verify-real-feeds.mjs",
     "test:dates": "node scripts/verify-publication-dates.mjs",
     "test:pwa": "node scripts/verify-pwa.mjs",
-    "test:discovery": "node scripts/verify-discovery.mjs"
+    "test:discovery": "node scripts/verify-discovery.mjs",
+    "test:panels": "node scripts/verify-panel-widths.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.0.8",

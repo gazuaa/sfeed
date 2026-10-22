@@ -96,7 +96,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   // 1. COMPACT LIST VIEW (Feedly Title-Only View)
   if (layout === 'list') {
     return (
-      <div className="p-4 lg:p-8 max-w-6xl mx-auto">
+      <div className="sfeed-list-items p-4 lg:p-8 max-w-6xl mx-auto">
         <div
           className={`rounded-2xl border overflow-hidden divide-y ${
             isDark
@@ -110,7 +110,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
               <div
                 key={article.id}
                 onClick={() => onSelectArticle(article)}
-                className={`group flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition cursor-pointer ${
+                className={`sfeed-compact-row group flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition cursor-pointer ${
                   isSelected
                     ? isDark
                       ? 'bg-emerald-500/10'
@@ -120,7 +120,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                     : 'hover:bg-slate-50'
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="sfeed-compact-content flex items-center gap-3 min-w-0 flex-1">
                   {/* Unread / Read Status Toggle */}
                   <button
                     type="button"
@@ -136,7 +136,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   </button>
 
                   {/* Feed Source */}
-                  <div className="flex items-center gap-1.5 w-32 sm:w-40 shrink-0 truncate">
+                  <div className="sfeed-compact-source flex items-center gap-1.5 w-32 sm:w-40 shrink-0 truncate">
                     {article.feed_favicon ? (
                       <img
                         src={article.feed_favicon}
@@ -152,7 +152,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   </div>
 
                   {/* Title & Inline Snippet */}
-                  <div className="min-w-0 flex-1 truncate">
+                  <div className="sfeed-compact-title min-w-0 flex-1 truncate">
                     <span
                       className={`${
                         article.is_read
@@ -224,7 +224,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   // 2. CARDS VIEW (Grid Layout)
   if (layout === 'cards') {
     return (
-      <div className="p-4 lg:p-8 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="sfeed-list-items sfeed-article-cards p-4 lg:p-8 max-w-7xl mx-auto grid grid-cols-1 gap-5">
         {articles.map((article) => {
           const isSelected = selectedArticleId === article.id;
           return (
@@ -373,14 +373,14 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
   // 3. MAGAZINE VIEW (Default Feedly Classic Layout)
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-3.5">
+    <div className="sfeed-list-items p-4 lg:p-8 max-w-5xl mx-auto space-y-3.5">
       {articles.map((article) => {
         const isSelected = selectedArticleId === article.id;
         return (
           <article
             key={article.id}
             onClick={() => onSelectArticle(article)}
-            className={`group rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:items-center justify-between transition duration-150 cursor-pointer ${
+            className={`sfeed-magazine-row group rounded-2xl border p-4 sm:p-5 flex flex-col gap-4 justify-between transition duration-150 cursor-pointer ${
               isSelected
                 ? 'ring-2 ring-emerald-500 border-emerald-500/50'
                 : isDark
@@ -510,7 +510,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
             {/* Right Thumbnail */}
             {article.thumbnail_url && (
-              <div className="sm:w-44 sm:h-28 h-44 w-full rounded-xl overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
+              <div className="sfeed-magazine-thumbnail h-32 w-full rounded-xl overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
                 <img
                   src={article.thumbnail_url}
                   alt={article.title}

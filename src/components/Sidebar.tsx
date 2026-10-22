@@ -103,8 +103,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
+        id="feed-channel-pane"
         aria-label="피드 채널"
-        className={`sfeed-sidebar fixed lg:static inset-y-0 left-0 z-50 w-72 min-h-0 shrink-0 flex flex-col overflow-hidden border-r transition-transform duration-200 ${
+        className={`sfeed-sidebar fixed lg:static inset-y-0 left-0 z-50 w-72 min-h-0 shrink-0 flex flex-col overflow-hidden border-r lg:border-r-0 transition-transform duration-200 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${
           isDark

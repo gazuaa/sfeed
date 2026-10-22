@@ -19,6 +19,7 @@ import { HeaderBar } from './components/HeaderBar';
 import { ArticleList } from './components/ArticleList';
 import { LoadMoreArticles } from './components/LoadMoreArticles';
 import { ArticleDrawer } from './components/ArticleDrawer';
+import { ResizableWorkspace } from './components/ResizableWorkspace';
 import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
@@ -540,117 +541,117 @@ export const App: React.FC = () => {
   const isDark = theme === 'dark';
 
   return (
-    <div
-      className={`sfeed-shell h-dvh min-h-0 overflow-hidden flex ${
-        isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
-      }`}
-    >
-      {/* Left Navigation Sidebar */}
-      <Sidebar
-        user={user}
-        folders={folders}
-        subscriptions={subscriptions}
-        counts={counts}
-        unreadOnly={unreadOnly}
-        activeScope={activeScope}
-        activeFolderId={activeFolderId}
-        activeFeedId={activeFeedId}
-        onSelectScope={handleSelectScope}
-        onSelectLibraryTab={handleSelectLibraryTab}
-        onOpenDiscover={(tab = 'curated') => {
-          setDiscoverTab(tab);
-          setDiscoverOpen(true);
-        }}
-        onCreateFolder={handleCreateFolder}
-        onDeleteFolder={handleDeleteFolder}
-        onUnsubscribe={handleUnsubscribe}
-        onLogout={handleLogout}
+    <>
+      <ResizableWorkspace
+        key={user.id}
+        userId={user.id}
         isDark={isDark}
-        mobileOpen={mobileSidebarOpen}
-        onCloseMobile={() => setMobileSidebarOpen(false)}
-      />
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-        <HeaderBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          layout={layout}
-          onChangeLayout={handleChangeLayout}
-          theme={theme}
-          onChangeTheme={handleChangeTheme}
-          onRefresh={handleRefreshFeeds}
-          refreshing={refreshingFeeds}
-          onMarkAllRead={handleMarkAllRead}
-          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
-        />
-
-        <main ref={articleListRef} id="feed-article-list" aria-label="피드 목록" tabIndex={0} className="sfeed-feed-list flex-1 min-h-0 overflow-y-auto overscroll-contain">
-          <ArticleList
-            articles={articles}
-            layout={layout}
-            selectedArticleId={selectedArticleId}
-            onSelectArticle={handleSelectArticle}
-            onToggleRead={handleToggleRead}
-            onToggleSaved={handleToggleSaved}
-            onOpenDiscover={() => {
-              setDiscoverTab('curated');
+        listRef={articleListRef}
+        sidebar={
+          <Sidebar
+            user={user}
+            folders={folders}
+            subscriptions={subscriptions}
+            counts={counts}
+            unreadOnly={unreadOnly}
+            activeScope={activeScope}
+            activeFolderId={activeFolderId}
+            activeFeedId={activeFeedId}
+            onSelectScope={handleSelectScope}
+            onSelectLibraryTab={handleSelectLibraryTab}
+            onOpenDiscover={(tab = 'curated') => {
+              setDiscoverTab(tab);
               setDiscoverOpen(true);
             }}
+            onCreateFolder={handleCreateFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onUnsubscribe={handleUnsubscribe}
+            onLogout={handleLogout}
             isDark={isDark}
-            loading={loadingArticles || loadingBootstrap}
-            hasSubscriptions={subscriptions.length > 0}
+            mobileOpen={mobileSidebarOpen}
+            onCloseMobile={() => setMobileSidebarOpen(false)}
           />
-          {hasMoreArticles && articles.length > 0 && !loadingArticles && !loadingBootstrap && (
-            <LoadMoreArticles
-              loading={loadingMoreArticles}
-              isDark={isDark}
-              onLoadMore={loadMoreArticles}
-            />
-          )}
-        </main>
-
-        {/* Bottom Keyboard Shortcut Hint Bar */}
-        <footer
-          className={`hidden md:flex shrink-0 flex-wrap gap-2 items-center justify-between px-8 py-2 border-t text-[11px] ${
-            isDark
-              ? 'bg-slate-950 border-slate-900 text-slate-500'
-              : 'bg-white border-slate-200 text-slate-400'
-          }`}
-        >
-          <div className="flex items-center gap-4">
-            <span>
-              <strong className="text-slate-400">J / K</strong> 이전·다음 아티클
-            </span>
-            <span>
-              <strong className="text-slate-400">M</strong> 읽음/안읽음 토글
-            </span>
-            <span>
-              <strong className="text-slate-400">S</strong> 나중에 읽기 북마크
-            </span>
-            <span>
-              <strong className="text-slate-400">R</strong> 피드 새로고침
-            </span>
-            <span>
-              <strong className="text-slate-400">ESC</strong> 리더 뷰 닫기
-            </span>
-          </div>
-          <div>Cloudflare Workers · D1 SQLite · Workers AI</div>
-        </footer>
-      </div>
-
-      {/* Slide-over Article Reader Drawer */}
-      <ArticleDrawer
-        article={selectedArticle}
-        onClose={() => setSelectedArticleId(null)}
-        onToggleRead={handleToggleRead}
-        onToggleSaved={handleToggleSaved}
-        onUpdateArticleFields={handleUpdateArticleFields}
-        onNavigateRelative={handleNavigateRelative}
-        hasPrev={selectedIndex > 0}
-        hasNext={selectedIndex >= 0 && selectedIndex < articles.length - 1}
-        isDark={isDark}
-      />
+        }
+        header={
+          <HeaderBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            layout={layout}
+            onChangeLayout={handleChangeLayout}
+            theme={theme}
+            onChangeTheme={handleChangeTheme}
+            onRefresh={handleRefreshFeeds}
+            refreshing={refreshingFeeds}
+            onMarkAllRead={handleMarkAllRead}
+            onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          />
+        }
+        reader={
+          <ArticleDrawer
+            key={selectedArticle?.id || 'empty-reader'}
+            article={selectedArticle}
+            onClose={() => setSelectedArticleId(null)}
+            onToggleRead={handleToggleRead}
+            onToggleSaved={handleToggleSaved}
+            onUpdateArticleFields={handleUpdateArticleFields}
+            onNavigateRelative={handleNavigateRelative}
+            hasPrev={selectedIndex > 0}
+            hasNext={selectedIndex >= 0 && selectedIndex < articles.length - 1}
+            isDark={isDark}
+          />
+        }
+        footer={
+          <footer
+            className={`hidden md:flex shrink-0 flex-wrap gap-2 items-center justify-between px-8 py-2 border-t text-[11px] ${
+              isDark
+                ? 'bg-slate-950 border-slate-900 text-slate-500'
+                : 'bg-white border-slate-200 text-slate-400'
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>
+                <strong className="text-slate-400">J / K</strong> 이전·다음 아티클
+              </span>
+              <span>
+                <strong className="text-slate-400">M</strong> 읽음/안읽음 토글
+              </span>
+              <span>
+                <strong className="text-slate-400">S</strong> 나중에 읽기 북마크
+              </span>
+              <span>
+                <strong className="text-slate-400">R</strong> 피드 새로고침
+              </span>
+              <span>
+                <strong className="text-slate-400">ESC</strong> 리더 뷰 닫기
+              </span>
+            </div>
+            <div>Cloudflare Workers · D1 SQLite · Workers AI</div>
+          </footer>
+        }
+      >
+        <ArticleList
+          articles={articles}
+          layout={layout}
+          selectedArticleId={selectedArticleId}
+          onSelectArticle={handleSelectArticle}
+          onToggleRead={handleToggleRead}
+          onToggleSaved={handleToggleSaved}
+          onOpenDiscover={() => {
+            setDiscoverTab('curated');
+            setDiscoverOpen(true);
+          }}
+          isDark={isDark}
+          loading={loadingArticles || loadingBootstrap}
+          hasSubscriptions={subscriptions.length > 0}
+        />
+        {hasMoreArticles && articles.length > 0 && !loadingArticles && !loadingBootstrap && (
+          <LoadMoreArticles
+            loading={loadingMoreArticles}
+            isDark={isDark}
+            onLoadMore={loadMoreArticles}
+          />
+        )}
+      </ResizableWorkspace>
 
       {markReadTarget && (
         <MarkAllReadDialog
@@ -677,6 +678,6 @@ export const App: React.FC = () => {
         }}
         isDark={isDark}
       />
-    </div>
+    </>
   );
 };

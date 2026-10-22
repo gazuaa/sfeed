@@ -72,7 +72,11 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     return () => { active = false; };
   }, [article?.id]);
 
-  if (!article) return null;
+  if (!article) return <div className={`hidden lg:flex h-full flex-col items-center justify-center gap-3 px-8 text-center ${isDark ? 'bg-slate-950 text-slate-400' : 'bg-white text-slate-500'}`}>
+    <BookOpen className="w-10 h-10 text-emerald-500/60" aria-hidden="true" />
+    <h2 className="text-base font-semibold">읽을 글을 선택해 주세요</h2>
+    <p className="text-sm">왼쪽 목록에서 글을 누르면 여기에 표시됩니다.</p>
+  </div>;
 
   const handleToggleReaderView = async () => {
     if (readerMode) {
@@ -146,16 +150,16 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       : 'text-base';
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="sfeed-article-reader fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-auto h-full min-w-0 min-h-0 flex justify-end">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity lg:hidden"
         onClick={onClose}
       />
 
-      {/* Slide-over Reader Panel */}
+      {/* Inline desktop reader and full-screen mobile reader */}
       <div
-        className={`sfeed-reader relative z-10 w-full max-w-3xl h-full flex flex-col border-l shadow-2xl overflow-hidden ${
+        className={`sfeed-reader relative z-10 w-full max-w-3xl lg:max-w-none h-full min-w-0 min-h-0 flex flex-col border-l lg:border-l-0 shadow-2xl lg:shadow-none overflow-hidden ${
           isDark
             ? 'bg-slate-950 border-slate-800 text-slate-100'
             : 'bg-white border-slate-200 text-slate-900'
@@ -163,7 +167,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       >
         {/* Top Action Bar */}
         <div
-          className={`sfeed-reader-toolbar px-4 sm:px-6 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+          className={`sfeed-reader-toolbar px-4 sm:px-6 py-3 border-b flex flex-wrap items-center justify-between gap-2 shrink-0 ${
             isDark
               ? 'bg-slate-900/90 border-slate-800'
               : 'bg-slate-50 border-slate-200'
@@ -220,6 +224,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               type="button"
               onClick={() => handleSummarizeAI(false)}
               disabled={summarizing}
+              aria-label={article.ai_summary ? 'AI 요약 완료' : 'AI 핵심 요약'}
+              title="AI 핵심 요약"
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer ${
                 article.ai_summary
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
@@ -231,7 +237,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               ) : (
                 <Sparkles className="w-3.5 h-3.5" />
               )}
-              <span>{article.ai_summary ? 'AI 요약 완료' : 'AI 핵심 요약'}</span>
+              <span className="sfeed-reader-control-label">{article.ai_summary ? 'AI 요약 완료' : 'AI 핵심 요약'}</span>
             </button>
 
             {/* Full-Text Reader View Scraper Trigger */}
@@ -239,6 +245,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               type="button"
               onClick={handleToggleReaderView}
               disabled={scrapingReader}
+              aria-label={readerMode ? '원문 리더 뷰 켜짐' : '원문 전체 불러오기'}
+              title={readerMode ? '기본 RSS 본문 보기' : '원문 전체 불러오기'}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
                 readerMode
                   ? 'bg-blue-500/20 border-blue-500/40 text-blue-400 font-semibold'
@@ -252,7 +260,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               ) : (
                 <BookOpen className="w-3.5 h-3.5" />
               )}
-              <span>{readerMode ? '원문 리더 뷰 켜짐' : '원문 전체 불러오기'}</span>
+              <span className="sfeed-reader-control-label">{readerMode ? '원문 리더 뷰 켜짐' : '원문 전체 불러오기'}</span>
             </button>
 
             {/* Read/Unread Toggle */}
@@ -323,7 +331,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         </div>
 
         {/* Scrollable Article Content Area */}
-        <div className="flex-1 overflow-y-auto px-6 sm:px-10 py-8 space-y-6">
+        <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">
             <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-400 font-medium">
@@ -484,7 +492,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             <div className="text-xs text-slate-400">
               원문 출처: <span className="font-medium">{article.feed_title}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {!readerMode && (
                 <button
                   type="button"
