@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { FeedPreview } from './FeedPreview';
 import { OpmlImporter } from './OpmlImporter';
+import { RssBuilder } from './RssBuilder';
 import { matchesFeedSearch, normalizeFeedUrl } from '../shared/feedDiscovery';
 import {
   apiRequest,
@@ -54,10 +55,13 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewRetry, setPreviewRetry] = useState(0);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderBusy, setBuilderBusy] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState('');
   const [opmlImporting, setOpmlImporting] = useState(false);
+  const modalBusy = opmlImporting || builderBusy;
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -73,6 +77,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     setCustomTitle('');
     setSelectedFolderId('');
     setNewFolderName('');
+    setBuilderOpen(false);
   }, [initialTab, isOpen]);
 
   const previewUrl = normalizeFeedUrl(query);
@@ -80,7 +85,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     setUrlPreview(null);
     setPreviewError(null);
     setPreviewLoading(false);
-    if (!isOpen || tab !== 'curated' || !previewUrl) return;
+    if (!isOpen || tab !== 'curated' || !previewUrl || builderOpen) return;
     const controller = new AbortController();
     setPreviewLoading(true);
     const timer = setTimeout(() => {
@@ -95,11 +100,11 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       });
     }, 600);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, previewUrl, previewRetry, isOpen, tab]);
+  }, [query, previewUrl, previewRetry, isOpen, tab, builderOpen]);
 
   React.useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [previewFeed, urlPreview, tab]);
+  }, [previewFeed, urlPreview, tab, builderOpen]);
 
   if (!isOpen) return null;
 
@@ -290,7 +295,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="fixed inset-0 bg-black/65 backdrop-blur-xs"
-        onClick={() => { if (!opmlImporting) onClose(); }}
+        onClick={() => { if (!modalBusy) onClose(); }}
       />
 
       <div
@@ -326,8 +331,8 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
           <button
             type="button"
             aria-label="닫기"
-            disabled={opmlImporting}
-            onClick={() => { if (!opmlImporting) onClose(); }}
+            disabled={modalBusy}
+            onClick={() => { if (!modalBusy) onClose(); }}
             className="p-2 rounded-lg text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -342,7 +347,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         >
           <button
             type="button"
-            disabled={opmlImporting}
+            disabled={modalBusy}
             onClick={() => { setTab('curated'); setPreviewFeed(null); }}
             className={`px-3 sm:px-4 py-2.5 shrink-0 whitespace-nowrap text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'curated'
@@ -356,7 +361,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
           <button
             type="button"
-            disabled={opmlImporting}
+            disabled={modalBusy}
             onClick={() => setTab('opml')}
             className={`px-3 sm:px-4 py-2.5 shrink-0 whitespace-nowrap text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'opml'
@@ -389,12 +394,12 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
             <label htmlFor="feed-discovery-search" className="sr-only">피드 이름 또는 RSS·웹사이트 주소</label>
             <div className="relative">
               <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null} onChange={(event) => { setQuery(event.target.value); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
+              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
             </div>
             <p className="text-[11px] text-slate-400 mt-2">이름으로 추천 피드를 찾거나, 주소를 입력해 최근 글을 미리보세요.</p>
           </form>}
           {tab === 'curated' && (
-            shownFeed ? (
+            builderOpen && previewUrl ? <RssBuilder key={previewUrl} url={previewUrl} folders={folders} isDark={isDark} onBack={() => setBuilderOpen(false)} onSubscribed={onSubscribed} onBusyChange={setBuilderBusy} /> : shownFeed ? (
               <FeedPreview
                 key={shownFeed.id}
                 feed={shownFeed}
@@ -406,7 +411,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
               />
             ) : previewUrl ? (
               <div aria-live="polite" aria-busy={previewLoading} className="py-10 text-center">
-                {previewLoading ? <p role="status" className="inline-flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin" />피드를 찾고 최근 글을 불러오는 중입니다…</p> : previewError ? <><p role="alert" className="text-sm text-rose-500">{previewError}</p><button type="button" onClick={() => setPreviewRetry((value) => value + 1)} className="mt-3 px-3 py-2 rounded-lg text-xs text-emerald-500 border border-emerald-500/40 cursor-pointer">다시 시도</button></> : null}
+                {previewLoading ? <p role="status" className="inline-flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin" />피드를 찾고 최근 글을 불러오는 중입니다…</p> : previewError ? <><p role="alert" className="text-sm text-rose-500">{previewError}</p><p className="mt-3 text-xs text-slate-400">RSS가 없는 사이트라면 글 목록으로 피드를 만들어 보세요.</p><div className="mt-4 flex justify-center flex-wrap gap-2"><button type="button" onClick={() => setBuilderOpen(true)} className="px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 text-xs font-semibold cursor-pointer">RSS 빌더로 만들기</button><button type="button" onClick={() => setPreviewRetry((value) => value + 1)} className="px-3 py-2 rounded-xl text-xs text-emerald-500 border border-emerald-500/40 cursor-pointer">다시 시도</button></div></> : null}
               </div>
             ) : <div className="space-y-5">
               {/* Category Filter Pills */}

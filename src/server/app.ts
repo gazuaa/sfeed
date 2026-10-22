@@ -17,6 +17,8 @@ import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './r
 import { scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
 import { fetchPreviewImage } from './previewImage';
+import { analyseBuilderPage, builderParsedFeed, publicPageUrl } from './rssBuilder';
+import { refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './feedLoader';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -419,6 +421,44 @@ app.post('/api/discover/preview', async (c) => {
   }
 });
 
+app.post('/api/rss-builder/analyse', async (c) => {
+  const body = await c.req.json<{ url?: string }>().catch(() => null);
+  if (typeof body?.url !== 'string') return c.json({ error: '웹사이트 주소를 입력해 주세요.' }, 400);
+  try { publicPageUrl(body.url); } catch (error) { return c.json({ error: (error as Error).message }, 400); }
+  try {
+    const analysis = await analyseBuilderPage(body.url, c.env);
+    if (!analysis.groups.length) return c.json({ error: '반복되는 글 목록을 찾지 못했습니다. 개별 글이 아닌 블로그·뉴스 목록 주소를 입력해 주세요.' }, 422);
+    return c.json(analysis);
+  } catch (error) { return c.json({ error: error instanceof Error ? error.message : '글 목록을 분석하지 못했습니다.' }, 502); }
+});
+
+app.post('/api/rss-builder', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ url?: string; selector?: string; title?: string; folderId?: string; folderName?: string }>().catch(() => null);
+  if (typeof body?.url !== 'string' || typeof body.selector !== 'string' || !body.selector.trim() || body.selector.length > 1000 || (body.title != null && typeof body.title !== 'string') || (body.folderName != null && typeof body.folderName !== 'string') || (body.folderId != null && typeof body.folderId !== 'string')) return c.json({ error: '웹사이트 주소와 수집할 글 목록을 선택해 주세요.' }, 400);
+  try { publicPageUrl(body.url); } catch (error) { return c.json({ error: (error as Error).message }, 400); }
+  let folderId = body.folderId || null;
+  if (folderId && !await c.env.DB.prepare('SELECT id FROM folders WHERE id=? AND user_id=?').bind(folderId, user.id).first()) return c.json({ error: '폴더를 찾을 수 없습니다.' }, 404);
+  try {
+    const analysis = await analyseBuilderPage(body.url, c.env, body.selector);
+    const existing = await c.env.DB.prepare('SELECT b.id,f.xml_url FROM rss_builders b JOIN feeds f ON f.id=b.feed_id WHERE b.created_by=? AND b.source_url=? AND b.selector=?').bind(user.id, analysis.sourceUrl, body.selector).first<{ id: string; xml_url: string }>();
+    const id = existing?.id || generateId('rss');
+    const rssUrl = existing?.xml_url || `${new URL(c.req.url).origin}/rss/${id}.xml`;
+    const title = body.title?.trim().slice(0, 200) || analysis.title;
+    const parsed = builderParsedFeed(analysis, body.selector, rssUrl, title);
+    const { feedId, insertedCount } = await upsertFeedAndArticles(c.env.DB, parsed);
+    await c.env.DB.prepare('INSERT INTO rss_builders(id,feed_id,source_url,selector,title,created_by,created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title').bind(id, feedId, analysis.sourceUrl, body.selector, title, user.id, new Date().toISOString()).run();
+    if (!folderId && body.folderName?.trim()) {
+      const name = body.folderName.trim().slice(0, 100);
+      const folder = await c.env.DB.prepare('SELECT id FROM folders WHERE user_id=? AND name=?').bind(user.id, name).first<{ id: string }>();
+      folderId = folder?.id || generateId('fld');
+      if (!folder) await c.env.DB.prepare('INSERT INTO folders(id,user_id,name,color,sort_order,created_at) VALUES(?,?,?,?,?,?)').bind(folderId, user.id, name, '#10b981', 10, new Date().toISOString()).run();
+    }
+    await c.env.DB.prepare('INSERT INTO subscriptions(id,user_id,feed_id,folder_id,custom_title,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,feed_id) DO UPDATE SET folder_id=COALESCE(excluded.folder_id,subscriptions.folder_id),custom_title=excluded.custom_title').bind(generateId('sub'), user.id, feedId, folderId, title, new Date().toISOString()).run();
+    return c.json({ rssUrl, feedId, title, insertedCount });
+  } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'RSS 피드를 만들지 못했습니다.' }, 502); }
+});
+
 app.get('/api/discover/feeds/:id/preview', async (c) => {
   const feed = CURATED_FEEDS.find((item) => item.id === c.req.param('id'));
   if (!feed) return c.json({ error: '추천 피드를 찾을 수 없습니다.' }, 404);
@@ -634,43 +674,32 @@ app.post('/api/feeds/refresh', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{ feedId?: string }>().catch(() => ({ feedId: undefined }));
 
-  let feedsToRefresh: Array<{ id: string; xml_url: string }> = [];
+  let feedsToRefresh: StoredFeed[] = [];
   if (body.feedId) {
     const row = await c.env.DB.prepare(
-      `SELECT f.id, f.xml_url
+      `SELECT ${storedFeedColumns}
        FROM feeds f
        JOIN subscriptions s ON s.feed_id = f.id
+       LEFT JOIN rss_builders b ON b.feed_id = f.id
        WHERE f.id = ? AND s.user_id = ?`
     )
       .bind(body.feedId, user.id)
-      .first<{ id: string; xml_url: string }>();
+      .first<StoredFeed>();
     if (row) feedsToRefresh = [row];
   } else {
     const res = await c.env.DB.prepare(
-      `SELECT f.id, f.xml_url
+      `SELECT ${storedFeedColumns}
        FROM feeds f
        JOIN subscriptions s ON s.feed_id = f.id
+       LEFT JOIN rss_builders b ON b.feed_id = f.id
        WHERE s.user_id = ?`
     )
       .bind(user.id)
-      .all<{ id: string; xml_url: string }>();
+      .all<StoredFeed>();
     feedsToRefresh = res.results || [];
   }
 
-  let totalNewArticles = 0;
-  await Promise.all(
-    feedsToRefresh.map(async (f) => {
-      try {
-        const parsed = await fetchAndParseFeed(f.xml_url);
-        const { insertedCount } = await upsertFeedAndArticles(c.env.DB, parsed);
-        totalNewArticles += insertedCount;
-      } catch (err) {
-        await c.env.DB.prepare('UPDATE feeds SET last_error = ? WHERE id = ?')
-          .bind(err instanceof Error ? err.message : 'Refresh failed', f.id)
-          .run();
-      }
-    })
-  );
+  const totalNewArticles = await refreshStoredFeeds(c.env, feedsToRefresh);
 
   return c.json({
     refreshedFeeds: feedsToRefresh.length,

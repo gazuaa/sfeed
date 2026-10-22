@@ -1,3 +1,5 @@
+import type { BrowserWorker } from '@cloudflare/puppeteer';
+
 export interface D1Result<T = Record<string, unknown>> {
   results: T[];
   success: boolean;
@@ -31,6 +33,7 @@ export interface WorkersAILike {
 
 export interface Env {
   DB: D1DatabaseLike;
+  BROWSER?: BrowserWorker;
   AI?: WorkersAILike;
   ASSETS?: {
     fetch(request: Request): Promise<Response>;

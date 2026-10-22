@@ -1,12 +1,14 @@
 import { app } from './server/app';
 import type { Env } from './server/types';
-import { fetchAndParseFeed } from './server/rssParser';
-import { upsertFeedAndArticles } from './server/seedService';
+import { generatedRss, refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './server/feedLoader';
 import { checkFeedPublicationDates } from './server/articlePublication';
 
 export default {
   async fetch(request: Request, env: Env, ctx: unknown): Promise<Response> {
     const url = new URL(request.url);
+
+    const rssId = /^\/rss\/([a-zA-Z0-9_-]+)\.xml$/.exec(url.pathname)?.[1];
+    if (rssId && request.method === 'GET') return generatedRss(env, rssId);
 
     if (url.pathname.startsWith('/api/')) {
       return app.fetch(request, env, ctx as never);
@@ -34,25 +36,13 @@ export default {
   async scheduled(_event: unknown, env: Env, _ctx: unknown): Promise<void> {
     if (!env.DB) return;
     const res = await env.DB.prepare(
-      'SELECT id, xml_url FROM feeds ORDER BY last_fetched_at ASC LIMIT 100'
-    ).all<{ id: string; xml_url: string }>();
+      `SELECT ${storedFeedColumns} FROM feeds f LEFT JOIN rss_builders b ON b.feed_id=f.id
+       WHERE b.id IS NULL OR EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id=f.id)
+       ORDER BY f.last_fetched_at ASC LIMIT 100`
+    ).all<StoredFeed>();
 
     const feeds = res.results || [];
-    await Promise.all(
-      feeds.map(async (f) => {
-        try {
-          const parsed = await fetchAndParseFeed(f.xml_url);
-          await upsertFeedAndArticles(env.DB, parsed);
-        } catch (err) {
-          await env.DB.prepare('UPDATE feeds SET last_error = ? WHERE id = ?')
-            .bind(
-              err instanceof Error ? err.message : 'Scheduled refresh error',
-              f.id
-            )
-            .run();
-        }
-      })
-    );
+    await refreshStoredFeeds(env, feeds);
     await checkFeedPublicationDates(env.DB, feeds.map((feed) => feed.id));
   },
 };

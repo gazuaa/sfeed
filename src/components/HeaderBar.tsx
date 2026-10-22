@@ -42,13 +42,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <header
-      className={`sfeed-header shrink-0 z-30 border-b backdrop-blur-md px-4 lg:px-8 py-3.5 transition-colors ${
+      className={`sfeed-header shrink-0 z-30 border-b backdrop-blur-md py-3.5 transition-colors ${
         isDark
           ? 'bg-slate-950/85 border-slate-800/80 text-slate-100'
           : 'bg-white/90 border-slate-200 text-slate-900'
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="sfeed-header-sections">
+        <div className="sfeed-list-controls flex min-w-0 items-center gap-2 px-4">
         {/* Mobile Menu */}
         <button
           type="button"
@@ -64,10 +65,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         </button>
 
         {/* Search, View Switcher, Mark Read, and right-aligned utilities */}
-        <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2">
-          <InstallAppButton />
+        <div className="flex flex-1 min-w-0 items-center gap-2">
           {/* Keyword Search Input */}
-          <div className="relative flex-1 sm:flex-initial sm:w-60">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -83,6 +83,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             {searchQuery && (
               <button
                 type="button"
+                aria-label="검색어 지우기"
                 onClick={() => onSearchChange('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
               >
@@ -93,7 +94,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
           {/* Feedly 3-Mode Layout Switcher */}
           <div
-            className={`inline-flex items-center p-0.5 rounded-xl border ${
+            className={`inline-flex shrink-0 items-center p-0.5 rounded-xl border ${
               isDark
                 ? 'bg-slate-900 border-slate-800'
                 : 'bg-slate-100 border-slate-200'
@@ -151,7 +152,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             onClick={onMarkAllRead}
             title="현재 목록 모두 읽음 처리"
             aria-label="모두 읽음"
-            className={`p-2 rounded-xl border flex items-center transition cursor-pointer ${
+            className={`shrink-0 p-2 rounded-xl border flex items-center transition cursor-pointer ${
               isDark
                 ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
                 : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
@@ -160,7 +161,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <CheckCheck className="w-4 h-4 text-emerald-400" />
           </button>
 
-          <div className="ml-auto inline-flex shrink-0 items-center gap-2">
+        </div>
+        </div>
+          <div aria-hidden="true" className="sfeed-header-divider" />
+          <div className="sfeed-global-controls flex shrink-0 items-center justify-end gap-2 px-4">
+            <InstallAppButton />
             {/* Refresh Feeds */}
             <button
               type="button"
@@ -180,7 +185,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
             <ThemeSwitch theme={theme} onChange={onChangeTheme} />
           </div>
-        </div>
       </div>
     </header>
   );
