@@ -129,7 +129,7 @@ export function extractSummaryPublishedAt(summary: string | null, title: string,
     const position = text.indexOf(headline);
     if (!headline || position < 0 || position > 80) return null;
     const tail = text.slice(position + headline.length);
-    const cardDate = tail.match(/^\s+[\p{L}\p{N} .·|_-]{1,60}?\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s+Delivered by PolitePaul service)?\s*$/u);
+    const cardDate = tail.match(/^\s+[\p{L}\p{N} .·|_()-]{1,60}?\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s+Delivered by PolitePaul service)?\s*$/u);
     return cardDate ? parsePublicationDate(cardDate[1]) : null;
   }
   if (!/^https?:\/\/(?:www\.)?hankyung\.com\/article\//i.test(url)) return null;

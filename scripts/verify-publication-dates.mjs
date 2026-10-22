@@ -41,6 +41,7 @@ try {
   assert.equal(extractSummaryPublishedAt('Related title 2026.09.11 00:58', 'Test title', url), null);
   assert.equal(extractSummaryPublishedAt('Test title 2026.09.11 00:58', 'Test title', 'https://example.test/story'), null);
   assert.equal(extractSummaryPublishedAt('Digital Asset Research 이슈 Test title 포필러스 강희창 2025-08-05 20:00', 'Test title', 'https://www.blockmedia.co.kr/archives/956628'), '2025-08-05T11:00:00.000Z');
+  assert.equal(extractSummaryPublishedAt('Digital Asset Research 이슈 Test title 포필러스 정재환(Jay) 2025-09-03 19:05', 'Test title', 'https://www.blockmedia.co.kr/archives/970428'), '2025-09-03T10:05:00.000Z');
   assert.equal(extractSummaryPublishedAt('Test title 본문에서 2025-08-05 20:00에 일어난 일을 설명합니다.', 'Test title', 'https://www.blockmedia.co.kr/archives/956628'), null);
   assert.equal(parsePublicationDate('2026.02.30 12:00'), null);
   assert.equal(parsePublicationDate('2026-09-11 00:58:00'), published);
