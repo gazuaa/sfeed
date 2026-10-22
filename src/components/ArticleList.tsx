@@ -454,58 +454,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 {article.title}
               </h2>
 
-              {article.summary && (
-                <p className="text-xs sm:text-sm text-slate-400 leading-relaxed line-clamp-2">
-                  {article.summary}
-                </p>
-              )}
-
-              {/* Bottom Quick Action Buttons */}
-              <div className="pt-1 flex items-center gap-3 text-xs text-slate-400">
-                <button
-                  type="button"
-                  onClick={(e) => onToggleRead(article, e)}
-                  className="inline-flex items-center gap-1 hover:text-emerald-400 transition cursor-pointer"
-                >
-                  {article.is_read ? (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>읽음</span>
-                    </>
-                  ) : (
-                    <>
-                      <Circle className="w-3.5 h-3.5" />
-                      <span>안읽음</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => onToggleSaved(article, e)}
-                  className={`inline-flex items-center gap-1 transition cursor-pointer ${
-                    article.is_saved
-                      ? 'text-indigo-400 font-medium'
-                      : 'hover:text-indigo-400'
-                  }`}
-                >
-                  <Bookmark
-                    className={`w-3.5 h-3.5 ${article.is_saved ? 'fill-current' : ''}`}
-                  />
-                  <span>{article.is_saved ? '저장됨' : '나중에 읽기'}</span>
-                </button>
-
-                <a
-                  href={article.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 hover:text-emerald-400 transition"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>원문 열기</span>
-                </a>
-              </div>
             </div>
 
             {/* Right Thumbnail */}
