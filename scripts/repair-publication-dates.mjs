@@ -31,12 +31,15 @@ const predicate = [
   "instr(COALESCE(full_content_html, ''), 'datePublished') > 0",
   "instr(COALESCE(full_content_html, ''), 'article:published_time') > 0",
   "(instr(url, 'hankyung.com/article/') > 0 AND summary IS NOT NULL)",
+  "(instr(url, 'blockmedia.co.kr/archives/') > 0 AND summary IS NOT NULL)",
 ].join(' OR ');
 const vite = await createServer({ root, configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
 try {
   const { extractOriginalPublishedAt, extractSummaryPublishedAt } = await vite.ssrLoadModule('/src/server/publicationDate.ts');
   const rows = query('SELECT * FROM articles WHERE ' + predicate);
+  const verified = new Set(query("SELECT article_id FROM article_date_checks WHERE source='original'").map((row) => row.article_id));
   const changes = rows.flatMap((row) => {
+    if (verified.has(row.id)) return [];
     const date = extractOriginalPublishedAt(row.content_html, row.url) || extractOriginalPublishedAt(row.full_content_html, row.url) || extractSummaryPublishedAt(row.summary, row.title, row.url);
     return date && Date.parse(date) !== Date.parse(row.published_at) ? [{ before: row, publishedAt: date }] : [];
   });

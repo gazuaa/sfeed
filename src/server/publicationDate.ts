@@ -119,9 +119,20 @@ export function extractOriginalPublishedAt(html: string | null | undefined, url:
 // Older Feedly downloads retained only the flattened reporter card. This
 // publisher-specific format puts the date immediately after the exact title.
 export function extractSummaryPublishedAt(summary: string | null, title: string, url: string): string | null {
-  if (!summary || !/^https?:\/\/(?:www\.)?hankyung\.com\/article\//i.test(url)) return null;
+  if (!summary) return null;
   const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
   const text = normalize(summary), headline = normalize(title);
+  if (/^https?:\/\/(?:www\.)?blockmedia\.co\.kr\/archives\/\d+/i.test(url)) {
+    // Old Feedly rows kept a flattened PolitePol card: category, exact
+    // headline, short author byline, publication timestamp, optional footer.
+    // Require that complete card shape; do not scan dates in article prose.
+    const position = text.indexOf(headline);
+    if (!headline || position < 0 || position > 80) return null;
+    const tail = text.slice(position + headline.length);
+    const cardDate = tail.match(/^\s+[\p{L}\p{N} .·|_-]{1,60}?\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s+Delivered by PolitePaul service)?\s*$/u);
+    return cardDate ? parsePublicationDate(cardDate[1]) : null;
+  }
+  if (!/^https?:\/\/(?:www\.)?hankyung\.com\/article\//i.test(url)) return null;
   if (!headline || !text.startsWith(headline)) return null;
   const date = text.slice(headline.length).match(/^\s+(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2})(?:\s|$)/);
   return date ? parsePublicationDate(date[1]) : null;
