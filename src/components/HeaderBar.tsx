@@ -63,7 +63,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Search, View Switcher, Refresh, Mark Read, Theme */}
+        {/* Search, View Switcher, Mark Read, and right-aligned utilities */}
         <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2">
           <InstallAppButton />
           {/* Keyword Search Input */}
@@ -157,24 +157,26 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <span className="hidden sm:inline">모두 읽음</span>
           </button>
 
-          {/* Refresh Feeds */}
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            title="피드 새로고침 (단축키: R)"
-            className={`p-2 rounded-xl border transition cursor-pointer ${
-              isDark
-                ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`}
-            />
-          </button>
+          <div className="ml-auto inline-flex shrink-0 items-center gap-2">
+            {/* Refresh Feeds */}
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              title="피드 새로고침 (단축키: R)"
+              className={`p-2 rounded-xl border transition cursor-pointer ${
+                isDark
+                  ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`}
+              />
+            </button>
 
-          <ThemeSwitch theme={theme} onChange={onChangeTheme} />
+            <ThemeSwitch theme={theme} onChange={onChangeTheme} />
+          </div>
         </div>
       </div>
     </header>
