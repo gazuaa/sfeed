@@ -8,13 +8,13 @@ import {
   FileCode2,
   Download,
   Loader2,
-  FolderPlus,
   Eye,
   Rss,
 } from 'lucide-react';
 import { FeedPreview } from './FeedPreview';
 import { OpmlImporter } from './OpmlImporter';
 import { RssBuilder } from './RssBuilder';
+import { SubscribeFolderStep, type FolderChoice } from './SubscribeFolderStep';
 import { matchesFeedSearch, normalizeFeedUrl } from '../shared/feedDiscovery';
 import type { BuilderSite } from '../shared/rssBuilder';
 import {
@@ -61,9 +61,8 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   const [builderBusy, setBuilderBusy] = useState(false);
   const [urlFeedOpen, setUrlFeedOpen] = useState(false);
   const [site, setSite] = useState<BuilderSite | null>(null);
-  const [customTitle, setCustomTitle] = useState('');
-  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
-  const [newFolderName, setNewFolderName] = useState('');
+  const [subscribeTarget, setSubscribeTarget] = useState<CuratedFeedItem | null>(null);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
   const [opmlImporting, setOpmlImporting] = useState(false);
   const modalBusy = opmlImporting || builderBusy;
   const [feedback, setFeedback] = useState<{
@@ -78,9 +77,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     setQuery('');
     setUrlPreview(null);
     setPreviewError(null);
-    setCustomTitle('');
-    setSelectedFolderId('');
-    setNewFolderName('');
+    setSubscribeTarget(null);
     setBuilderOpen(false);
     setUrlFeedOpen(false);
   }, [initialTab, isOpen]);
@@ -123,7 +120,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
   React.useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [previewFeed, urlFeedOpen, tab, builderOpen]);
+  }, [previewFeed, urlFeedOpen, subscribeTarget, tab, builderOpen]);
 
   if (!isOpen) return null;
 
@@ -147,60 +144,29 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       (s) => s.xml_url.toLowerCase() === xmlUrl.toLowerCase()
     );
 
-  const handleSubscribeCurated = async (feed: CuratedFeedItem) => {
+  const handleSubscribe = async (feed: CuratedFeedItem, choice: FolderChoice) => {
     setBusyUrl(feed.xmlUrl);
+    setSubscribeError(null);
     setFeedback(null);
     try {
       await apiRequest('/api/subscriptions', {
         method: 'POST',
         body: JSON.stringify({
           url: feed.xmlUrl,
-          folderName: feed.folderSuggest,
+          folderId: choice.folderId ?? null,
+          folderName: choice.folderName ?? null,
+          customTitle: choice.title !== feed.title ? choice.title : null,
         }),
       });
       await onSubscribed();
+      const folderName = choice.folderId ? folders.find((folder) => folder.id === choice.folderId)?.name : choice.folderName;
       setFeedback({
         type: 'success',
-        text: `"${feed.title}" 피드를 [${feed.folderSuggest}] 폴더에 추가했습니다.`,
+        text: `"${choice.title}" 피드를 ${folderName ? `[${folderName}] 폴더에` : '미분류로'} 구독했습니다.`,
       });
+      setSubscribeTarget(null);
     } catch (err) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : '구독 추가에 실패했습니다.',
-      });
-    } finally {
-      setBusyUrl(null);
-    }
-  };
-
-  const handleSubscribeCustom = async () => {
-    if (!resolvedFeed) return;
-    setBusyUrl(resolvedFeed.xmlUrl);
-    setFeedback(null);
-
-    try {
-      const res = await apiRequest<{ title: string }>('/api/subscriptions', {
-        method: 'POST',
-        body: JSON.stringify({
-          url: resolvedFeed.xmlUrl,
-          folderId: selectedFolderId || null,
-          folderName: newFolderName.trim() || null,
-          customTitle: customTitle.trim() || null,
-        }),
-      });
-      await onSubscribed();
-      setFeedback({
-        type: 'success',
-        text: `"${customTitle.trim() || res.title}" 피드가 성공적으로 구독되었습니다!`,
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'error',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'RSS 피드를 가져오지 못했습니다.',
-      });
+      setSubscribeError(err instanceof Error ? err.message : '구독하지 못했습니다.');
     } finally {
       setBusyUrl(null);
     }
@@ -220,7 +186,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       <button
         type="button"
         disabled={subscribed || busyUrl !== null}
-        onClick={() => resolvedFeed?.id === feed.id ? handleSubscribeCustom() : handleSubscribeCurated(feed)}
+        onClick={() => { setSubscribeError(null); setFeedback(null); setSubscribeTarget(feed); }}
         className={`relative z-10 pointer-events-auto px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shrink-0 disabled:cursor-default ${
           subscribed
             ? 'bg-emerald-500/15 text-emerald-400'
@@ -295,7 +261,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h4 className="min-w-0 text-sm font-bold">{site?.title || hostname(builderUrl).replace(/^www\./, '')}</h4>
-            <button type="button" onClick={() => setBuilderOpen(true)} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/60 text-emerald-500 hover:bg-emerald-500/10 text-xs font-semibold cursor-pointer">
+            <button type="button" onClick={() => { setFeedback(null); setBuilderOpen(true); }} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/60 text-emerald-500 hover:bg-emerald-500/10 text-xs font-semibold cursor-pointer">
               <Rss className="w-3.5 h-3.5" />RSS 피드 만들기
             </button>
           </div>
@@ -304,78 +270,6 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         </div>
       </div>
     </section>
-  );
-
-  const subscriptionOptions = (
-    <details className={`rounded-xl border p-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-      <summary className="text-xs font-semibold cursor-pointer">구독 설정 (선택사항)</summary>
-      <div className="space-y-4 mt-4">
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="preview-folder" className="block text-xs font-semibold mb-1.5">
-              기존 폴더 선택 (선택사항)
-            </label>
-            <select
-              id="preview-folder"
-              value={selectedFolderId}
-              onChange={(e) => setSelectedFolderId(e.target.value)}
-              className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                isDark
-                  ? 'bg-slate-950 border-slate-800 text-white'
-                  : 'bg-slate-50 border-slate-300 text-slate-900'
-              }`}
-            >
-              <option value="">미분류 (폴더 없음)</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="preview-new-folder" className="block text-xs font-semibold mb-1.5">
-              또는 새 폴더 이름으로 생성
-            </label>
-            <div className="relative">
-              <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                id="preview-new-folder"
-                type="text"
-                placeholder="예: AI 논문, 개발 블로그..."
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                  isDark
-                    ? 'bg-slate-950 border-slate-800 text-white'
-                    : 'bg-slate-50 border-slate-300 text-slate-900'
-                }`}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="preview-custom-title" className="block text-xs font-semibold mb-1.5">
-            사용자 지정 피드 이름 (선택사항)
-          </label>
-          <input
-            id="preview-custom-title"
-            type="text"
-            placeholder="비워두면 RSS 피드 원본 제목을 사용합니다"
-            value={customTitle}
-            onChange={(e) => setCustomTitle(e.target.value)}
-            className={`w-full px-3.5 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-              isDark
-                ? 'bg-slate-950 border-slate-800 text-white'
-                : 'bg-slate-50 border-slate-300 text-slate-900'
-            }`}
-          />
-        </div>
-
-      </div>
-    </details>
   );
 
   return (
@@ -481,17 +375,29 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
             <label htmlFor="feed-discovery-search" className="sr-only">피드 이름 또는 RSS·웹사이트 주소</label>
             <div className="relative">
               <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setUrlFeedOpen(false); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
+              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setUrlFeedOpen(false); setSubscribeTarget(null); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
             </div>
             <p className="text-[11px] text-slate-400 mt-2">이름으로 추천 피드를 찾거나, 주소를 입력해 최근 글을 미리보세요.</p>
           </form>}
           {tab === 'curated' && (
-            builderOpen && builderUrl ? <RssBuilder key={builderUrl} url={builderUrl} folders={folders} isDark={isDark} onBack={() => setBuilderOpen(false)} onSubscribed={onSubscribed} onBusyChange={setBuilderBusy} /> : shownFeed ? (
+            builderOpen && builderUrl ? <RssBuilder key={builderUrl} url={builderUrl} folders={folders} isDark={isDark} onBack={() => setBuilderOpen(false)} onSubscribed={onSubscribed} onBusyChange={setBuilderBusy} /> : subscribeTarget ? (
+              <SubscribeFolderStep
+                key={subscribeTarget.id}
+                feedTitle={subscribeTarget.title}
+                siteUrl={subscribeTarget.htmlUrl}
+                folders={folders}
+                suggestedFolder={subscribeTarget.folderSuggest || undefined}
+                isDark={isDark}
+                busy={busyUrl === subscribeTarget.xmlUrl}
+                error={subscribeError}
+                onBack={() => setSubscribeTarget(null)}
+                onConfirm={(choice) => handleSubscribe(subscribeTarget, choice)}
+              />
+            ) : shownFeed ? (
               <FeedPreview
                 key={shownFeed.id}
                 feed={shownFeed}
                 preview={shownFeed === resolvedFeed ? urlPreview || undefined : undefined}
-                subscriptionOptions={shownFeed === resolvedFeed ? subscriptionOptions : undefined}
                 onBack={() => { setPreviewFeed(null); setUrlFeedOpen(false); }}
                 subscribeButton={subscribeButton(shownFeed)}
                 isDark={isDark}

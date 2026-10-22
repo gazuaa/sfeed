@@ -13,7 +13,6 @@ interface FeedPreviewProps {
   subscribeButton: React.ReactNode;
   isDark: boolean;
   preview?: FeedPreviewResponse;
-  subscriptionOptions?: React.ReactNode;
 }
 
 export const FeedPreview: React.FC<FeedPreviewProps> = ({
@@ -22,7 +21,6 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
   subscribeButton,
   isDark,
   preview,
-  subscriptionOptions,
 }) => {
   const [articles, setArticles] = useState<FeedPreviewResponse['articles']>([]);
   const [loading, setLoading] = useState(true);
@@ -87,8 +85,6 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
           웹사이트 방문 <ExternalLink className="w-3 h-3" />
         </a>
       </div>
-
-      {subscriptionOptions}
 
       <div>
         <h4 className="text-sm font-semibold">최근 글 미리보기</h4>
