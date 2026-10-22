@@ -7,6 +7,8 @@ import {
   Sparkles,
   BookOpen,
   ExternalLink,
+  ZoomIn,
+  ZoomOut,
   ChevronLeft,
   ChevronRight,
   Globe,
@@ -27,6 +29,21 @@ const VIEW_MODES = [
   { id: 'reader', label: '리더', title: '전체 본문 — 원문에서 본문만 깔끔하게', Icon: BookOpen },
   { id: 'web', label: '웹', title: '웹 페이지 — 원본 사이트 그대로', Icon: Globe },
 ] as const;
+
+// Web view zoom steps, like a browser's. The framed page is cross-origin, so
+// it is scaled from outside: laid out at (pane size ÷ zoom), then scale(zoom).
+// The right zoom depends on the screen, so it is remembered per device.
+const WEB_ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const WEB_ZOOM_KEY = 'sfeed_web_zoom';
+
+function loadWebZoom(): number {
+  try {
+    const saved = Number(localStorage.getItem(WEB_ZOOM_KEY));
+    return WEB_ZOOM_STEPS.includes(saved) ? saved : 1;
+  } catch {
+    return 1;
+  }
+}
 
 interface ArticleDrawerProps {
   article: ArticleItem | null;
@@ -68,6 +85,22 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     null
   );
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
+  const [webZoom, setWebZoom] = useState(loadWebZoom);
+
+  // -1 zooms out, +1 zooms in, 0 resets to 100%.
+  const changeWebZoom = (step: -1 | 0 | 1) => {
+    const index = WEB_ZOOM_STEPS.indexOf(webZoom);
+    const next =
+      step === 0
+        ? 1
+        : WEB_ZOOM_STEPS[Math.min(WEB_ZOOM_STEPS.length - 1, Math.max(0, index + step))];
+    setWebZoom(next);
+    try {
+      localStorage.setItem(WEB_ZOOM_KEY, String(next));
+    } catch {
+      // the zoom still applies to this article
+    }
+  };
 
   // Reader view: extract the full article once; the server caches it.
   useEffect(() => {
@@ -343,6 +376,55 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               <Type className="w-4 h-4" />
             </button>}
 
+            {/* Web view zoom */}
+            {viewMode === 'web' && (
+              <div
+                role="group"
+                aria-label="사이트 확대·축소"
+                className={`flex items-center rounded-xl border ${
+                  isDark
+                    ? 'bg-slate-900 border-slate-800 text-slate-300'
+                    : 'bg-white border-slate-200 text-slate-700'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => changeWebZoom(-1)}
+                  disabled={webZoom === WEB_ZOOM_STEPS[0]}
+                  title="사이트 축소"
+                  aria-label="사이트 축소"
+                  className={`p-2 rounded-l-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeWebZoom(0)}
+                  title="100%로 되돌리기"
+                  aria-label={`현재 ${Math.round(webZoom * 100)}%, 100%로 되돌리기`}
+                  className={`min-w-[3rem] py-2 text-xs font-medium tabular-nums transition cursor-pointer ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  {Math.round(webZoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeWebZoom(1)}
+                  disabled={webZoom === WEB_ZOOM_STEPS[WEB_ZOOM_STEPS.length - 1]}
+                  title="사이트 확대"
+                  aria-label="사이트 확대"
+                  className={`p-2 rounded-r-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Open Original Link */}
             <a
               href={article.url}
@@ -385,14 +467,22 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
-                <iframe
-                  key={article.id}
-                  src={frame.url}
-                  title={article.title}
-                  className="flex-1 w-full min-h-0 border-0 bg-white"
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                />
+                <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
+                  <iframe
+                    key={article.id}
+                    src={frame.url}
+                    title={article.title}
+                    className="absolute left-0 top-0 border-0 bg-white"
+                    style={{
+                      width: `${100 / webZoom}%`,
+                      height: `${100 / webZoom}%`,
+                      transform: `scale(${webZoom})`,
+                      transformOrigin: '0 0',
+                    }}
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                </div>
               </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
