@@ -39,7 +39,7 @@ export const MarkAllReadDialog: React.FC<MarkAllReadDialogProps> = ({
       <h2 id={titleId} className="text-lg font-semibold">모두 읽음 처리할까요?</h2>
       <div id={descriptionId} className={`mt-3 text-sm leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
         <p><strong>{scopeName}</strong>의 안읽은 글을 모두 읽음으로 표시합니다.</p>
-        <p className="mt-2">{searching ? '검색 결과뿐 아니라 선택한 범위 전체에 적용됩니다.' : '현재 화면에 표시되지 않은 글도 함께 처리됩니다.'}</p>
+        {searching && <p className="mt-2">검색 결과뿐 아니라 선택한 범위 전체에 적용됩니다.</p>}
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-rose-400">{error}</p>}
       <div className="mt-6 flex justify-end gap-2">
