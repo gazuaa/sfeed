@@ -15,6 +15,7 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 .sfeed-pane-splitter { display: none; }
 .sfeed-reader-content { scrollbar-gutter: stable; }
 .sfeed-reader { container-type: inline-size; }
+.sfeed-reader-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; border-width: 1px; border-radius: 8px; transition: color .15s, background-color .15s; cursor: pointer; }
 @container (max-width: 600px) {
   .sfeed-reader-control-label { display: none; }
   .sfeed-reader-toolbar { padding-inline: 12px; gap: 6px; }
@@ -35,6 +36,7 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
   .sfeed-compact-row > div:last-child { justify-content: flex-end; }
 }
 @media (min-width: 1024px) {
+  .sfeed-reader-back { display: none; }
   .sfeed-workspace { display: grid; grid-template-columns: var(--sfeed-channel-width) 8px minmax(0, 1fr); }
   .sfeed-workspace .sfeed-sidebar { width: var(--sfeed-channel-width); }
   .sfeed-content-panes { display: grid; grid-template-columns: var(--sfeed-list-width) 8px minmax(0, 1fr); }
