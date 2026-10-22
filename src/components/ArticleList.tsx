@@ -380,7 +380,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
           <article
             key={article.id}
             onClick={() => onSelectArticle(article)}
-            className={`sfeed-magazine-row group rounded-2xl border p-4 sm:p-5 flex flex-col gap-4 justify-between transition duration-150 cursor-pointer ${
+            className={`sfeed-magazine-row group rounded-2xl border p-4 sm:p-5 flex flex-row items-start gap-3 justify-between transition duration-150 cursor-pointer ${
               isSelected
                 ? 'ring-2 ring-emerald-500 border-emerald-500/50'
                 : isDark
@@ -388,6 +388,22 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
             }`}
           >
+            {/* Left Thumbnail */}
+            {article.thumbnail_url && (
+              <div className="sfeed-magazine-thumbnail h-16 w-16 self-start rounded-lg overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
+                <img
+                  src={article.thumbnail_url}
+                  alt={article.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).parentElement!.style.display =
+                      'none';
+                  }}
+                />
+              </div>
+            )}
+
             {/* Left Text Content */}
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -451,21 +467,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
             </div>
 
-            {/* Right Thumbnail */}
-            {article.thumbnail_url && (
-              <div className="sfeed-magazine-thumbnail h-32 w-full rounded-xl overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
-                <img
-                  src={article.thumbnail_url}
-                  alt={article.title}
-                  loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).parentElement!.style.display =
-                      'none';
-                  }}
-                />
-              </div>
-            )}
           </article>
         );
       })}
