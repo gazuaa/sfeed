@@ -40,9 +40,25 @@ try {
   const other = await login('another-builder@example.test');
   const request = (path, body, auth = token) => app.request(`https://sfeed.example.test${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }, env);
   let fetches = 0;
+  const blocked = 'https://blocked.example.test/ko/research';
+  const blockedFetches = [];
+  let sitemapPosts = [['lombard-s-grand-roadmap', '2026-10-16T04:16:51.007Z'], ['monthly-eip-sep-2026', '2026-10-15T07:30:37.614Z'], ...['old-a', 'old-b', 'old-c'].map((slug) => [slug, '2026-04-21T07:28:58.513Z'])];
+  const urlset = (entries) => `<?xml version="1.0"?><urlset>${entries.map(([loc, lastmod]) => `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`).join('')}</urlset>`;
   globalThis.fetch = async (input) => {
     fetches++;
     const url = String(input);
+    if (url.startsWith('https://blocked.example.test/') || url.startsWith('https://elsewhere.example.test/')) {
+      blockedFetches.push(url);
+      if (url === 'https://blocked.example.test/robots.txt') return new Response('User-Agent: *\nSitemap: https://blocked.example.test/sitemap-index.xml\nSitemap: https://elsewhere.example.test/sitemap.xml\n');
+      if (url.endsWith('/sitemap-index.xml')) return new Response('<sitemapindex><sitemap><loc>https://blocked.example.test/pages.xml</loc></sitemap><sitemap><loc>https://blocked.example.test/research.xml</loc></sitemap></sitemapindex>');
+      if (url.endsWith('/pages.xml')) return new Response(urlset([['https://blocked.example.test/about']]));
+      if (url.endsWith('/research.xml')) return new Response(urlset([
+        ['https://blocked.example.test/ko/research/crypto'],
+        ...sitemapPosts.map(([slug, lastmod]) => [`https://blocked.example.test/ko/research/${slug}`, lastmod]),
+        ['https://blocked.example.test/en/research/lombard-s-grand-roadmap', '2026-10-16T04:16:51.007Z'],
+      ]));
+      return new Response('<title>Vercel Security Checkpoint</title>', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
+    }
     if (unavailable) return new Response('Unavailable', { status: 503 });
     if (url.startsWith(source)) return new Response(html(), { headers: { 'content-type': 'text/html' } });
     if (url.includes('/empty')) return new Response('<html><title>No posts</title></html>');
@@ -95,5 +111,24 @@ try {
   await request('/api/feeds/refresh', { feedId: built.feedId });
   assert.match((await db.prepare('SELECT last_error FROM feeds WHERE id=?').bind(built.feedId).first()).last_error, /503/);
   assert.equal((await worker.fetch(new Request(built.rssUrl), env, {})).status, 200, 'stored RSS must remain available during upstream failure');
-  console.log('PASS: public URL validation, structured list discovery, deduplication, accurate/missing dates, read-only analysis, opt-in creation, folder ownership, stable RSS URL, public XML/OPML, idempotency, manual and scheduled new-post ingestion, retained history/read/save states and upstream failure recovery.');
+  unavailable = false;
+
+  // A site that challenges automated visits: build the list from its sitemap.
+  const fromSitemap = await (await request('/api/rss-builder/analyse', { url: blocked })).json();
+  assert.equal(fromSitemap.fromSitemap, true);
+  assert.equal(fromSitemap.groups.length, 1);
+  const sitemapGroup = fromSitemap.groups[0];
+  assert.equal(sitemapGroup.selector, 'sitemap:/ko/research/');
+  assert.deepEqual(sitemapGroup.articles.map((article) => article.title), ["Lombard's grand roadmap", 'Monthly eip sep 2026'], 'newest first; no category page, bulk-dated posts or other sections');
+  assert.equal(sitemapGroup.articles[0].publishedAt, '2026-10-16T04:16:51.007Z');
+  assert.equal(sitemapGroup.articles[0].dateSource, 'feed');
+  assert.ok(!blockedFetches.some((url) => url.startsWith('https://elsewhere.example.test/')), 'sitemaps on other hosts are ignored');
+  const sitemapBuilt = await (await request('/api/rss-builder', { url: blocked, selector: sitemapGroup.selector, title: '4Pillars' })).json();
+  assert.equal(sitemapBuilt.insertedCount, 2);
+  sitemapPosts = [['newest-report', '2026-10-21T01:00:00.000Z'], ...sitemapPosts];
+  blockedFetches.length = 0;
+  assert.equal((await (await request('/api/feeds/refresh', { feedId: sitemapBuilt.feedId })).json()).newArticles, 1);
+  assert.ok(!blockedFetches.includes(blocked), 'a sitemap feed refreshes from the sitemap without retrying the blocked page');
+  assert.equal((await db.prepare('SELECT title FROM articles WHERE feed_id=? ORDER BY published_at DESC').bind(sitemapBuilt.feedId).first()).title, 'Newest report');
+  console.log('PASS: public URL validation, structured list discovery, deduplication, accurate/missing dates, read-only analysis, opt-in creation, folder ownership, stable RSS URL, public XML/OPML, idempotency, manual and scheduled new-post ingestion, retained history/read/save states, upstream failure recovery and sitemap fallback for sites that block automated visits.');
 } finally { globalThis.fetch = originalFetch; await vite.close(); }

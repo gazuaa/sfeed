@@ -16,4 +16,6 @@ export interface BuilderAnalysis {
   title: string;
   groups: BuilderGroup[];
   rendered: boolean;
+  /** Built from the site's sitemap because the page itself could not be read. */
+  fromSitemap?: boolean;
 }

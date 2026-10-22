@@ -37,6 +37,11 @@ export async function checkEmbeddable(url: string, appOrigin: string): Promise<E
     });
     await res.body?.cancel();
     const finalUrl = res.url || url;
+    // A bot challenge hides the page's own headers, and a framed challenge
+    // cannot finish without third-party cookies: open it in a new window.
+    if (res.headers.get('x-vercel-mitigated') === 'challenge' || res.headers.get('cf-mitigated') === 'challenge') {
+      return { embeddable: false, url: finalUrl };
+    }
     // An https app cannot frame plain http pages (mixed content).
     const secureEnough = finalUrl.startsWith('https:') || appOrigin.startsWith('http:');
     return { embeddable: secureEnough && !framingBlocked(res.headers, appOrigin), url: finalUrl };
