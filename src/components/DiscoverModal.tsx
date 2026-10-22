@@ -10,11 +10,13 @@ import {
   Loader2,
   FolderPlus,
   Eye,
+  Rss,
 } from 'lucide-react';
 import { FeedPreview } from './FeedPreview';
 import { OpmlImporter } from './OpmlImporter';
 import { RssBuilder } from './RssBuilder';
 import { matchesFeedSearch, normalizeFeedUrl } from '../shared/feedDiscovery';
+import type { BuilderSite } from '../shared/rssBuilder';
 import {
   apiRequest,
   getStoredToken,
@@ -57,6 +59,8 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   const [previewRetry, setPreviewRetry] = useState(0);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderBusy, setBuilderBusy] = useState(false);
+  const [urlFeedOpen, setUrlFeedOpen] = useState(false);
+  const [site, setSite] = useState<BuilderSite | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState('');
@@ -78,6 +82,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     setSelectedFolderId('');
     setNewFolderName('');
     setBuilderOpen(false);
+    setUrlFeedOpen(false);
   }, [initialTab, isOpen]);
 
   const previewUrl = normalizeFeedUrl(query);
@@ -102,9 +107,23 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, previewUrl, previewRetry, isOpen, tab, builderOpen]);
 
+  // The builder works on the website: for a feed address, its site page.
+  const builderUrl = urlPreview?.feed.htmlUrl && normalizeFeedUrl(urlPreview.feed.xmlUrl) === previewUrl
+    ? normalizeFeedUrl(urlPreview.feed.htmlUrl) || previewUrl
+    : previewUrl;
+  React.useEffect(() => {
+    setSite(null);
+    if (!isOpen || tab !== 'curated' || !builderUrl || previewLoading) return;
+    const controller = new AbortController();
+    apiRequest<BuilderSite>('/api/rss-builder/site', { method: 'POST', signal: controller.signal, body: JSON.stringify({ url: builderUrl }) })
+      .then((result) => { if (!controller.signal.aborted) setSite(result); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [builderUrl, previewLoading, isOpen, tab]);
+
   React.useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [previewFeed, urlPreview, tab, builderOpen]);
+  }, [previewFeed, urlFeedOpen, tab, builderOpen]);
 
   if (!isOpen) return null;
 
@@ -121,7 +140,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     xmlUrl: urlPreview.feed.xmlUrl, htmlUrl: urlPreview.feed.htmlUrl || urlPreview.feed.xmlUrl,
     description: urlPreview.feed.description || '', category: '', tags: [], language: 'KO', folderSuggest: '',
   } : null;
-  const shownFeed = resolvedFeed || previewFeed;
+  const shownFeed = (urlFeedOpen ? resolvedFeed : null) || previewFeed;
 
   const isSubscribedUrl = (xmlUrl: string) =>
     subscriptions.some(
@@ -219,6 +238,74 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     );
   };
 
+  const hostname = (value: string) => { try { return new URL(value).hostname; } catch { return value; } };
+  const favicon = (value: string) => `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname(value))}&sz=64`;
+  const cardSurface = isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200';
+
+  // Curated feeds carry a category, language and tags; a feed found from an
+  // address shows that address instead.
+  const feedCard = (feed: CuratedFeedItem, onOpen: () => void) => (
+    <div key={feed.id} className={`relative group p-4 rounded-2xl border flex flex-col justify-between gap-3 transition hover:border-emerald-500/50 ${cardSurface}`}>
+      <button
+        type="button"
+        aria-label={`${feed.title} 미리보기`}
+        onClick={onOpen}
+        className="absolute inset-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
+      />
+      <div className="relative pointer-events-none">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src={favicon(feed.htmlUrl)} alt="" className="w-4 h-4 rounded-sm shrink-0" />
+            <h3 className="font-bold text-sm truncate">{feed.title}</h3>
+          </div>
+          {feed.category && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${feed.language === 'KO' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-blue-500/15 text-blue-400'}`}>
+              {feed.language}
+            </span>
+          )}
+        </div>
+        {!feed.category && <p className="text-[11px] text-slate-500 truncate mb-1.5">{feed.xmlUrl}</p>}
+        {feed.description && <p className="text-xs text-slate-400 leading-relaxed mb-3 line-clamp-3">{feed.description}</p>}
+        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 group-hover:text-emerald-400">
+          <Eye className="w-3.5 h-3.5" /> 최근 글 미리보기
+        </span>
+      </div>
+
+      <div className={`relative pointer-events-none flex items-center gap-2 pt-2 border-t ${isDark ? 'border-slate-800/50' : 'border-slate-200'} ${feed.tags.length ? 'justify-between' : 'justify-end'}`}>
+        {feed.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {feed.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">#{tag}</span>
+            ))}
+          </div>
+        )}
+        {subscribeButton(feed)}
+      </div>
+    </div>
+  );
+
+  // Like Feedly: whatever the address search finds, offer to build a feed
+  // from the articles listed on the website itself.
+  const builderSuggestion = builderUrl && (
+    <section aria-labelledby="builder-suggestion-title" className={`rounded-2xl border p-4 sm:p-5 ${cardSurface}`}>
+      <h3 id="builder-suggestion-title" className="text-sm font-bold">원하는 피드가 없나요?</h3>
+      <p className="mt-1 text-xs text-slate-400">이 웹사이트에 올라온 글로 맞춤 RSS 피드를 만들 수 있습니다.</p>
+      <div className={`mt-4 flex gap-3 sm:gap-4 rounded-xl border p-4 ${isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+        <img src={favicon(site?.url || builderUrl)} alt="" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h4 className="min-w-0 text-sm font-bold">{site?.title || hostname(builderUrl).replace(/^www\./, '')}</h4>
+            <button type="button" onClick={() => setBuilderOpen(true)} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/60 text-emerald-500 hover:bg-emerald-500/10 text-xs font-semibold cursor-pointer">
+              <Rss className="w-3.5 h-3.5" />RSS 피드 만들기
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500 truncate">{(site?.url || builderUrl).replace(/^https?:\/\/(?:www\.)?/, '')}</p>
+          {site?.description && <p className="mt-2 text-xs text-slate-400 leading-relaxed line-clamp-3">{site.description}</p>}
+        </div>
+      </div>
+    </section>
+  );
+
   const subscriptionOptions = (
     <details className={`rounded-xl border p-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
       <summary className="text-xs font-semibold cursor-pointer">구독 설정 (선택사항)</summary>
@@ -302,7 +389,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="discovery-title"
-        className={`relative z-10 w-full max-w-3xl max-h-[88dvh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`relative z-10 w-full ${builderOpen ? 'max-w-5xl' : 'max-w-3xl'} max-h-[88dvh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
           isDark
             ? 'bg-slate-900 border-slate-800 text-slate-100'
             : 'bg-white border-slate-200 text-slate-900'
@@ -394,24 +481,37 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
             <label htmlFor="feed-discovery-search" className="sr-only">피드 이름 또는 RSS·웹사이트 주소</label>
             <div className="relative">
               <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
+              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setUrlFeedOpen(false); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
             </div>
             <p className="text-[11px] text-slate-400 mt-2">이름으로 추천 피드를 찾거나, 주소를 입력해 최근 글을 미리보세요.</p>
           </form>}
           {tab === 'curated' && (
-            builderOpen && previewUrl ? <RssBuilder key={previewUrl} url={previewUrl} folders={folders} isDark={isDark} onBack={() => setBuilderOpen(false)} onSubscribed={onSubscribed} onBusyChange={setBuilderBusy} /> : shownFeed ? (
+            builderOpen && builderUrl ? <RssBuilder key={builderUrl} url={builderUrl} folders={folders} isDark={isDark} onBack={() => setBuilderOpen(false)} onSubscribed={onSubscribed} onBusyChange={setBuilderBusy} /> : shownFeed ? (
               <FeedPreview
                 key={shownFeed.id}
                 feed={shownFeed}
-                preview={urlPreview || undefined}
-                subscriptionOptions={resolvedFeed ? subscriptionOptions : undefined}
-                onBack={() => { setPreviewFeed(null); if (resolvedFeed) { setQuery(''); setUrlPreview(null); } }}
+                preview={shownFeed === resolvedFeed ? urlPreview || undefined : undefined}
+                subscriptionOptions={shownFeed === resolvedFeed ? subscriptionOptions : undefined}
+                onBack={() => { setPreviewFeed(null); setUrlFeedOpen(false); }}
                 subscribeButton={subscribeButton(shownFeed)}
                 isDark={isDark}
               />
             ) : previewUrl ? (
-              <div aria-live="polite" aria-busy={previewLoading} className="py-10 text-center">
-                {previewLoading ? <p role="status" className="inline-flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin" />피드를 찾고 최근 글을 불러오는 중입니다…</p> : previewError ? <><p role="alert" className="text-sm text-rose-500">{previewError}</p><p className="mt-3 text-xs text-slate-400">RSS가 없는 사이트라면 글 목록으로 피드를 만들어 보세요.</p><div className="mt-4 flex justify-center flex-wrap gap-2"><button type="button" onClick={() => setBuilderOpen(true)} className="px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 text-xs font-semibold cursor-pointer">RSS 빌더로 만들기</button><button type="button" onClick={() => setPreviewRetry((value) => value + 1)} className="px-3 py-2 rounded-xl text-xs text-emerald-500 border border-emerald-500/40 cursor-pointer">다시 시도</button></div></> : null}
+              <div aria-live="polite" aria-busy={previewLoading} className="space-y-5">
+                {previewLoading ? (
+                  <p role="status" className="py-6 flex items-center justify-center gap-2 text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin" />이 주소에서 RSS 피드를 찾는 중입니다…</p>
+                ) : resolvedFeed ? (
+                  <section aria-label="찾은 피드" className="space-y-2">
+                    <h3 className="text-xs font-semibold text-slate-400">찾은 피드</h3>
+                    {feedCard(resolvedFeed, () => setUrlFeedOpen(true))}
+                  </section>
+                ) : previewError ? (
+                  <div className="py-4 text-center">
+                    <p role="alert" className="text-sm text-rose-500">{previewError}</p>
+                    <button type="button" onClick={() => setPreviewRetry((value) => value + 1)} className="mt-3 px-3 py-2 rounded-xl text-xs text-emerald-500 border border-emerald-500/40 cursor-pointer">다시 시도</button>
+                  </div>
+                ) : null}
+                {builderSuggestion}
               </div>
             ) : <div className="space-y-5">
               {/* Category Filter Pills */}
@@ -436,72 +536,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
               <div className="grid sm:grid-cols-2 gap-3.5">
                 {filteredCurated.length === 0 && <p className="sm:col-span-2 py-10 text-center text-sm text-slate-400">검색 결과가 없습니다. RSS 또는 웹사이트 주소로도 찾아보세요.</p>}
-                {filteredCurated.map((feed) => {
-                  return (
-                    <div
-                      key={feed.id}
-                      className={`relative group p-4 rounded-2xl border flex flex-col justify-between gap-3 transition hover:border-emerald-500/50 ${
-                        isDark
-                          ? 'bg-slate-950/60 border-slate-800'
-                          : 'bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        aria-label={`${feed.title} 미리보기`}
-                        onClick={() => setPreviewFeed(feed)}
-                        className="absolute inset-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
-                      />
-                      <div className="relative pointer-events-none">
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <img
-                              src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(
-                                new URL(feed.htmlUrl).hostname
-                              )}&sz=64`}
-                              alt=""
-                              className="w-4 h-4 rounded-sm shrink-0"
-                            />
-                            <h3 className="font-bold text-sm truncate">
-                              {feed.title}
-                            </h3>
-                          </div>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                              feed.language === 'KO'
-                                ? 'bg-emerald-500/15 text-emerald-400'
-                                : 'bg-blue-500/15 text-blue-400'
-                            }`}
-                          >
-                            {feed.language}
-                          </span>
-                        </div>
-
-                        <p className="text-xs text-slate-400 leading-relaxed mb-3">
-                          {feed.description}
-                        </p>
-                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 group-hover:text-emerald-400">
-                          <Eye className="w-3.5 h-3.5" /> 최근 글 미리보기
-                        </span>
-                      </div>
-
-                      <div className="relative pointer-events-none flex items-center justify-between gap-2 pt-2 border-t border-slate-800/50">
-                        <div className="flex flex-wrap gap-1">
-                          {feed.tags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-
-                        {subscribeButton(feed)}
-                      </div>
-                    </div>
-                  );
-                })}
+                {filteredCurated.map((feed) => feedCard(feed, () => setPreviewFeed(feed)))}
               </div>
             </div>
           )}

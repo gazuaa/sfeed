@@ -17,7 +17,7 @@ import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './r
 import { scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
 import { fetchPreviewImage } from './previewImage';
-import { analyseBuilderPage, builderParsedFeed, publicPageUrl } from './rssBuilder';
+import { analyseBuilderPage, builderParsedFeed, builderSiteInfo, publicPageUrl } from './rssBuilder';
 import { refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './feedLoader';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
@@ -427,15 +427,22 @@ app.post('/api/rss-builder/analyse', async (c) => {
   try { publicPageUrl(body.url); } catch (error) { return c.json({ error: (error as Error).message }, 400); }
   try {
     const analysis = await analyseBuilderPage(body.url, c.env);
-    if (!analysis.groups.length) return c.json({ error: '반복되는 글 목록을 찾지 못했습니다. 개별 글이 아닌 블로그·뉴스 목록 주소를 입력해 주세요.' }, 422);
+    if (!analysis.groups.length && !analysis.snapshot) return c.json({ error: '반복되는 글 목록을 찾지 못했습니다. 개별 글이 아닌 블로그·뉴스 목록 주소를 입력해 주세요.' }, 422);
     return c.json(analysis);
   } catch (error) { return c.json({ error: error instanceof Error ? error.message : '글 목록을 분석하지 못했습니다.' }, 502); }
+});
+
+app.post('/api/rss-builder/site', async (c) => {
+  const body = await c.req.json<{ url?: string }>().catch(() => null);
+  if (typeof body?.url !== 'string') return c.json({ error: '웹사이트 주소를 입력해 주세요.' }, 400);
+  try { publicPageUrl(body.url); } catch (error) { return c.json({ error: (error as Error).message }, 400); }
+  return c.json(await builderSiteInfo(body.url));
 });
 
 app.post('/api/rss-builder', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{ url?: string; selector?: string; title?: string; folderId?: string; folderName?: string }>().catch(() => null);
-  if (typeof body?.url !== 'string' || typeof body.selector !== 'string' || !body.selector.trim() || body.selector.length > 1000 || (body.title != null && typeof body.title !== 'string') || (body.folderName != null && typeof body.folderName !== 'string') || (body.folderId != null && typeof body.folderId !== 'string')) return c.json({ error: '웹사이트 주소와 수집할 글 목록을 선택해 주세요.' }, 400);
+  if (typeof body?.url !== 'string' || typeof body.selector !== 'string' || !body.selector.trim() || body.selector.length > 2000 || (body.title != null && typeof body.title !== 'string') || (body.folderName != null && typeof body.folderName !== 'string') || (body.folderId != null && typeof body.folderId !== 'string')) return c.json({ error: '웹사이트 주소와 수집할 글 목록을 선택해 주세요.' }, 400);
   try { publicPageUrl(body.url); } catch (error) { return c.json({ error: (error as Error).message }, 400); }
   let folderId = body.folderId || null;
   if (folderId && !await c.env.DB.prepare('SELECT id FROM folders WHERE id=? AND user_id=?').bind(folderId, user.id).first()) return c.json({ error: '폴더를 찾을 수 없습니다.' }, 404);

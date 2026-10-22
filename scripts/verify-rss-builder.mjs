@@ -4,7 +4,9 @@ import { createServer } from 'vite';
 const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
 const originalFetch = globalThis.fetch;
 try {
-  const { analyseBuilderHtml, publicPageUrl } = await vite.ssrLoadModule('/src/server/rssBuilder.ts');
+  const { analyseBuilderHtml, publicPageUrl, pickerSnapshot, parseListedDate } = await vite.ssrLoadModule('/src/server/rssBuilder.ts');
+  const { pickerRuntime, extractPicked, encodePick, decodePick } = await vite.ssrLoadModule('/src/shared/rssPicker.ts');
+  const { parseHTML } = await import('linkedom');
   const { parseXmlFeedContent } = await vite.ssrLoadModule('/src/server/rssParser.ts');
   const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
@@ -14,7 +16,7 @@ try {
   let unavailable = false;
   const html = () => `<html><head><title>Research &amp; reports</title></head><body>
     <nav><a href="/ko/research/not-an-article">Navigation link</a></nav>
-    ${Array.from({ length: count }, (_, i) => `<div class="group flex flex-col"><a href="/ko/research/post-${i}"> <img src="/image-${i}.png" alt="Report number ${i}"> </a><a href="/ko/research/post-${i}?utm_source=test"><h3>Report number ${i}</h3></a><a href="/ko/researchers/author">Author profile</a>${i ? '' : '<time datetime="2026-10-21T15:00:00+09:00">2026.10.21</time>'}</div>`).join('')}
+    ${Array.from({ length: count }, (_, i) => `<div class="group flex flex-col"><a href="/ko/research/post-${i}"> <img src="/image-${i}.png" alt="Report number ${i}"> </a><a href="/ko/research/post-${i}?utm_source=test"><h3>Report number ${i}</h3></a><a href="/ko/researchers/author">Author profile</a>${i ? '' : '<time dateTime="2026-10-21T15:00:00+09:00">2026.10.21</time>'}</div>`).join('')}
     <section><a href="/other/first">Other section first</a><a href="/other/second">Other section second</a></section>
     <footer><a href="/ko/research/not-a-post">Footer link</a></footer></body></html>`;
   const parsed = analyseBuilderHtml(html(), source);
@@ -32,6 +34,22 @@ try {
   for (const url of ['http://localhost/page', 'http://127.0.0.1/page', 'http://[::1]/page', 'file:///etc/passwd', 'https://user:pass@example.com', 'https://metadata.internal/page']) assert.throws(() => publicPageUrl(url));
   const noImage = analyseBuilderHtml('<a href="/post/1"><img>First real article</a><a href="/post/2">Second real article</a>', source);
   assert.equal(noImage.groups[0].articles[0].thumbnailUrl, null);
+
+  // The page copy for point-and-click selection carries no active content.
+  const unsafe = pickerSnapshot(`<html><head><script>steal()</script><meta http-equiv="refresh" content="0;url=https://evil.example.test"></head><body onload="steal()"><a href="javascript:steal()">Bad link</a>${Array.from({ length: 5 }, (_, i) => `<a href="/p/${i}" onclick="steal()">Post ${i}</a>`).join('')}<img data-src="/lazy.png" src="data:image/gif;base64,AAAA"><iframe src="https://evil.example.test"></iframe></body></html>`, source);
+  assert.ok(!/<script|onload|onclick|javascript:|http-equiv|<iframe/i.test(unsafe), 'page copy keeps no active content');
+  assert.match(unsafe, /<base href="https:\/\/builder\.example\.test\/ko\/research">/);
+  assert.match(unsafe, /src="\/lazy\.png"/);
+  assert.equal(pickerSnapshot('<a href="/one">One</a>', source), undefined, 'a page without links has nothing to pick');
+  const now = Date.parse('2026-10-22T12:00:00Z');
+  assert.equal(parseListedDate('2026.10.21 14:05', now), '2026-10-21T05:05:00.000Z');
+  assert.equal(parseListedDate('2026년 10월 21일 오후 2:05', now), '2026-10-21T05:05:00.000Z');
+  assert.equal(parseListedDate('Oct 21, 2026', now), '2026-10-20T15:00:00.000Z');
+  assert.equal(parseListedDate('3시간 전', now), '2026-10-22T09:00:00.000Z');
+  assert.equal(parseListedDate('5 minutes ago', now), '2026-10-22T11:55:00.000Z');
+  assert.equal(parseListedDate('Updated 2026', now), null);
+  assert.equal(decodePick('pick:{"item":1,"title":""}'), null);
+  assert.equal(decodePick('pick:not json'), null);
 
   const db = new LocalD1Database(':memory:', 'migrations/0001_schema.sql');
   const env = { DB: db, ALLOW_QUICK_LOGIN: 'true' };
@@ -130,5 +148,35 @@ try {
   assert.equal((await (await request('/api/feeds/refresh', { feedId: sitemapBuilt.feedId })).json()).newArticles, 1);
   assert.ok(!blockedFetches.includes(blocked), 'a sitemap feed refreshes from the sitemap without retrying the blocked page');
   assert.equal((await db.prepare('SELECT title FROM articles WHERE feed_id=? ORDER BY published_at DESC').bind(sitemapBuilt.feedId).first()).title, 'Newest report');
-  console.log('PASS: public URL validation, structured list discovery, deduplication, accurate/missing dates, read-only analysis, opt-in creation, folder ownership, stable RSS URL, public XML/OPML, idempotency, manual and scheduled new-post ingestion, retained history/read/save states, upstream failure recovery and sitemap fallback for sites that block automated visits.');
+
+  // Point-and-click: the first look carries the page copy; the picker run on
+  // it selects the suggested article's list, and the server extracts the same.
+  const firstLook = await (await request('/api/rss-builder/analyse', { url: source })).json();
+  assert.match(firstLook.snapshot, /Report number 0/);
+  assert.ok(!/<script/i.test(firstLook.snapshot));
+  const pageCopy = parseHTML(firstLook.snapshot);
+  pageCopy.window.Element.prototype.scrollIntoView = () => {};
+  const posted = [];
+  const pageGlobals = { document: pageCopy.document, window: pageCopy.window, parent: { postMessage: (message) => posted.push(message) }, Element: pageCopy.window.Element };
+  const savedGlobals = Object.fromEntries(Object.keys(pageGlobals).map((key) => [key, globalThis[key]]));
+  Object.assign(globalThis, pageGlobals);
+  try { pickerRuntime(extractPicked, firstLook.sourceUrl, firstLook.groups[0].articles[0].url); } finally { Object.assign(globalThis, savedGlobals); }
+  const chosen = posted.find((message) => message.source === 'sfeed-picker' && message.type === 'selection');
+  assert.ok(chosen, 'the suggested article selects its list');
+  assert.deepEqual(chosen.selection, { item: 'div.group.flex.flex-col', title: 'h3', image: 'img', date: 'time' }, 'cards, not the byline link, repeat');
+  assert.equal(chosen.count, 2);
+  assert.equal(chosen.items[0].url, 'https://builder.example.test/ko/research/post-0', 'tracking parameters are dropped');
+  const pickSelector = encodePick(chosen.selection, false);
+  assert.equal(decodePick(pickSelector).item, chosen.selection.item);
+  const pickedFeed = await (await request('/api/rss-builder', { url: source, selector: pickSelector, title: 'Picked' })).json();
+  assert.equal(pickedFeed.insertedCount, 2);
+  const pickedRows = (await db.prepare('SELECT title,url,thumbnail_url,published_at FROM articles WHERE feed_id=? ORDER BY url').bind(pickedFeed.feedId).all()).results;
+  assert.deepEqual(pickedRows.map((row) => row.title), ['Report number 0', 'Report number 1']);
+  assert.equal(pickedRows[0].thumbnail_url, 'https://builder.example.test/image-0.png');
+  assert.equal(pickedRows[0].published_at, '2026-10-21T06:00:00.000Z');
+  count = 3;
+  assert.equal((await (await request('/api/feeds/refresh', { feedId: pickedFeed.feedId })).json()).newArticles, 1, 'a picked feed ingests new posts');
+  assert.equal((await (await request('/api/rss-builder/site', { url: source })).json()).title, 'Research & reports');
+  assert.equal((await (await request('/api/rss-builder/site', { url: blocked })).json()).title, 'blocked.example.test', 'a blocked site still gets a card');
+  console.log('PASS: public URL validation, structured list discovery, deduplication, accurate/missing dates, read-only analysis, opt-in creation, folder ownership, stable RSS URL, public XML/OPML, idempotency, manual and scheduled new-post ingestion, retained history/read/save states, upstream failure recovery, sitemap fallback for sites that block automated visits, a script-free page copy, listed-date parsing and point-and-click selection shared by the picker and the server.');
 } finally { globalThis.fetch = originalFetch; await vite.close(); }

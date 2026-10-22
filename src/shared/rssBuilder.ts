@@ -18,4 +18,11 @@ export interface BuilderAnalysis {
   rendered: boolean;
   /** Built from the site's sitemap because the page itself could not be read. */
   fromSitemap?: boolean;
+  /** Static copy of the page for point-and-click selection (first look only). */
+  snapshot?: string;
+}
+export interface BuilderSite {
+  url: string;
+  title: string;
+  description: string | null;
 }
