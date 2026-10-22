@@ -9,11 +9,14 @@ import {
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
-import { apiRequest, setStoredToken, type UserProfile } from '../client/api';
+import { apiRequest, setStoredToken, type UserProfile, type ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
+import { ThemeSwitch } from './ThemeSwitch';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile) => void;
+  theme?: ThemeMode;
+  onChangeTheme?: (theme: ThemeMode) => void;
 }
 
 declare global {
@@ -54,7 +57,7 @@ const DEMO_GOOGLE_ACCOUNTS = [
   },
 ];
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, theme = 'dark', onChangeTheme }) => {
   const [googleClientId, setGoogleClientId] = useState<string>(
     DEFAULT_GOOGLE_CLIENT_ID
   );
@@ -172,6 +175,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       {/* Left Hero Section */}
       <div className="lg:w-7/12 p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800/80 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/30">
         <div className="relative z-10">
+          {onChangeTheme && <div className="flex justify-end mb-4"><ThemeSwitch theme={theme} onChange={onChangeTheme} /></div>}
           <div className="inline-flex items-center gap-3 mb-10">
             <div className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/25">
               <Rss className="w-6 h-6 text-slate-950 stroke-[2.5]" />

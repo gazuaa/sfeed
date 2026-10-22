@@ -37,12 +37,17 @@ try {
   const render = (unreadOnly) => renderToStaticMarkup(React.createElement(Sidebar, {
     ...data, user: owner.user, unreadOnly, activeScope: 'all', activeFolderId: null, activeFeedId: null,
     isDark: true, mobileOpen: false, onSelectScope() {}, onOpenDiscover() {}, onCreateFolder() {},
-    onDeleteFolder() {}, onUnsubscribe() {}, onLogout() {}, onCloseMobile() {},
+    onDeleteFolder() {}, onUnsubscribe() {}, onLogout() {}, onCloseMobile() {}, onSelectLibraryTab() {},
   })).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const all = render(false);
   const unread = render(true);
-  for (const text of ['전체 피드 (All) 5', '오늘의 아티클 (Today) 2', 'Count folder 3', 'Folder feed 3', 'Loose feed 2', '나중에 읽기 (Saved) 1']) assert.ok(all.includes(text), text);
-  for (const text of ['전체 피드 (All) 2', '오늘의 아티클 (Today) 1', 'Count folder 1', 'Folder feed 1', 'Loose feed 1', '나중에 읽기 (Saved) 1']) assert.ok(unread.includes(text), text);
+  for (const text of ['전체 5 안 읽음 2 저장 1', 'Count folder 3', 'Folder feed 3', 'Loose feed 2']) assert.ok(all.includes(text), text);
+  for (const text of ['전체 5 안 읽음 2 저장 1', 'Count folder 1', 'Folder feed 1', 'Loose feed 1']) assert.ok(unread.includes(text), text);
+  assert.ok(!all.includes('오늘의 아티클'), 'the old Today navigation must be removed');
+  const list = async (query) => (await (await app.request('/api/articles?' + query, { headers: { authorization: `Bearer ${owner.token}` } }, env)).json()).articles;
+  assert.equal((await list('scope=all')).length, 5);
+  assert.equal((await list('scope=all&unreadOnly=true')).length, 2);
+  assert.deepEqual((await list('scope=saved')).map((row) => row.id), ['b'], 'saved must include already-read bookmarks');
   const otherData = await bootstrap(other.token);
   assert.equal(otherData.counts.totalArticles, 1);
   assert.equal(otherData.counts.totalUnread, 1);
@@ -58,7 +63,7 @@ try {
   assert.equal((await bootstrap(owner.token)).counts.totalUnread, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'a').first()).is_read, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'd').first()), null);
-  console.log('PASS: total/unread counts across all, today, folders and feeds; old history included only in totals; saved count stable; users isolated.');
+  console.log('PASS: All/Unread/Saved navigation counts and filters; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved.');
 } finally {
   await vite.close();
 }

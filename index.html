@@ -6,6 +6,14 @@
     <title>Sfeed — 나만의 스마트 RSS 리더</title>
     <meta name="description" content="관심 있는 피드를 모아 읽고, 나중에 읽을 글을 저장하는 나만의 RSS 리더" />
     <meta name="theme-color" content="#020617" />
+    <script>
+      try {
+        const theme = localStorage.getItem('sfeed:theme') === 'light' ? 'light' : 'dark';
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        document.documentElement.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#020617' : '#f8fafc';
+      } catch {}
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Sfeed" />

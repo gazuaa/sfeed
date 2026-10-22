@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import {
   Rss,
-  Sun,
-  Layers,
-  Bookmark,
   Plus,
   Folder,
   FolderOpen,
@@ -38,6 +35,7 @@ interface SidebarProps {
     folderId?: string | null,
     feedId?: string | null
   ) => void;
+  onSelectLibraryTab: (tab: 'all' | 'unread' | 'saved') => void;
   onOpenDiscover: (initialTab?: 'curated' | 'custom' | 'opml') => void;
   onCreateFolder: (name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
@@ -58,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeFolderId,
   activeFeedId,
   onSelectScope,
+  onSelectLibraryTab,
   onOpenDiscover,
   onCreateFolder,
   onDeleteFolder,
@@ -91,17 +90,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     (s) => !s.folder_id || !folders.some((f) => f.id === s.folder_id)
   );
   const getFeedCount = (sub: SubscriptionItem) => unreadOnly ? sub.unread_count : sub.total_count;
-  const allCount = unreadOnly ? counts.totalUnread : counts.totalArticles;
-  const todayCount = unreadOnly ? counts.todayCount : counts.todayTotal;
-
-  const navItemClass = (isActive: boolean) =>
-    `w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition cursor-pointer ${
-      isActive
-        ? 'bg-emerald-500/15 text-emerald-400 font-semibold'
-        : isDark
-        ? 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
-        : 'text-slate-700 hover:bg-slate-200/70 hover:text-slate-950'
-    }`;
 
   return (
     <>
@@ -113,7 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-72 shrink-0 flex flex-col border-r transition-transform duration-200 ${
+        aria-label="피드 채널"
+        className={`sfeed-sidebar fixed lg:static inset-y-0 left-0 z-50 w-72 min-h-0 shrink-0 flex flex-col overflow-hidden border-r transition-transform duration-200 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${
           isDark
@@ -122,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         {/* Top Logo & Add Feed CTA */}
-        <div className="p-4 flex items-center justify-between">
+        <div className="p-4 shrink-0 flex items-center justify-between">
           <div
             onClick={() => {
               onSelectScope('all', null, null);
@@ -144,6 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button
             type="button"
+            aria-label="피드 채널 닫기"
             onClick={onCloseMobile}
             className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white"
           >
@@ -151,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        <div className="px-3 mb-3">
+        <div className="px-3 mb-3 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -165,68 +155,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
+        <nav aria-label="글 보기" className={`mx-3 mb-4 grid grid-cols-3 shrink-0 gap-1 rounded-xl border p-1 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+          {([
+            { id: 'all', label: '전체', count: counts.totalArticles },
+            { id: 'unread', label: '안 읽음', count: counts.totalUnread },
+            { id: 'saved', label: '저장', count: counts.savedCount },
+          ] as const).map((tab) => {
+            const selected = tab.id === 'saved' ? activeScope === 'saved' : activeScope === 'all' && unreadOnly === (tab.id === 'unread');
+            return <button key={tab.id} type="button" aria-pressed={selected} onClick={() => { onSelectLibraryTab(tab.id); onCloseMobile(); }} className={`min-w-0 flex flex-col items-center gap-1 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${selected ? isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white text-emerald-700 shadow-sm' : isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}><span>{tab.label}</span><span className="text-[10px] tabular-nums opacity-80">{tab.count.toLocaleString('ko-KR')}</span></button>;
+          })}
+        </nav>
+
         {/* Scrollable Navigation Tree */}
-        <div className="flex-1 overflow-y-auto px-3 space-y-5 pb-4">
-          {/* Primary Views */}
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={() => {
-                onSelectScope('today', null, null);
-                onCloseMobile();
-              }}
-              className={navItemClass(activeScope === 'today')}
-            >
-              <div className="flex items-center gap-2.5">
-                <Sun className="w-4 h-4 text-amber-400" />
-                <span>오늘의 아티클 (Today)</span>
-              </div>
-              {todayCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-semibold">
-                  {todayCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onSelectScope('all', null, null);
-                onCloseMobile();
-              }}
-              className={navItemClass(activeScope === 'all')}
-            >
-              <div className="flex items-center gap-2.5">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span>전체 피드 (All)</span>
-              </div>
-              {allCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
-                  {allCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onSelectScope('saved', null, null);
-                onCloseMobile();
-              }}
-              className={navItemClass(activeScope === 'saved')}
-            >
-              <div className="flex items-center gap-2.5">
-                <Bookmark className="w-4 h-4 text-indigo-400" />
-                <span>나중에 읽기 (Saved)</span>
-              </div>
-              {counts.savedCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 font-semibold">
-                  {counts.savedCount}
-                </span>
-              )}
-            </button>
-          </div>
-
+        <div aria-label="구독 피드 채널" role="navigation" tabIndex={0} className="sfeed-channel-list flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 space-y-5 pb-4">
           {/* Folders & Feeds Section */}
           <div>
             <div className="flex items-center justify-between px-2 mb-2">
@@ -506,7 +447,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Footer */}
         <div
-          className={`p-3 border-t flex items-center justify-between gap-2 ${
+          className={`sfeed-sidebar-footer p-3 shrink-0 border-t flex items-center justify-between gap-2 ${
             isDark ? 'border-slate-800/80 bg-slate-950/50' : 'border-slate-200 bg-slate-100/70'
           }`}
         >

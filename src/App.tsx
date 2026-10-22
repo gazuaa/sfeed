@@ -21,6 +21,7 @@ import { LoadMoreArticles } from './components/LoadMoreArticles';
 import { ArticleDrawer } from './components/ArticleDrawer';
 import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
+import { applyTheme, readStoredTheme } from './client/theme';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -47,7 +48,7 @@ export const App: React.FC = () => {
 
   // User Preferences
   const [layout, setLayout] = useState<LayoutMode>('magazine');
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
   const [unreadOnly, setUnreadOnly] = useState(false);
 
   // Articles & Reader State
@@ -57,6 +58,7 @@ export const App: React.FC = () => {
   const [loadingMoreArticles, setLoadingMoreArticles] = useState(false);
   // Query of the list currently shown; an older page is dropped if the view changed meanwhile.
   const articleQueryRef = useRef('');
+  const articleListRef = useRef<HTMLElement>(null);
   const [refreshingFeeds, setRefreshingFeeds] = useState(false);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
@@ -77,14 +79,13 @@ export const App: React.FC = () => {
   const markingAllReadRef = useRef(false);
   const [markReadError, setMarkReadError] = useState<string | null>(null);
 
+  useEffect(() => {
+    articleListRef.current?.scrollTo({ top: 0 });
+  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+
   // Sync HTML root class with theme
   useEffect(() => {
-    const html = document.documentElement;
-    if (theme === 'dark') {
-      html.classList.add('dark');
-    } else {
-      html.classList.remove('dark');
-    }
+    applyTheme(theme);
   }, [theme]);
 
   // Check OAuth callback token or stored token on mount
@@ -224,8 +225,7 @@ export const App: React.FC = () => {
     savePreferences({ layout: nextLayout });
   };
 
-  const handleToggleTheme = () => {
-    const nextTheme: ThemeMode = theme === 'dark' ? 'light' : 'dark';
+  const handleChangeTheme = (nextTheme: ThemeMode) => {
     setTheme(nextTheme);
     savePreferences({ theme: nextTheme });
   };
@@ -245,6 +245,13 @@ export const App: React.FC = () => {
     setActiveFolderId(folderId);
     setActiveFeedId(feedId);
     setSelectedArticleId(null);
+  };
+
+  const handleSelectLibraryTab = (tab: 'all' | 'unread' | 'saved') => {
+    const unread = tab === 'unread';
+    setUnreadOnly(unread);
+    savePreferences({ unreadOnly: unread });
+    handleSelectScope(tab === 'saved' ? 'saved' : 'all');
   };
 
   const handleUpdateArticleState = useCallback(
@@ -508,10 +515,10 @@ export const App: React.FC = () => {
       };
     }
     return {
-      title: '전체 피드 (All Feeds)',
+      title: unreadOnly ? '안 읽은 글' : '전체 피드 (All Feeds)',
       subtitle: `구독 중인 ${subscriptions.length}개 피드의 최신 아티클 스트림`,
     };
-  }, [activeScope, activeFolderId, activeFeedId, folders, subscriptions]);
+  }, [activeScope, activeFolderId, activeFeedId, folders, subscriptions, unreadOnly]);
 
   if (authChecking) {
     return (
@@ -524,6 +531,8 @@ export const App: React.FC = () => {
   if (!user) {
     return (
       <LoginView
+        theme={theme}
+        onChangeTheme={handleChangeTheme}
         onLoginSuccess={(loggedInUser) => {
           setUser(loggedInUser);
           setLayout(loggedInUser.preferences.layout);
@@ -538,7 +547,7 @@ export const App: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen flex ${
+      className={`sfeed-shell h-dvh min-h-0 overflow-hidden flex ${
         isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
       }`}
     >
@@ -553,6 +562,7 @@ export const App: React.FC = () => {
         activeFolderId={activeFolderId}
         activeFeedId={activeFeedId}
         onSelectScope={handleSelectScope}
+        onSelectLibraryTab={handleSelectLibraryTab}
         onOpenDiscover={(tab = 'curated') => {
           setDiscoverTab(tab);
           setDiscoverOpen(true);
@@ -567,7 +577,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <HeaderBar
           title={headerInfo.title}
           subtitle={headerInfo.subtitle}
@@ -578,14 +588,14 @@ export const App: React.FC = () => {
           layout={layout}
           onChangeLayout={handleChangeLayout}
           theme={theme}
-          onToggleTheme={handleToggleTheme}
+          onChangeTheme={handleChangeTheme}
           onRefresh={handleRefreshFeeds}
           refreshing={refreshingFeeds}
           onMarkAllRead={handleMarkAllRead}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto">
+        <main ref={articleListRef} id="feed-article-list" aria-label="피드 목록" tabIndex={0} className="sfeed-feed-list flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <ArticleList
             articles={articles}
             layout={layout}
@@ -612,7 +622,7 @@ export const App: React.FC = () => {
 
         {/* Bottom Keyboard Shortcut Hint Bar */}
         <footer
-          className={`hidden md:flex items-center justify-between px-8 py-2 border-t text-[11px] ${
+          className={`hidden md:flex shrink-0 flex-wrap gap-2 items-center justify-between px-8 py-2 border-t text-[11px] ${
             isDark
               ? 'bg-slate-950 border-slate-900 text-slate-500'
               : 'bg-white border-slate-200 text-slate-400'

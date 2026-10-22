@@ -6,14 +6,13 @@ import {
   LayoutList,
   LayoutGrid,
   AlignJustify,
-  Sun,
-  Moon,
   Eye,
   Menu,
   X,
 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
+import { ThemeSwitch } from './ThemeSwitch';
 
 interface HeaderBarProps {
   title: string;
@@ -25,7 +24,7 @@ interface HeaderBarProps {
   layout: LayoutMode;
   onChangeLayout: (layout: LayoutMode) => void;
   theme: ThemeMode;
-  onToggleTheme: () => void;
+  onChangeTheme: (theme: ThemeMode) => void;
   onRefresh: () => void;
   refreshing: boolean;
   onMarkAllRead: () => void;
@@ -42,7 +41,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   layout,
   onChangeLayout,
   theme,
-  onToggleTheme,
+  onChangeTheme,
   onRefresh,
   refreshing,
   onMarkAllRead,
@@ -52,7 +51,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <header
-      className={`sfeed-header sticky top-0 z-30 border-b backdrop-blur-md px-4 lg:px-8 py-3.5 transition-colors ${
+      className={`sfeed-header shrink-0 z-30 border-b backdrop-blur-md px-4 lg:px-8 py-3.5 transition-colors ${
         isDark
           ? 'bg-slate-950/85 border-slate-800/80 text-slate-100'
           : 'bg-white/90 border-slate-200 text-slate-900'
@@ -63,6 +62,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
+            aria-label="피드 채널 열기"
             onClick={onOpenMobileSidebar}
             className={`lg:hidden p-2 rounded-lg border cursor-pointer ${
               isDark
@@ -144,7 +144,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
                 layout === 'magazine'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
               <LayoutList className="w-3.5 h-3.5" />
@@ -158,7 +158,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
                 layout === 'cards'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -172,7 +172,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
                 layout === 'list'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
               <AlignJustify className="w-3.5 h-3.5" />
@@ -212,19 +212,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             />
           </button>
 
-          {/* Theme Toggle */}
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-            className={`p-2 rounded-xl border transition cursor-pointer ${
-              isDark
-                ? 'bg-slate-900 border-slate-800 text-amber-400 hover:bg-slate-800'
-                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          <ThemeSwitch theme={theme} onChange={onChangeTheme} />
         </div>
       </div>
     </header>

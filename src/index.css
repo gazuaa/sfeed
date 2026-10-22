@@ -1,17 +1,23 @@
 @import "tailwindcss";
 @source "../index.html";
 
-html { background: #020617; }
-body { min-height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+html { --sfeed-background: #f8fafc; --sfeed-panel: #fff; --sfeed-text: #0f172a; --sfeed-muted: #475569; --sfeed-border: #cbd5e1; background: var(--sfeed-background); color-scheme: light; }
+html.dark { --sfeed-background: #020617; --sfeed-panel: #0f172a; --sfeed-text: #f1f5f9; --sfeed-muted: #94a3b8; --sfeed-border: #334155; color-scheme: dark; }
+body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color: var(--sfeed-text); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .min-h-screen { min-height: 100dvh; }
+.sfeed-channel-list, .sfeed-feed-list { scrollbar-gutter: stable; }
+.sfeed-channel-list:focus-visible, .sfeed-feed-list:focus-visible { outline: 2px solid #10b981; outline-offset: -2px; }
+.sfeed-feed-list { padding-bottom: env(safe-area-inset-bottom); }
+.sfeed-sidebar-footer { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
 .sfeed-header { padding-top: calc(.875rem + env(safe-area-inset-top)); }
 .sfeed-login { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .sfeed-reader { padding-bottom: env(safe-area-inset-bottom); }
 .sfeed-reader-toolbar { padding-top: calc(.75rem + env(safe-area-inset-top)); }
 aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-.sfeed-install-banner { position: fixed; z-index: 40; right: max(1rem, env(safe-area-inset-right)); bottom: calc(1rem + env(safe-area-inset-bottom)); display: flex; gap: 12px; align-items: center; width: min(450px, calc(100vw - 2rem)); padding: 16px; border: 1px solid #334155; border-radius: 20px; background: #0f172af5; color: #f1f5f9; box-shadow: 0 12px 45px #0005; }
+.sfeed-install-banner { position: fixed; z-index: 40; right: max(1rem, env(safe-area-inset-right)); bottom: calc(1rem + env(safe-area-inset-bottom)); display: flex; gap: 12px; align-items: center; width: min(450px, calc(100vw - 2rem)); padding: 16px; border: 1px solid var(--sfeed-border); border-radius: 20px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 12px 45px #0002; }
 .sfeed-install-banner img { border-radius: 12px; flex-shrink: 0; }
-.sfeed-install-dialog { margin: auto; width: min(460px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; padding: 28px; border: 1px solid #334155; border-radius: 24px; background: #0f172a; color: #f1f5f9; box-shadow: 0 24px 80px #0007; }
+.sfeed-install-dialog { margin: auto; width: min(460px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; padding: 28px; border: 1px solid var(--sfeed-border); border-radius: 24px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 24px 80px #0007; }
+.sfeed-install-banner p, .sfeed-install-dialog p { color: var(--sfeed-muted); }
 .sfeed-install-dialog::backdrop { background: #020617b3; backdrop-filter: blur(4px); }
 .sfeed-install-dialog img { border-radius: 12px; }
 @media (max-width: 640px) {
@@ -141,3 +147,12 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   background: transparent;
   padding: 0;
 }
+
+html:not(.dark) .sfeed-article-content a { color: #047857; }
+html:not(.dark) .sfeed-article-content pre { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
+html:not(.dark) .sfeed-login { background: var(--sfeed-background); color: var(--sfeed-text); }
+html:not(.dark) .sfeed-login > div { background-image: none; background-color: var(--sfeed-panel); border-color: var(--sfeed-border); }
+html:not(.dark) .sfeed-login .text-white, html:not(.dark) .sfeed-login .text-slate-100, html:not(.dark) .sfeed-login .text-slate-300 { color: var(--sfeed-text); }
+html:not(.dark) .sfeed-login .text-slate-400 { color: var(--sfeed-muted); }
+html:not(.dark) .sfeed-login [class*="bg-slate-9"] { background-color: var(--sfeed-background); }
+html:not(.dark) .sfeed-login [class*="border-slate-8"] { border-color: var(--sfeed-border); }
