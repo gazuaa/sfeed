@@ -20,6 +20,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'vite';
+import { fileURLToPath } from 'node:url';
 import { acquireLock, createFeedlyClient, readEntries as readCompleteEntries, runFeedQueue, saveJson } from './feedly-import-support.mjs';
 
 const DIR = '.local/feedly-import';
@@ -94,7 +95,7 @@ function subscribedFeeds() {
   return opts.feed ? feeds.filter((feed) => feed.xml_url.includes(opts.feed)) : feeds;
 }
 
-async function download(stripHtmlToSummary, decodeHtmlEntities) {
+async function download(stripHtmlToSummary, decodeHtmlEntities, extractOriginalPublishedAt, extractSummaryPublishedAt) {
   const feeds = subscribedFeeds();
   console.log(`${feeds.length} subscribed feeds`);
   const schedulePath = join(DIR, `${opts.db}.${feedKey(opts.user)}.schedule.json`);
@@ -122,15 +123,21 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
         seen.add(entry.id);
         const alternate = entry.alternate?.find((link) => link.href)?.href;
         const visual = entry.visual?.url;
+        const url = alternate || entry.canonicalUrl || entry.originId;
+        const title = decodeHtmlEntities(entry.title || '') || 'Untitled Article';
+        const rawContent = entry.content?.content || entry.summary?.content || '';
+        const summary = stripHtmlToSummary(entry.summary?.content || rawContent) || null;
+        const originalPublishedAt = extractOriginalPublishedAt(rawContent, url) || extractSummaryPublishedAt(summary, title, url);
         return JSON.stringify({
           feedlyId: entry.id,
           guid: entry.originId || alternate || entry.id,
-          url: alternate || entry.canonicalUrl || entry.originId,
-          title: decodeHtmlEntities(entry.title || '') || 'Untitled Article',
+          url,
+          title,
           author: entry.author || null,
-          summary: stripHtmlToSummary(entry.summary?.content || entry.content?.content || '') || null,
+          summary,
           thumbnailUrl: visual && /^https?:\/\//.test(visual) ? visual : null,
-          publishedAt: new Date(entry.published || entry.crawled).toISOString(),
+          publishedAt: originalPublishedAt || new Date(entry.published || entry.crawled).toISOString(),
+          originalPublishedAt,
         });
       });
       if (lines.length) appendFileSync(dataPath(feed.xml_url), lines.join('\n') + '\n');
@@ -153,7 +160,7 @@ async function download(stripHtmlToSummary, decodeHtmlEntities) {
   });
 }
 
-function write() {
+function write(extractSummaryPublishedAt) {
   const now = new Date().toISOString();
   if (existsSync(manifestPath)) {
     const cached = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -187,7 +194,7 @@ function write() {
         const values = chunk.slice(i, i + ROWS_PER_STATEMENT).map((entry) =>
           `(${[
             `art_${randomUUID()}`, feed.id, entry.guid, entry.title, entry.url, entry.author, entry.summary,
-            null, entry.thumbnailUrl, entry.publishedAt, now,
+            null, entry.thumbnailUrl, entry.originalPublishedAt || extractSummaryPublishedAt(entry.summary, entry.title, entry.url) || entry.publishedAt, now,
           ].map(sql).join(', ')})`
         );
         statements.push(
@@ -206,16 +213,17 @@ function write() {
 
 const release = acquireLock(DIR, command);
 try {
-  if (command === 'download') {
-    const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
-    try {
+  const vite = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+  try {
+    const { extractOriginalPublishedAt, extractSummaryPublishedAt } = await vite.ssrLoadModule('/src/server/publicationDate.ts');
+    if (command === 'download') {
       const { stripHtmlToSummary, decodeHtmlEntities } = await vite.ssrLoadModule('/src/server/rssParser.ts');
-      await download(stripHtmlToSummary, decodeHtmlEntities);
-    } finally {
-      await vite.close();
+      await download(stripHtmlToSummary, decodeHtmlEntities, extractOriginalPublishedAt, extractSummaryPublishedAt);
+    } else {
+      write(extractSummaryPublishedAt);
     }
-  } else {
-    write();
+  } finally {
+    await vite.close();
   }
 } finally {
   release();

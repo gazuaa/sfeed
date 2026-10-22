@@ -78,12 +78,14 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       const res = await apiRequest<{
         fullContentHtml: string;
         scrapedFromWeb?: boolean;
+        publishedAt?: string;
       }>(`/api/articles/${article.id}/reader-view`, {
         method: 'POST',
         body: JSON.stringify({}),
       });
       onUpdateArticleFields(article.id, {
         full_content_html: res.fullContentHtml,
+        ...(res.publishedAt ? { published_at: res.publishedAt } : {}),
       });
       setReaderMode(true);
     } catch {

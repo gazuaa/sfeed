@@ -17,7 +17,8 @@
     "test:feedly": "node --test scripts/verify-feedly-import.mjs",
     "import:feedly:sync": "node scripts/sync-feedly-history.mjs",
     "test:counts": "node scripts/verify-sidebar-counts.mjs",
-    "test:real-feeds": "node scripts/verify-real-feeds.mjs"
+    "test:real-feeds": "node scripts/verify-real-feeds.mjs",
+    "test:dates": "node scripts/verify-publication-dates.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.0.8",

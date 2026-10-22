@@ -1,9 +1,11 @@
 import { sanitizeContentHtml } from './rssParser';
+import { extractOriginalPublishedAt } from './publicationDate';
 
 export interface ScrapedArticleResult {
   fullContentHtml: string;
   leadImageUrl: string | null;
   scrapedFromWeb: boolean;
+  originalPublishedAt: string | null;
 }
 
 export async function scrapeFullArticle(
@@ -71,6 +73,7 @@ export async function scrapeFullArticle(
         fullContentHtml: sanitized,
         leadImageUrl,
         scrapedFromWeb: true,
+        originalPublishedAt: extractOriginalPublishedAt(rawHtml, url) || extractOriginalPublishedAt(fallbackHtml, url),
       };
     }
   } catch {
@@ -87,5 +90,6 @@ export async function scrapeFullArticle(
     </div>`,
     leadImageUrl: null,
     scrapedFromWeb: false,
+    originalPublishedAt: extractOriginalPublishedAt(fallbackHtml, url),
   };
 }

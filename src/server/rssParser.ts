@@ -1,6 +1,7 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { OpmlFeed } from '../shared/opml';
 import { CURATED_FEEDS } from './curatedFeeds';
+import { extractOriginalPublishedAt, extractSummaryPublishedAt, parsePublicationDate } from './publicationDate';
 
 export interface ParsedArticle {
   guid: string;
@@ -11,6 +12,7 @@ export interface ParsedArticle {
   contentHtml: string | null;
   thumbnailUrl: string | null;
   publishedAt: string;
+  originalPublishedAt?: string | null;
 }
 
 export interface ParsedFeed {
@@ -166,30 +168,10 @@ const ITEM_DATE_FIELDS = ['pubDate', 'published', 'dc:date', 'issued', 'created'
 function extractItemDate(item: Record<string, unknown>): string {
   for (const field of ITEM_DATE_FIELDS) {
     const text = extractText(item[field]);
-    if (text) return text;
+    const parsed = parsePublicationDate(text);
+    if (parsed) return parsed;
   }
   return '';
-}
-
-// Feeds that omit the time zone are Korean CMS feeds (AI타임스 sends
-// "2026-10-19 14:46:44"), whose times are KST. Parse them as +09:00
-// explicitly: Workers run in UTC and would otherwise date them 9 hours ahead.
-const HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2}|\b[A-Z]{2,5})\s*$/;
-const ISO_LOCAL = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?$/;
-
-function parseDateSafe(raw: string): string {
-  if (!raw) return new Date().toISOString();
-  const text = raw.trim();
-  let parsed = new Date(text);
-  if (!HAS_ZONE.test(text)) {
-    const iso = text.match(ISO_LOCAL);
-    const kst = new Date(iso ? `${iso[1]}T${iso[2] ?? '00:00:00'}+09:00` : `${text} +0900`);
-    if (!isNaN(kst.getTime())) parsed = kst;
-  }
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString();
-  }
-  return new Date().toISOString();
 }
 
 export function getFaviconForSite(siteUrl: string | null, xmlUrl: string): string | null {
@@ -267,6 +249,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
       const summary = stripHtmlToSummary(rawDesc || rawContent);
       const thumbnailUrl = extractThumbnail(item, rawContent || rawDesc, itemUrl || htmlUrl || xmlUrl);
       const pubDateRaw = extractItemDate(item);
+      const originalPublishedAt = extractOriginalPublishedAt(rawContent, itemUrl) || extractOriginalPublishedAt(rawDesc, itemUrl) || extractSummaryPublishedAt(summary, itemTitle, itemUrl);
 
       articles.push({
         guid,
@@ -276,7 +259,8 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
         summary: summary || null,
         contentHtml: contentHtml || null,
         thumbnailUrl,
-        publishedAt: parseDateSafe(pubDateRaw),
+        publishedAt: originalPublishedAt || pubDateRaw || new Date().toISOString(),
+        originalPublishedAt,
       });
     }
 
@@ -352,6 +336,7 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
       const summary = stripHtmlToSummary(rawSummary || rawContent);
       const thumbnailUrl = extractThumbnail(entry, rawContent || rawSummary, entryUrl || htmlUrl || xmlUrl);
       const pubDateRaw = extractItemDate(entry);
+      const originalPublishedAt = extractOriginalPublishedAt(rawContent, entryUrl) || extractOriginalPublishedAt(rawSummary, entryUrl) || extractSummaryPublishedAt(summary, entryTitle, entryUrl);
 
       articles.push({
         guid,
@@ -361,7 +346,8 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
         summary: summary || null,
         contentHtml: contentHtml || null,
         thumbnailUrl,
-        publishedAt: parseDateSafe(pubDateRaw),
+        publishedAt: originalPublishedAt || pubDateRaw || new Date().toISOString(),
+        originalPublishedAt,
       });
     }
 

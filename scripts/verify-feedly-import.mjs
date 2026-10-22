@@ -171,13 +171,14 @@ test('publish an unfinished feed, resume checkpoints, and preserve existing arti
     const entry = (number) => ({ feedlyId: `e${number}`, guid: `g${number}`, title: `Entry ${number}`, url: `https://example.test/${number}`, publishedAt: '2026-10-01T00:00:00Z' });
     const state = { xmlUrl, count: 2, done: false, cursor: 100, written: { local: 1, remote: 0 } };
     saveJson(statePath, state);
-    writeFileSync(dataPath, [entry(1), entry(2)].map(JSON.stringify).join('\n') + '\n{"partial":');
+    writeFileSync(dataPath, [entry(1), { ...entry(2), url: 'https://www.hankyung.com/article/202609117709i', summary: 'Entry 2 2026.09.11 00:58 글로벌 증시' }].map(JSON.stringify).join('\n') + '\n{"partial":');
     assert.equal(readEntries(dataPath).length, 2);
     assert.equal(readEntries(dataPath, { repair: true }).length, 2);
     assert.ok(readFileSync(dataPath, 'utf8').endsWith('\n'));
     const run = () => execFileSync(process.execPath, [script, 'write', '--db', 'local', '--user', 'u1'], { cwd: directory, stdio: 'pipe' });
     run();
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM articles').get().n, 2);
+    assert.equal(db.prepare("SELECT published_at FROM articles WHERE guid='g2'").get().published_at, '2026-09-10T15:58:00.000Z', 'archived Feedly summaries must use the publisher date');
     assert.deepEqual(JSON.parse(readFileSync(statePath)), state);
     assert.equal(JSON.parse(readFileSync(progressPath)).offset, 2);
     // Downloader replaces its checkpoint as it progresses. Writer keeps offset 2.

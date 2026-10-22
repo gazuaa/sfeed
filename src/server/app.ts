@@ -14,6 +14,7 @@ import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
 import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFailures';
 import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
+import { extractOriginalPublishedAt } from './publicationDate';
 import { summarizeArticleWithAI } from './aiSummarizer';
 import {
   generateId,
@@ -885,7 +886,7 @@ app.post('/api/articles/:id/reader-view', async (c) => {
     .catch(() => ({ force: false }));
 
   const article = await c.env.DB.prepare(
-    `SELECT id, title, url, content_html, full_content_html, thumbnail_url
+    `SELECT id, title, url, content_html, full_content_html, thumbnail_url, published_at
      FROM articles WHERE id = ?`
   )
     .bind(articleId)
@@ -896,6 +897,7 @@ app.post('/api/articles/:id/reader-view', async (c) => {
       content_html: string | null;
       full_content_html: string | null;
       thumbnail_url: string | null;
+      published_at: string;
     }>();
 
   if (!article) {
@@ -903,8 +905,13 @@ app.post('/api/articles/:id/reader-view', async (c) => {
   }
 
   if (article.full_content_html && !body.force) {
+    const publishedAt = extractOriginalPublishedAt(article.content_html, article.url) || extractOriginalPublishedAt(article.full_content_html, article.url) || article.published_at;
+    if (publishedAt !== article.published_at) {
+      await c.env.DB.prepare('UPDATE articles SET published_at = ? WHERE id = ?').bind(publishedAt, article.id).run();
+    }
     return c.json({
       fullContentHtml: article.full_content_html,
+      publishedAt,
       cached: true,
     });
   }
@@ -918,14 +925,16 @@ app.post('/api/articles/:id/reader-view', async (c) => {
   await c.env.DB.prepare(
     `UPDATE articles
      SET full_content_html = ?,
-         thumbnail_url = COALESCE(thumbnail_url, ?)
+         thumbnail_url = COALESCE(thumbnail_url, ?),
+         published_at = COALESCE(?, published_at)
      WHERE id = ?`
   )
-    .bind(scraped.fullContentHtml, scraped.leadImageUrl, article.id)
+    .bind(scraped.fullContentHtml, scraped.leadImageUrl, scraped.originalPublishedAt, article.id)
     .run();
 
   return c.json({
     fullContentHtml: scraped.fullContentHtml,
+    publishedAt: scraped.originalPublishedAt || article.published_at,
     scrapedFromWeb: scraped.scrapedFromWeb,
     cached: false,
   });

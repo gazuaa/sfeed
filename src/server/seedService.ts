@@ -84,7 +84,7 @@ export async function upsertFeedAndArticles(
   }
 
   // Fetch existing rows together and write up to eight articles per statement.
-  // This keeps a feed refresh well below Workers/D1 query limits (88 parameters).
+  // This keeps a feed refresh below Workers/D1 query limits (at most 96 parameters).
   const existing = new Map<string, ExistingArticle>();
   for (let offset = 0; offset < parsed.articles.length; offset += 80) {
     const chunk = parsed.articles.slice(offset, offset + 80);
@@ -105,11 +105,14 @@ export async function upsertFeedAndArticles(
     return (
       (Boolean(row.no_thumbnail) && Boolean(article.thumbnailUrl)) ||
       (Boolean(row.no_content) && Boolean(article.contentHtml)) ||
+      (Boolean(article.originalPublishedAt) && row.published_at !== article.publishedAt) ||
       needsDateRepair(row, article.publishedAt)
     );
   });
 
-  // published_at repair: rows saved before a feed's date field was recognised
+  // Explicit original publication metadata also repairs generator timestamps,
+  // even when the old time does not resemble our own fetch/created_at time.
+  // Other published_at repairs: rows saved before a feed's date field was recognised
   // carry their fetch time (published_at ≈ created_at), and rows whose zone-less
   // KST time was read as UTC sit after their own fetch time. Once the feed
   // yields a real, clearly earlier date, move them back to it. A stored date
@@ -121,6 +124,7 @@ export async function upsertFeedAndArticles(
   const statements = [];
   for (let offset = 0; offset < toWrite.length; offset += 8) {
     const chunk = toWrite.slice(offset, offset + 8);
+    const originalDateGuids = chunk.filter((article) => article.originalPublishedAt).map((article) => article.guid);
     const values: unknown[] = [];
     for (const article of chunk) {
       if (!seenGuids.has(article.guid)) insertedCount++;
@@ -139,14 +143,15 @@ export async function upsertFeedAndArticles(
         thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
         content_html = COALESCE(articles.content_html, excluded.content_html),
         published_at = CASE
-          WHEN ((abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
+          WHEN ${originalDateGuids.length ? `articles.guid IN (${originalDateGuids.map(() => '?').join(', ')}) OR ` : ''}
+               ((abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
                 OR julianday(articles.published_at) > julianday(articles.created_at) + 10.0 / 1440)
               AND julianday(excluded.published_at) < julianday(articles.published_at) - 1.0 / 24)
             OR abs(julianday(articles.published_at) - julianday(excluded.published_at) - 9.0 / 24) < 1.0 / 86400
           THEN excluded.published_at
           ELSE articles.published_at
         END`
-    ).bind(...values));
+    ).bind(...values, ...originalDateGuids));
   }
   if (statements.length > 0) await db.batch(statements);
 
