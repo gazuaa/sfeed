@@ -14,8 +14,6 @@ import { InstallAppButton } from './PwaInstall';
 import { ThemeSwitch } from './ThemeSwitch';
 
 interface HeaderBarProps {
-  title: string;
-  subtitle?: string;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   layout: LayoutMode;
@@ -29,8 +27,6 @@ interface HeaderBarProps {
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
-  title,
-  subtitle,
   searchQuery,
   onSearchChange,
   layout,
@@ -52,34 +48,23 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           : 'bg-white/90 border-slate-200 text-slate-900'
       }`}
     >
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        {/* Left: Mobile Menu & View Title */}
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            aria-label="피드 채널 열기"
-            onClick={onOpenMobileSidebar}
-            className={`lg:hidden p-2 rounded-lg border cursor-pointer ${
-              isDark
-                ? 'border-slate-800 text-slate-300 hover:bg-slate-900'
-                : 'border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+      <div className="flex items-start gap-3">
+        {/* Mobile Menu */}
+        <button
+          type="button"
+          aria-label="피드 채널 열기"
+          onClick={onOpenMobileSidebar}
+          className={`lg:hidden shrink-0 p-2 rounded-lg border cursor-pointer ${
+            isDark
+              ? 'border-slate-800 text-slate-300 hover:bg-slate-900'
+              : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
 
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="text-xs text-slate-400 truncate mt-0.5">{subtitle}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Search, View Switcher, Refresh, Mark Read, Theme */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Search, View Switcher, Refresh, Mark Read, Theme */}
+        <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2">
           <InstallAppButton />
           {/* Keyword Search Input */}
           <div className="relative flex-1 sm:flex-initial sm:w-60">
