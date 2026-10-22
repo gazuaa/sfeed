@@ -102,43 +102,46 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <button
               type="button"
               onClick={() => onChangeLayout('magazine')}
+              aria-label="매거진 뷰"
+              aria-pressed={layout === 'magazine'}
               title="매거진 뷰 (Magazine View)"
-              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
+              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
                 layout === 'magazine'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
-              <LayoutList className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">매거진</span>
+              <LayoutList className="w-4 h-4" />
             </button>
 
             <button
               type="button"
               onClick={() => onChangeLayout('cards')}
+              aria-label="카드 뷰"
+              aria-pressed={layout === 'cards'}
               title="카드 뷰 (Cards View)"
-              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
+              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
                 layout === 'cards'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">카드</span>
+              <LayoutGrid className="w-4 h-4" />
             </button>
 
             <button
               type="button"
               onClick={() => onChangeLayout('list')}
+              aria-label="리스트 뷰"
+              aria-pressed={layout === 'list'}
               title="리스트 뷰 (Title-Only Compact View)"
-              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
+              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
                 layout === 'list'
                   ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
-              <AlignJustify className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">리스트</span>
+              <AlignJustify className="w-4 h-4" />
             </button>
           </div>
 
@@ -147,14 +150,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             type="button"
             onClick={onMarkAllRead}
             title="현재 목록 모두 읽음 처리"
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer ${
+            aria-label="모두 읽음"
+            className={`p-2 rounded-xl border flex items-center transition cursor-pointer ${
               isDark
                 ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
                 : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
             }`}
           >
-            <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">모두 읽음</span>
+            <CheckCheck className="w-4 h-4 text-emerald-400" />
           </button>
 
           <div className="ml-auto inline-flex shrink-0 items-center gap-2">
