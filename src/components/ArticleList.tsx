@@ -373,29 +373,35 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
   // 3. MAGAZINE VIEW (Default Feedly Classic Layout)
   return (
-    <div className="sfeed-list-items p-4 lg:p-8 max-w-5xl mx-auto space-y-3.5">
+    <div className="sfeed-list-items p-3 lg:p-4 max-w-5xl mx-auto space-y-2">
       {articles.map((article) => {
         const isSelected = selectedArticleId === article.id;
         return (
           <article
             key={article.id}
             onClick={() => onSelectArticle(article)}
-            className={`sfeed-magazine-row group rounded-2xl border p-4 sm:p-5 flex flex-row items-start gap-3 justify-between transition duration-150 cursor-pointer ${
+            className={`sfeed-magazine-row group rounded-xl border p-3 flex flex-row items-start gap-3 transition duration-150 cursor-pointer ${
               isSelected
-                ? 'ring-2 ring-emerald-500 border-emerald-500/50'
+                ? isDark
+                  ? 'border-emerald-500/60 bg-emerald-500/5'
+                  : 'border-emerald-500/60 bg-emerald-50/60'
                 : isDark
                 ? 'bg-slate-900/55 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/90'
-                : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                : 'bg-white border-slate-200 hover:border-slate-300'
             }`}
           >
             {/* Left Thumbnail */}
             {article.thumbnail_url && (
-              <div className="sfeed-magazine-thumbnail h-16 w-16 self-start rounded-lg overflow-hidden shrink-0 bg-slate-800 border border-slate-800/60">
+              <div
+                className={`sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${
+                  isDark ? 'bg-slate-800 border-slate-800' : 'bg-slate-100 border-slate-200'
+                }`}
+              >
                 <img
                   src={article.thumbnail_url}
                   alt={article.title}
                   loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  className="w-full h-full object-cover"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).parentElement!.style.display =
                       'none';
@@ -404,69 +410,49 @@ export const ArticleList: React.FC<ArticleListProps> = ({
               </div>
             )}
 
-            {/* Left Text Content */}
-            <div className="flex-1 min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex-1 min-w-0">
+              {/* Always one line: source and author truncate instead of wrapping.
+                  Separators belong to the item after them, so none dangle. */}
+              <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap text-xs text-slate-400">
                 {!article.is_read && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                 )}
-                <div className="flex items-center gap-1.5 font-medium text-emerald-400">
-                  {article.feed_favicon ? (
-                    <img
-                      src={article.feed_favicon}
-                      alt=""
-                      className="w-3.5 h-3.5 rounded-sm"
-                    />
-                  ) : (
-                    <Rss className="w-3.5 h-3.5" />
-                  )}
-                  <span>{article.feed_title}</span>
-                </div>
-
-                {article.folder_name && (
-                  <span
-                    className={`px-2 py-0.5 rounded-md text-[11px] ${
-                      isDark
-                        ? 'bg-slate-800 text-slate-300'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {article.folder_name}
-                  </span>
+                {article.feed_favicon ? (
+                  <img
+                    src={article.feed_favicon}
+                    alt=""
+                    className="w-3.5 h-3.5 rounded-sm shrink-0"
+                  />
+                ) : (
+                  <Rss className="w-3.5 h-3.5 shrink-0" />
                 )}
-
-                <span className="text-slate-500">·</span>
-                <span className="text-slate-400">
-                  {formatArticleDate(article)}
+                <span
+                  className={`font-medium truncate min-w-0 max-w-[60%] ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  {article.feed_title}
                 </span>
-
+                <span className="shrink-0">· {formatArticleDate(article)}</span>
                 {article.author && (
-                  <>
-                    <span className="text-slate-500">·</span>
-                    <span className="text-slate-400 truncate max-w-[180px]">
-                      {article.author}
-                    </span>
-                  </>
+                  <span className="truncate min-w-0">· {article.author}</span>
                 )}
-
               </div>
 
               <h2
-                className={`text-base sm:text-lg leading-snug transition ${
+                className={`mt-1.5 text-[15px] leading-snug line-clamp-3 transition ${
                   article.is_read
                     ? isDark
-                      ? 'text-slate-400 font-medium'
-                      : 'text-slate-500 font-medium'
+                      ? 'text-slate-400 font-normal'
+                      : 'text-slate-500 font-normal'
                     : isDark
-                    ? 'text-slate-100 font-bold group-hover:text-emerald-300'
-                    : 'text-slate-900 font-bold group-hover:text-emerald-600'
+                    ? 'text-slate-100 font-semibold group-hover:text-emerald-300'
+                    : 'text-slate-900 font-semibold group-hover:text-emerald-600'
                 }`}
               >
                 {article.title}
               </h2>
-
             </div>
-
           </article>
         );
       })}
