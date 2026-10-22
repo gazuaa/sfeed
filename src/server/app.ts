@@ -340,7 +340,8 @@ app.get('/api/bootstrap', async (c) => {
          LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
          WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0
        ) as unread_count,
-       (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id) as total_count
+       (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id) as total_count,
+       (SELECT v.view_mode FROM feed_view_modes v WHERE v.user_id = s.user_id AND v.feed_id = s.feed_id) as view_mode
      FROM subscriptions s
      JOIN feeds f ON f.id = s.feed_id
      WHERE s.user_id = ?
@@ -905,6 +906,29 @@ app.post('/api/articles/:id/publication-date', async (c) => {
 });
 
 // Reader View: Scrape full article body from original URL
+// Remember the body view (feed content / reader / web page) per feed.
+app.put('/api/feeds/:feedId/view-mode', async (c) => {
+  const user = c.get('user');
+  const feedId = c.req.param('feedId');
+  const { viewMode } = await c.req
+    .json<{ viewMode?: string }>()
+    .catch(() => ({ viewMode: undefined }));
+  if (viewMode !== 'feed' && viewMode !== 'reader' && viewMode !== 'web') {
+    return c.json({ error: '보기 방식은 feed, reader, web 중 하나여야 합니다.' }, 400);
+  }
+  const subscribed = await c.env.DB.prepare('SELECT 1 FROM subscriptions WHERE user_id = ? AND feed_id = ?')
+    .bind(user.id, feedId)
+    .first();
+  if (!subscribed) return c.json({ error: '구독 중인 피드가 아닙니다.' }, 404);
+  await c.env.DB.prepare(
+    `INSERT INTO feed_view_modes (user_id, feed_id, view_mode, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, feed_id) DO UPDATE SET view_mode = excluded.view_mode, updated_at = excluded.updated_at`
+  )
+    .bind(user.id, feedId, viewMode, new Date().toISOString())
+    .run();
+  return c.json({ viewMode });
+});
+
 // Web view: may the original page be framed inside the reader pane?
 app.get('/api/articles/:id/embeddable', async (c) => {
   const article = await c.env.DB.prepare('SELECT url FROM articles WHERE id = ?')

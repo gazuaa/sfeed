@@ -82,6 +82,7 @@ export interface SubscriptionItem {
   last_error: string | null;
   unread_count: number;
   total_count: number;
+  view_mode: 'feed' | 'reader' | 'web' | null;
 }
 
 export interface ArticleItem {

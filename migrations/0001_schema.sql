@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS article_states (
 CREATE INDEX IF NOT EXISTS idx_article_states_user_saved ON article_states(user_id, is_saved);
 CREATE INDEX IF NOT EXISTS idx_article_states_user_read ON article_states(user_id, is_read);
 
+-- Body view (feed content / reader / web page) each user chose for a feed.
+CREATE TABLE IF NOT EXISTS feed_view_modes (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+  view_mode TEXT NOT NULL CHECK(view_mode IN ('feed', 'reader', 'web')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, feed_id)
+);
+
 -- Date provenance is kept separately so older imports can be checked in place.
 CREATE TABLE IF NOT EXISTS article_date_checks (
   article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,

@@ -4,6 +4,7 @@ import {
   getStoredToken,
   setStoredToken,
   type ArticleItem,
+  type ArticleViewMode,
   type BootstrapResponse,
   type CuratedFeedItem,
   type FolderItem,
@@ -317,6 +318,19 @@ export const App: React.FC = () => {
     );
   };
 
+  // The body view is remembered per feed (and per account, on the server).
+  const handleChangeViewMode = (feedId: string, viewMode: ArticleViewMode) => {
+    setSubscriptions((prev) =>
+      prev.map((s) => (s.feed_id === feedId ? { ...s, view_mode: viewMode } : s))
+    );
+    apiRequest(`/api/feeds/${feedId}/view-mode`, {
+      method: 'PUT',
+      body: JSON.stringify({ viewMode }),
+    }).catch(() => {
+      // keeps the choice for this session; the next bootstrap shows what was saved
+    });
+  };
+
   const handleRefreshFeeds = useCallback(async () => {
     setRefreshingFeeds(true);
     try {
@@ -407,6 +421,8 @@ export const App: React.FC = () => {
     () => articles.find((a) => a.id === selectedArticleId) || null,
     [articles, selectedArticleId]
   );
+  const selectedViewMode: ArticleViewMode =
+    subscriptions.find((s) => s.feed_id === selectedArticle?.feed_id)?.view_mode ?? 'feed';
 
   const selectedIndex = useMemo(
     () => articles.findIndex((a) => a.id === selectedArticleId),
@@ -594,6 +610,8 @@ export const App: React.FC = () => {
             onToggleRead={handleToggleRead}
             onToggleSaved={handleToggleSaved}
             onUpdateArticleFields={handleUpdateArticleFields}
+            viewMode={selectedViewMode}
+            onChangeViewMode={(mode) => selectedArticle && handleChangeViewMode(selectedArticle.feed_id, mode)}
             onNavigateRelative={handleNavigateRelative}
             hasPrev={selectedIndex > 0}
             hasNext={selectedIndex >= 0 && selectedIndex < articles.length - 1}

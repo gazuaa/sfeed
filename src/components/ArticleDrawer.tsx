@@ -19,28 +19,14 @@ import {
   apiRequest,
   formatRelativeTime,
   type ArticleItem,
+  type ArticleViewMode as ViewMode,
 } from '../client/api';
-
-// The three body views RSS readers offer: the feed's own content, the full
-// article extracted from the original page, and the original page itself.
-type ViewMode = 'feed' | 'reader' | 'web';
 
 const VIEW_MODES = [
   { id: 'feed', label: '피드', title: '피드 본문 — RSS에 담긴 내용', Icon: Rss },
   { id: 'reader', label: '리더', title: '전체 본문 — 원문에서 본문만 깔끔하게', Icon: BookOpen },
   { id: 'web', label: '웹', title: '웹 페이지 — 원본 사이트 그대로', Icon: Globe },
 ] as const;
-
-const VIEW_MODE_KEY = 'sfeed_reader_view_mode';
-
-function loadViewMode(): ViewMode {
-  try {
-    const saved = localStorage.getItem(VIEW_MODE_KEY);
-    return saved === 'reader' || saved === 'web' ? saved : 'feed';
-  } catch {
-    return 'feed';
-  }
-}
 
 interface ArticleDrawerProps {
   article: ArticleItem | null;
@@ -51,6 +37,9 @@ interface ArticleDrawerProps {
     articleId: string,
     fields: Partial<ArticleItem>
   ) => void;
+  // Body view remembered for this article's feed.
+  viewMode: ViewMode;
+  onChangeViewMode: (mode: ViewMode) => void;
   onNavigateRelative: (direction: 'prev' | 'next') => void;
   hasPrev: boolean;
   hasNext: boolean;
@@ -63,13 +52,13 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   onToggleRead,
   onToggleSaved,
   onUpdateArticleFields,
+  viewMode,
+  onChangeViewMode,
   onNavigateRelative,
   hasPrev,
   hasNext,
   isDark,
 }) => {
-  // The chosen view sticks across articles, like a reader's default view.
-  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const [readerFailedFor, setReaderFailedFor] = useState<string | null>(null);
   const [frame, setFrame] = useState<{ articleId: string; embeddable: boolean; url: string } | null>(null);
   const [checkingDate, setCheckingDate] = useState(false);
@@ -129,13 +118,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   </div>;
 
   const chooseViewMode = (mode: ViewMode) => {
-    setViewMode(mode);
     if (mode === 'reader') setReaderFailedFor(null);
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, mode);
-    } catch {
-      // the choice still applies for this session
-    }
+    onChangeViewMode(mode);
   };
 
   const showingReader = viewMode === 'reader' && Boolean(article.full_content_html);

@@ -39,7 +39,12 @@ export interface SubscriptionItem {
   last_error: string | null;
   unread_count: number;
   total_count: number;
+  view_mode?: ArticleViewMode | null;
 }
+
+// Body views RSS readers offer: the feed's content, the full article
+// extracted from the original page, or the original page itself.
+export type ArticleViewMode = 'feed' | 'reader' | 'web';
 
 export interface ArticleItem {
   id: string;
