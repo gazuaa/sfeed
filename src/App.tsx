@@ -230,12 +230,6 @@ export const App: React.FC = () => {
     savePreferences({ theme: nextTheme });
   };
 
-  const handleToggleUnreadOnly = () => {
-    const nextUnread = !unreadOnly;
-    setUnreadOnly(nextUnread);
-    savePreferences({ unreadOnly: nextUnread });
-  };
-
   const handleSelectScope = (
     scope: ScopeType,
     folderId: string | null = null,
@@ -583,8 +577,6 @@ export const App: React.FC = () => {
           subtitle={headerInfo.subtitle}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          unreadOnly={unreadOnly}
-          onToggleUnreadOnly={handleToggleUnreadOnly}
           layout={layout}
           onChangeLayout={handleChangeLayout}
           theme={theme}

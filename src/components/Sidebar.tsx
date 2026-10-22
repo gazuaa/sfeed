@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import {
   Rss,
+  Layers,
+  Mail,
+  Bookmark,
   Plus,
   Folder,
   FolderOpen,
@@ -157,12 +160,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <nav aria-label="글 보기" className={`mx-3 mb-4 grid grid-cols-3 shrink-0 gap-1 rounded-xl border p-1 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
           {([
-            { id: 'all', label: '전체', count: counts.totalArticles },
-            { id: 'unread', label: '안 읽음', count: counts.totalUnread },
-            { id: 'saved', label: '저장', count: counts.savedCount },
+            { id: 'all', label: '전체', icon: Layers, count: counts.totalArticles },
+            { id: 'unread', label: '안 읽음', icon: Mail, count: counts.totalUnread },
+            { id: 'saved', label: '저장', icon: Bookmark, count: counts.savedCount },
           ] as const).map((tab) => {
             const selected = tab.id === 'saved' ? activeScope === 'saved' : activeScope === 'all' && unreadOnly === (tab.id === 'unread');
-            return <button key={tab.id} type="button" aria-pressed={selected} onClick={() => { onSelectLibraryTab(tab.id); onCloseMobile(); }} className={`min-w-0 flex flex-col items-center gap-1 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${selected ? isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white text-emerald-700 shadow-sm' : isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}><span>{tab.label}</span><span className="text-[10px] tabular-nums opacity-80">{tab.count.toLocaleString('ko-KR')}</span></button>;
+            const Icon = tab.icon;
+            return <button key={tab.id} type="button" aria-pressed={selected} onClick={() => { onSelectLibraryTab(tab.id); onCloseMobile(); }} className={`min-w-0 flex flex-col items-center gap-1 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${selected ? isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white text-emerald-700 shadow-sm' : isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}><span className="inline-flex items-center gap-1"><Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{tab.label}</span></span><span className="text-[10px] tabular-nums opacity-80">{tab.count.toLocaleString('ko-KR')}</span></button>;
           })}
         </nav>
 
