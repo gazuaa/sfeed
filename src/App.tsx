@@ -64,7 +64,7 @@ export const App: React.FC = () => {
 
   // Modals & Mobile Sidebar
   const [discoverOpen, setDiscoverOpen] = useState(false);
-  const [discoverTab, setDiscoverTab] = useState<'curated' | 'custom' | 'opml'>(
+  const [discoverTab, setDiscoverTab] = useState<'curated' | 'opml'>(
     'curated'
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -517,7 +517,7 @@ export const App: React.FC = () => {
   if (authChecking) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
-        Sfeed 워크스페이스를 불러오는 중...
+        SFeed 워크스페이스를 불러오는 중...
       </div>
     );
   }

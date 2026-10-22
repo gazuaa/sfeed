@@ -12,6 +12,8 @@ interface FeedPreviewProps {
   onBack: () => void;
   subscribeButton: React.ReactNode;
   isDark: boolean;
+  preview?: FeedPreviewResponse;
+  subscriptionOptions?: React.ReactNode;
 }
 
 export const FeedPreview: React.FC<FeedPreviewProps> = ({
@@ -19,6 +21,8 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
   onBack,
   subscribeButton,
   isDark,
+  preview,
+  subscriptionOptions,
 }) => {
   const [articles, setArticles] = useState<FeedPreviewResponse['articles']>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +30,12 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (preview) {
+      setArticles(preview.articles);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -46,18 +56,18 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [feed.id, retry]);
+  }, [feed.id, retry, preview]);
 
   return (
     <section className="space-y-5" aria-label={`${feed.title} 미리보기`}>
       <button
         type="button"
-        autoFocus
+        autoFocus={!preview}
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:text-emerald-400 cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" />
-        추천 목록으로
+        검색 결과로
       </button>
 
       <div className={`p-4 rounded-2xl border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
@@ -77,6 +87,8 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
           웹사이트 방문 <ExternalLink className="w-3 h-3" />
         </a>
       </div>
+
+      {subscriptionOptions}
 
       <div>
         <h4 className="text-sm font-semibold">최근 글 미리보기</h4>

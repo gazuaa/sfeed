@@ -4,27 +4,28 @@ import {
   Compass,
   Plus,
   Check,
-  Rss,
+  Search,
   FileCode2,
   Download,
   Loader2,
-  Globe,
   FolderPlus,
   Eye,
 } from 'lucide-react';
 import { FeedPreview } from './FeedPreview';
 import { OpmlImporter } from './OpmlImporter';
+import { matchesFeedSearch, normalizeFeedUrl } from '../shared/feedDiscovery';
 import {
   apiRequest,
   getStoredToken,
   type CuratedFeedItem,
   type FolderItem,
   type SubscriptionItem,
+  type FeedPreviewResponse,
 } from '../client/api';
 
 interface DiscoverModalProps {
   isOpen: boolean;
-  initialTab: 'curated' | 'custom' | 'opml';
+  initialTab: 'curated' | 'opml';
   onClose: () => void;
   curatedFeeds: CuratedFeedItem[];
   folders: FolderItem[];
@@ -43,12 +44,16 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   onSubscribed,
   isDark,
 }) => {
-  const [tab, setTab] = useState<'curated' | 'custom' | 'opml'>(initialTab);
+  const [tab, setTab] = useState<'curated' | 'opml'>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [previewFeed, setPreviewFeed] = useState<CuratedFeedItem | null>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const [busyUrl, setBusyUrl] = useState<string | null>(null);
-  const [customUrl, setCustomUrl] = useState('');
+  const [query, setQuery] = useState('');
+  const [urlPreview, setUrlPreview] = useState<FeedPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRetry, setPreviewRetry] = useState(0);
   const [customTitle, setCustomTitle] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState('');
@@ -62,11 +67,39 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     setTab(initialTab);
     setFeedback(null);
     setPreviewFeed(null);
+    setQuery('');
+    setUrlPreview(null);
+    setPreviewError(null);
+    setCustomTitle('');
+    setSelectedFolderId('');
+    setNewFolderName('');
   }, [initialTab, isOpen]);
+
+  const previewUrl = normalizeFeedUrl(query);
+  React.useEffect(() => {
+    setUrlPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
+    if (!isOpen || tab !== 'curated' || !previewUrl) return;
+    const controller = new AbortController();
+    setPreviewLoading(true);
+    const timer = setTimeout(() => {
+      apiRequest<FeedPreviewResponse>('/api/discover/preview', {
+        method: 'POST', signal: controller.signal, body: JSON.stringify({ url: previewUrl }),
+      }).then((result) => {
+        if (!controller.signal.aborted) setUrlPreview(result);
+      }).catch((error) => {
+        if (!controller.signal.aborted) setPreviewError(error instanceof Error ? error.message : '피드를 불러오지 못했습니다.');
+      }).finally(() => {
+        if (!controller.signal.aborted) setPreviewLoading(false);
+      });
+    }, 600);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, previewUrl, previewRetry, isOpen, tab]);
 
   React.useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [previewFeed, tab]);
+  }, [previewFeed, urlPreview, tab]);
 
   if (!isOpen) return null;
 
@@ -75,10 +108,15 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     ...Array.from(new Set(curatedFeeds.map((f) => f.category))),
   ];
 
-  const filteredCurated =
-    selectedCategory === '전체'
-      ? curatedFeeds
-      : curatedFeeds.filter((f) => f.category === selectedCategory);
+  const filteredCurated = curatedFeeds.filter((feed) =>
+    (selectedCategory === '전체' || feed.category === selectedCategory) && matchesFeedSearch(feed, query));
+
+  const resolvedFeed: CuratedFeedItem | null = urlPreview ? {
+    id: `url:${urlPreview.feed.xmlUrl}`, title: urlPreview.feed.title,
+    xmlUrl: urlPreview.feed.xmlUrl, htmlUrl: urlPreview.feed.htmlUrl || urlPreview.feed.xmlUrl,
+    description: urlPreview.feed.description || '', category: '', tags: [], language: 'KO', folderSuggest: '',
+  } : null;
+  const shownFeed = resolvedFeed || previewFeed;
 
   const isSubscribedUrl = (xmlUrl: string) =>
     subscriptions.some(
@@ -111,29 +149,25 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     }
   };
 
-  const handleSubscribeCustom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customUrl.trim()) return;
-    setBusyUrl('custom');
+  const handleSubscribeCustom = async () => {
+    if (!resolvedFeed) return;
+    setBusyUrl(resolvedFeed.xmlUrl);
     setFeedback(null);
 
     try {
       const res = await apiRequest<{ title: string }>('/api/subscriptions', {
         method: 'POST',
         body: JSON.stringify({
-          url: customUrl.trim(),
+          url: resolvedFeed.xmlUrl,
           folderId: selectedFolderId || null,
           folderName: newFolderName.trim() || null,
           customTitle: customTitle.trim() || null,
         }),
       });
       await onSubscribed();
-      setCustomUrl('');
-      setCustomTitle('');
-      setNewFolderName('');
       setFeedback({
         type: 'success',
-        text: `"${res.title}" 피드가 성공적으로 구독되었습니다!`,
+        text: `"${customTitle.trim() || res.title}" 피드가 성공적으로 구독되었습니다!`,
       });
     } catch (err) {
       setFeedback({
@@ -162,7 +196,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       <button
         type="button"
         disabled={subscribed || busyUrl !== null}
-        onClick={() => handleSubscribeCurated(feed)}
+        onClick={() => resolvedFeed?.id === feed.id ? handleSubscribeCustom() : handleSubscribeCurated(feed)}
         className={`relative z-10 pointer-events-auto px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shrink-0 disabled:cursor-default ${
           subscribed
             ? 'bg-emerald-500/15 text-emerald-400'
@@ -180,6 +214,78 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
     );
   };
 
+  const subscriptionOptions = (
+    <details className={`rounded-xl border p-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+      <summary className="text-xs font-semibold cursor-pointer">구독 설정 (선택사항)</summary>
+      <div className="space-y-4 mt-4">
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="preview-folder" className="block text-xs font-semibold mb-1.5">
+              기존 폴더 선택 (선택사항)
+            </label>
+            <select
+              id="preview-folder"
+              value={selectedFolderId}
+              onChange={(e) => setSelectedFolderId(e.target.value)}
+              className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                isDark
+                  ? 'bg-slate-950 border-slate-800 text-white'
+                  : 'bg-slate-50 border-slate-300 text-slate-900'
+              }`}
+            >
+              <option value="">미분류 (폴더 없음)</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="preview-new-folder" className="block text-xs font-semibold mb-1.5">
+              또는 새 폴더 이름으로 생성
+            </label>
+            <div className="relative">
+              <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="preview-new-folder"
+                type="text"
+                placeholder="예: AI 논문, 개발 블로그..."
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+                  isDark
+                    ? 'bg-slate-950 border-slate-800 text-white'
+                    : 'bg-slate-50 border-slate-300 text-slate-900'
+                }`}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="preview-custom-title" className="block text-xs font-semibold mb-1.5">
+            사용자 지정 피드 이름 (선택사항)
+          </label>
+          <input
+            id="preview-custom-title"
+            type="text"
+            placeholder="비워두면 RSS 피드 원본 제목을 사용합니다"
+            value={customTitle}
+            onChange={(e) => setCustomTitle(e.target.value)}
+            className={`w-full px-3.5 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
+              isDark
+                ? 'bg-slate-950 border-slate-800 text-white'
+                : 'bg-slate-50 border-slate-300 text-slate-900'
+            }`}
+          />
+        </div>
+
+      </div>
+    </details>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
@@ -188,7 +294,10 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       />
 
       <div
-        className={`relative z-10 w-full max-w-3xl max-h-[88vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discovery-title"
+        className={`relative z-10 w-full max-w-3xl max-h-[88dvh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
           isDark
             ? 'bg-slate-900 border-slate-800 text-slate-100'
             : 'bg-white border-slate-200 text-slate-900'
@@ -196,7 +305,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       >
         {/* Modal Header */}
         <div
-          className={`px-6 py-4 border-b flex items-center justify-between ${
+          className={`px-4 sm:px-6 py-4 shrink-0 border-b flex items-center justify-between gap-3 ${
             isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
           }`}
         >
@@ -205,11 +314,11 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
               <Compass className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold">
-                피드 추가 · 추천 탐색 · OPML 마이그레이션
+              <h2 id="discovery-title" className="text-base font-bold">
+                피드 추가
               </h2>
               <p className="text-xs text-slate-400">
-                추천 목록에서 원하는 피드만 선택하거나 RSS 주소 및 OPML 파일을 직접 등록하세요
+                피드 이름이나 RSS·웹사이트 주소를 검색하고 미리본 뒤 구독하세요
               </p>
             </div>
           </div>
@@ -227,7 +336,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
 
         {/* Modal Tabs */}
         <div
-          className={`px-6 pt-3 border-b flex items-center gap-2 ${
+          className={`px-4 sm:px-6 pt-3 shrink-0 border-b flex items-center gap-2 ${
             isDark ? 'border-slate-800' : 'border-slate-200'
           }`}
         >
@@ -235,42 +344,28 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
             type="button"
             disabled={opmlImporting}
             onClick={() => { setTab('curated'); setPreviewFeed(null); }}
-            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+            className={`px-3 sm:px-4 py-2.5 shrink-0 whitespace-nowrap text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'curated'
                 ? 'border-emerald-500 text-emerald-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Compass className="w-4 h-4" />
-            <span>추천 피드 카탈로그</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={opmlImporting}
-            onClick={() => setTab('custom')}
-            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
-              tab === 'custom'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Rss className="w-4 h-4" />
-            <span>직접 RSS / 웹사이트 URL 추가</span>
+            <span>피드 검색 · 추가</span>
           </button>
 
           <button
             type="button"
             disabled={opmlImporting}
             onClick={() => setTab('opml')}
-            className={`px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+            className={`px-3 sm:px-4 py-2.5 shrink-0 whitespace-nowrap text-xs font-semibold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
               tab === 'opml'
                 ? 'border-emerald-500 text-emerald-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <FileCode2 className="w-4 h-4" />
-            <span>OPML 가져오기 / 내보내기</span>
+            <span>OPML<span className="hidden sm:inline"> 가져오기 / 내보내기</span></span>
           </button>
         </div>
 
@@ -288,17 +383,31 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         )}
 
         {/* Modal Body */}
-        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto p-6">
-          {/* TAB 1: Curated Feeds */}
+        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+          {/* Unified feed search and URL preview */}
+          {tab === 'curated' && <form role="search" aria-label="피드 검색" onSubmit={(event) => { event.preventDefault(); if (previewUrl) setPreviewRetry((value) => value + 1); }} className="mb-5">
+            <label htmlFor="feed-discovery-search" className="sr-only">피드 이름 또는 RSS·웹사이트 주소</label>
+            <div className="relative">
+              <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null} onChange={(event) => { setQuery(event.target.value); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">이름으로 추천 피드를 찾거나, 주소를 입력해 최근 글을 미리보세요.</p>
+          </form>}
           {tab === 'curated' && (
-            previewFeed ? (
+            shownFeed ? (
               <FeedPreview
-                key={previewFeed.id}
-                feed={previewFeed}
-                onBack={() => setPreviewFeed(null)}
-                subscribeButton={subscribeButton(previewFeed)}
+                key={shownFeed.id}
+                feed={shownFeed}
+                preview={urlPreview || undefined}
+                subscriptionOptions={resolvedFeed ? subscriptionOptions : undefined}
+                onBack={() => { setPreviewFeed(null); if (resolvedFeed) { setQuery(''); setUrlPreview(null); } }}
+                subscribeButton={subscribeButton(shownFeed)}
                 isDark={isDark}
               />
+            ) : previewUrl ? (
+              <div aria-live="polite" aria-busy={previewLoading} className="py-10 text-center">
+                {previewLoading ? <p role="status" className="inline-flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin" />피드를 찾고 최근 글을 불러오는 중입니다…</p> : previewError ? <><p role="alert" className="text-sm text-rose-500">{previewError}</p><button type="button" onClick={() => setPreviewRetry((value) => value + 1)} className="mt-3 px-3 py-2 rounded-lg text-xs text-emerald-500 border border-emerald-500/40 cursor-pointer">다시 시도</button></> : null}
+              </div>
             ) : <div className="space-y-5">
               {/* Category Filter Pills */}
               <div className="flex flex-wrap gap-2">
@@ -321,6 +430,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3.5">
+                {filteredCurated.length === 0 && <p className="sm:col-span-2 py-10 text-center text-sm text-slate-400">검색 결과가 없습니다. RSS 또는 웹사이트 주소로도 찾아보세요.</p>}
                 {filteredCurated.map((feed) => {
                   return (
                     <div
@@ -389,110 +499,6 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
                 })}
               </div>
             </div>
-          )}
-
-          {/* TAB 2: Custom RSS / Website URL */}
-          {tab === 'custom' && (
-            <form onSubmit={handleSubscribeCustom} className="space-y-4 max-w-xl">
-              <div>
-                <label className="block text-xs font-semibold mb-1.5">
-                  RSS / Atom 피드 URL 또는 웹사이트 주소 *
-                </label>
-                <div className="relative">
-                  <Globe className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="예: https://news.hada.io/rss/news 또는 https://toss.tech"
-                    value={customUrl}
-                    onChange={(e) => setCustomUrl(e.target.value)}
-                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                      isDark
-                        ? 'bg-slate-950 border-slate-800 text-white'
-                        : 'bg-slate-50 border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  일반 웹사이트 주소를 입력해도 페이지 내 RSS/Atom 링크를 자동으로
-                  탐색합니다.
-                </p>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5">
-                    기존 폴더 선택 (선택사항)
-                  </label>
-                  <select
-                    value={selectedFolderId}
-                    onChange={(e) => setSelectedFolderId(e.target.value)}
-                    className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                      isDark
-                        ? 'bg-slate-950 border-slate-800 text-white'
-                        : 'bg-slate-50 border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="">미분류 (폴더 없음)</option>
-                    {folders.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5">
-                    또는 새 폴더 이름으로 생성
-                  </label>
-                  <div className="relative">
-                    <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="예: AI 논문, 개발 블로그..."
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                        isDark
-                          ? 'bg-slate-950 border-slate-800 text-white'
-                          : 'bg-slate-50 border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold mb-1.5">
-                  사용자 지정 피드 이름 (선택사항)
-                </label>
-                <input
-                  type="text"
-                  placeholder="비워두면 RSS 피드 원본 제목을 사용합니다"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${
-                    isDark
-                      ? 'bg-slate-950 border-slate-800 text-white'
-                      : 'bg-slate-50 border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={busyUrl === 'custom' || !customUrl.trim()}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm inline-flex items-center gap-2 transition cursor-pointer disabled:opacity-40"
-              >
-                {busyUrl === 'custom' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                <span>피드 구독하기</span>
-              </button>
-            </form>
           )}
 
           {/* TAB 3: OPML Import / Export */}

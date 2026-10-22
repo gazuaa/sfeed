@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Sfeed — 나만의 스마트 RSS 리더",
-  "short_name": "Sfeed",
+  "name": "SFeed — 나만의 스마트 RSS 리더",
+  "short_name": "SFeed",
   "description": "관심 있는 피드를 모아 읽고, 나중에 읽을 글을 저장하는 나만의 RSS 리더",
   "lang": "ko",
   "start_url": "/",

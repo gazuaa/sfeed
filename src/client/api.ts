@@ -90,6 +90,7 @@ export interface BootstrapResponse {
 }
 
 export interface FeedPreviewResponse {
+  feed: { title: string; xmlUrl: string; htmlUrl: string | null; description: string | null };
   articles: {
     title: string;
     url: string;

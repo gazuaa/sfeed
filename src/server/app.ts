@@ -10,9 +10,10 @@ import type {
 } from './types';
 import { CURATED_FEEDS } from './curatedFeeds';
 import type { OpmlFeed } from '../shared/opml';
+import { normalizeFeedUrl } from '../shared/feedDiscovery';
 import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
 import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFailures';
-import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
+import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
@@ -392,25 +393,36 @@ app.get('/api/bootstrap', async (c) => {
   });
 });
 
-// Read-only preview of a catalogued feed: never creates folders, feeds or subscriptions.
+function feedPreviewResponse(parsed: ParsedFeed) {
+  return {
+    feed: { title: parsed.title, xmlUrl: parsed.xmlUrl, htmlUrl: parsed.htmlUrl && /^https?:\/\//i.test(parsed.htmlUrl) ? parsed.htmlUrl : null, description: parsed.description },
+    articles: parsed.articles
+      .filter((article) => /^https?:\/\//i.test(article.url))
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+      .slice(0, 10)
+      .map((article) => ({ title: article.title, url: article.url, summary: article.summary, publishedAt: article.publishedAt, dateSource: article.dateSource })),
+  };
+}
+
+// Both previews are read-only: never create folders, feeds, articles or subscriptions.
+app.post('/api/discover/preview', async (c) => {
+  const body = await c.req.json<{ url?: unknown }>().catch(() => null);
+  const url = typeof body?.url === 'string' ? normalizeFeedUrl(body.url) : null;
+  if (!url) return c.json({ error: '올바른 RSS 또는 웹사이트 주소를 입력해 주세요.' }, 400);
+  try {
+    return c.json(feedPreviewResponse(await fetchAndParseFeed(url)));
+  } catch {
+    return c.json({ error: '피드를 찾지 못했습니다. RSS 주소와 연결 상태를 확인한 뒤 다시 시도해 주세요.' }, 502);
+  }
+});
+
 app.get('/api/discover/feeds/:id/preview', async (c) => {
   const feed = CURATED_FEEDS.find((item) => item.id === c.req.param('id'));
   if (!feed) return c.json({ error: '추천 피드를 찾을 수 없습니다.' }, 404);
 
   try {
     const parsed = await fetchAndParseFeed(feed.xmlUrl);
-    const articles = parsed.articles
-      .filter((article) => /^https?:\/\//i.test(article.url))
-      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
-      .slice(0, 10)
-      .map((article) => ({
-        title: article.title,
-        url: article.url,
-        summary: article.summary,
-        publishedAt: article.publishedAt,
-        dateSource: article.dateSource,
-      }));
-    return c.json({ articles });
+    return c.json(feedPreviewResponse(parsed));
   } catch {
     return c.json({ error: '최근 글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 502);
   }

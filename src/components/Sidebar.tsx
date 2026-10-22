@@ -38,7 +38,7 @@ interface SidebarProps {
     feedId?: string | null
   ) => void;
   onSelectLibraryTab: (tab: 'all' | 'unread' | 'saved') => void;
-  onOpenDiscover: (initialTab?: 'curated' | 'custom' | 'opml') => void;
+  onOpenDiscover: (initialTab?: 'curated' | 'opml') => void;
   onCreateFolder: (name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
   onUnsubscribe: (subscriptionId: string, title: string) => Promise<void>;
@@ -129,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isDark ? 'text-white' : 'text-slate-900'
               }`}
             >
-              Sfeed
+              SFeed
             </span>
           </div>
 

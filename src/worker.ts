@@ -28,7 +28,7 @@ export default {
       return assetResponse;
     }
 
-    return new Response('Sfeed Worker API is running.', { status: 200 });
+    return new Response('SFeed Worker API is running.', { status: 200 });
   },
 
   async scheduled(_event: unknown, env: Env, _ctx: unknown): Promise<void> {
