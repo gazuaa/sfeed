@@ -433,11 +433,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   </>
                 )}
 
-                {article.ai_summary && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> AI 요약 완료
-                  </span>
-                )}
               </div>
 
               <h2
