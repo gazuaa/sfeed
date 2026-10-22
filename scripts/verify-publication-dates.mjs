@@ -18,6 +18,10 @@ try {
   assert.equal(rss().articles[0].publishedAt, published);
   assert.equal(rss().articles[0].originalPublishedAt, published);
   assert.equal(extractOriginalPublishedAt(card.replace(url, 'https://www.hankyung.com/article/other'), url), null, 'related card must not date the current article');
+  const postCard = '<h2><a href="https://www.blockmedia.co.kr/archives/1063994">A linked post</a></h2><div class="post-meta"><span class="date"><time class="post-date" datetime="2026-03-17T20:05:00+09:00">2026-03-17 20:05</time></span></div>';
+  assert.equal(extractOriginalPublishedAt(postCard, 'https://www.blockmedia.co.kr/archives/1063994'), '2026-03-17T11:05:00.000Z');
+  assert.equal(extractOriginalPublishedAt(postCard, 'https://www.blockmedia.co.kr/archives/another'), null, 'another linked post must not supply a date');
+  assert.equal(extractOriginalPublishedAt(postCard.replace('post-date', 'post-date updated'), 'https://www.blockmedia.co.kr/archives/1063994'), null, 'an updated card time is not a publication date');
   assert.equal(extractOriginalPublishedAt('<p>A meeting on 2026.09.11 00:58</p>', url), null);
   assert.equal(extractOriginalPublishedAt('<time itemprop="dateModified" datetime="2026-10-21T00:00:00Z"></time>', url), null);
   assert.equal(extractOriginalPublishedAt('<meta property="article:modified_time" content="2026-10-21T00:00:00Z">', url), null);

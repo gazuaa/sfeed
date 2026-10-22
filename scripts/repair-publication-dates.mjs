@@ -24,6 +24,8 @@ function remote(params) {
 const query = (sql) => local ? local.prepare(sql).all() : remote(['--command', sql]).flatMap((result) => result.results || []);
 const predicate = [
   "instr(COALESCE(content_html, ''), 'txt-date') > 0",
+  "instr(COALESCE(content_html, ''), 'post-date') > 0",
+  "instr(COALESCE(content_html, ''), 'entry-date') > 0",
   "instr(COALESCE(content_html, ''), 'datePublished') > 0",
   "instr(COALESCE(content_html, ''), 'article:published_time') > 0",
   "instr(COALESCE(full_content_html, ''), 'datePublished') > 0",
@@ -42,14 +44,20 @@ try {
   if (args.includes('--report')) writeFileSync(args[args.indexOf('--report') + 1], JSON.stringify(changes, null, 2), { mode: 0o600 });
   if (apply && changes.length) {
     const states = [];
+    const dateChecks = [];
     for (let offset = 0; offset < changes.length; offset += 80) {
       const ids = changes.slice(offset, offset + 80).map(({ before }) => quote(before.id)).join(',');
       states.push(...query('SELECT * FROM article_states WHERE article_id IN (' + ids + ') ORDER BY user_id, article_id'));
+      dateChecks.push(...query('SELECT * FROM article_date_checks WHERE article_id IN (' + ids + ')'));
     }
     const directory = join(root, '.local/article-date-backups', new Date().toISOString().replaceAll(':', '-') + '-' + dbMode);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    writeFileSync(join(directory, 'backup.json'), JSON.stringify({ changes, states }, null, 2), { mode: 0o600 });
-    const sql = changes.map(({ before, publishedAt }) => 'UPDATE articles SET published_at = ' + quote(publishedAt) + ' WHERE id = ' + quote(before.id) + ' AND published_at = ' + quote(before.published_at) + ';').join('\n');
+    writeFileSync(join(directory, 'backup.json'), JSON.stringify({ changes, states, dateChecks }, null, 2), { mode: 0o600 });
+    const now = new Date().toISOString();
+    const sql = changes.flatMap(({ before, publishedAt }) => [
+      'UPDATE articles SET published_at = ' + quote(publishedAt) + ' WHERE id = ' + quote(before.id) + ' AND published_at = ' + quote(before.published_at) + ';',
+      'INSERT INTO article_date_checks(article_id,source,checked_at) VALUES(' + quote(before.id) + ",'original'," + quote(now) + ') ON CONFLICT(article_id) DO UPDATE SET source=excluded.source,checked_at=excluded.checked_at;',
+    ]).join('\n');
     const path = join(directory, 'repair.sql');
     writeFileSync(path, sql, { mode: 0o600 });
     if (local) local.exec(sql); else remote(['--file', path]);

@@ -86,7 +86,11 @@ export function extractOriginalPublishedAt(html: string | null | undefined, url:
   }
   for (const match of markup.matchAll(/<time\b([^>]*)>([\s\S]*?)<\/time>/gi)) {
     const attrs = attributes(match[1]);
-    if (attrs.itemprop?.toLowerCase() === 'datepublished' || /\bpubdate\b/i.test(match[1]) || (attrs.class?.split(/\s+/).some((name) => ['published', 'date-published', 'published-date', 'entry-published'].includes(name)) && !/modified|updated/i.test(attrs.class))) {
+    const preceding = markup.slice(Math.max(0, (match.index || 0) - 3000), match.index);
+    const headline = [...preceding.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi)].at(-1)?.[1];
+    const link = headline?.match(/<a\b[^>]*>/i);
+    const linkedPostDate = link && sameArticle(attributes(link[0]).href, url) && attrs.class?.split(/\s+/).some((name) => ['post-date', 'entry-date'].includes(name));
+    if (!/modified|updated/i.test(attrs.class || '') && (attrs.itemprop?.toLowerCase() === 'datepublished' || /\bpubdate\b/i.test(match[1]) || linkedPostDate || attrs.class?.split(/\s+/).some((name) => ['published', 'date-published', 'published-date', 'entry-published'].includes(name)))) {
       const date = parseHtmlDate(attrs.datetime || match[2].replace(/<[^>]*>/g, '').trim());
       if (date) return date;
     }
