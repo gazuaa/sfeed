@@ -189,7 +189,10 @@ function write(extractSummaryPublishedAt) {
     console.log(`→ ${feed.title}: writing ${entries.length - offset} entries`);
     const fileRows = opts.db === 'remote' ? ROWS_PER_REMOTE_FILE : entries.length;
     while (offset < entries.length) {
-      const chunk = entries.slice(offset, offset + fileRows);
+      const slice = entries.slice(offset, offset + fileRows);
+      // Feedly keeps a few old entries with no link at all; articles.url is
+      // NOT NULL, and one such row makes D1 reject the whole file.
+      const chunk = slice.filter((entry) => entry.url);
       const statements = [];
       for (let i = 0; i < chunk.length; i += ROWS_PER_STATEMENT) {
         const values = chunk.slice(i, i + ROWS_PER_STATEMENT).map((entry) =>
@@ -208,8 +211,8 @@ function write(extractSummaryPublishedAt) {
         });
         statements.push(`WITH dates(guid,source,checked_at) AS (VALUES ${metadata.join(',')}) INSERT INTO article_date_checks(article_id,source,checked_at) SELECT a.id,d.source,d.checked_at FROM dates d JOIN articles a ON a.feed_id=${sql(feed.id)} AND a.guid=d.guid WHERE true ON CONFLICT(article_id) DO NOTHING;`);
       }
-      execute(statements);
-      offset += chunk.length;
+      if (statements.length) execute(statements);
+      offset += slice.length;
       saveJson(progressPath, { offset, updatedAt: new Date().toISOString() });
       process.stdout.write(`  ${offset}/${entries.length}\r`);
     }

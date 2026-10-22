@@ -163,12 +163,12 @@ test('publish an unfinished feed, resume checkpoints, and preserve existing arti
     db.exec(`CREATE TABLE feeds(id TEXT, xml_url TEXT, title TEXT);
       CREATE TABLE subscriptions(user_id TEXT, feed_id TEXT);
       CREATE TABLE articles(id TEXT PRIMARY KEY, feed_id TEXT, guid TEXT, title TEXT NOT NULL,
-        url TEXT, author TEXT, summary TEXT, content_html TEXT, thumbnail_url TEXT,
+        url TEXT NOT NULL, author TEXT, summary TEXT, content_html TEXT, thumbnail_url TEXT,
         published_at TEXT, created_at TEXT, UNIQUE(feed_id,guid));
       INSERT INTO feeds VALUES('f1','https://example.test/feed','Example');
       CREATE TABLE article_date_checks(article_id TEXT PRIMARY KEY, source TEXT, checked_at TEXT);
       INSERT INTO subscriptions VALUES('u1','f1');
-      INSERT INTO articles(id,feed_id,guid,title) VALUES('keep-original','f1','g1','Existing');`);
+      INSERT INTO articles(id,feed_id,guid,title,url) VALUES('keep-original','f1','g1','Existing','https://example.test/1');`);
     const entry = (number) => ({ feedlyId: `e${number}`, guid: `g${number}`, title: `Entry ${number}`, url: `https://example.test/${number}`, publishedAt: '2026-10-01T00:00:00Z' });
     const state = { xmlUrl, count: 2, done: false, cursor: 100, written: { local: 1, remote: 0 } };
     saveJson(statePath, state);
@@ -183,16 +183,16 @@ test('publish an unfinished feed, resume checkpoints, and preserve existing arti
     assert.deepEqual(JSON.parse(readFileSync(statePath)), state);
     assert.equal(JSON.parse(readFileSync(progressPath)).offset, 2);
     // Downloader replaces its checkpoint as it progresses. Writer keeps offset 2.
-    state.count = 3; state.cursor = 200;
+    state.count = 4; state.cursor = 200;
     saveJson(statePath, state);
-    writeFileSync(dataPath, [entry(1), entry(2), { ...entry(3), title: null }].map(JSON.stringify).join('\n') + '\n');
+    writeFileSync(dataPath, [entry(1), entry(2), { ...entry(3), title: null }, entry(4)].map(JSON.stringify).join('\n') + '\n');
     assert.throws(run);
     assert.equal(JSON.parse(readFileSync(progressPath)).offset, 2, 'failed database write must not advance checkpoint');
-    writeFileSync(dataPath, [entry(1), entry(2), entry(3)].map(JSON.stringify).join('\n') + '\n');
+    writeFileSync(dataPath, [entry(1), entry(2), entry(3), { ...entry(4), url: null }].map(JSON.stringify).join('\n') + '\n');
     run(); run();
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM articles').get().n, 3);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM articles').get().n, 3, 'entries without a link are skipped');
     assert.equal(db.prepare("SELECT id FROM articles WHERE guid='g1'").get().id, 'keep-original');
-    assert.equal(JSON.parse(readFileSync(progressPath)).offset, 3);
+    assert.equal(JSON.parse(readFileSync(progressPath)).offset, 4, 'skipped entries still advance the checkpoint');
     assert.deepEqual(JSON.parse(readFileSync(statePath)), state);
     db.exec('ALTER TABLE subscriptions RENAME TO subscriptions_temporarily_unavailable');
     run(); // Nothing new: do not query the database just to discover that again.
