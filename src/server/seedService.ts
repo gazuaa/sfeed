@@ -92,7 +92,7 @@ export async function upsertFeedAndArticles(
     const chunk = parsed.articles.slice(offset, offset + 80);
     const rows = await db.prepare(
       `SELECT a.id,a.guid,a.published_at,a.created_at,d.source AS date_source,
-              a.thumbnail_url IS NULL AS no_thumbnail,a.content_html IS NULL AS no_content
+              (a.thumbnail_url IS NULL OR a.thumbnail_url = '') AS no_thumbnail,a.content_html IS NULL AS no_content
        FROM articles a LEFT JOIN article_date_checks d ON d.article_id=a.id WHERE a.feed_id = ? AND a.guid IN (${chunk.map(() => '?').join(', ')})`
     ).bind(feedId, ...chunk.map((article) => article.guid)).all<ExistingArticle>();
     for (const row of rows.results || []) existing.set(row.guid, row);
@@ -145,7 +145,7 @@ export async function upsertFeedAndArticles(
         id, feed_id, guid, title, url, author, summary, content_html, thumbnail_url, published_at, created_at
       ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
       ON CONFLICT(feed_id, guid) DO UPDATE SET
-        thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
+        thumbnail_url = COALESCE(NULLIF(articles.thumbnail_url, ''), excluded.thumbnail_url),
         content_html = COALESCE(articles.content_html, excluded.content_html),
         published_at = CASE
           ${originalDateGuids.length ? `WHEN articles.guid IN (${originalDateGuids.map(() => '?').join(', ')}) THEN excluded.published_at` : ''}

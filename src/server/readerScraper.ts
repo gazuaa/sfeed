@@ -1,5 +1,6 @@
 import { sanitizeContentHtml } from './rssParser';
 import { extractOriginalPublishedAt } from './publicationDate';
+import { extractPreviewImage } from './previewImage';
 
 export interface ScrapedArticleResult {
   fullContentHtml: string;
@@ -33,11 +34,7 @@ export async function scrapeFullArticle(
 
     const rawHtml = await res.text();
 
-    // Extract og:image if available
-    const ogImgMatch =
-      rawHtml.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-      rawHtml.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    const leadImageUrl = ogImgMatch?.[1] || null;
+    const leadImageUrl = extractPreviewImage(rawHtml, url);
 
     // Strip non-content blocks first
     const cleaned = rawHtml

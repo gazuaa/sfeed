@@ -16,6 +16,7 @@ import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFai
 import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
+import { fetchPreviewImage } from './previewImage';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -785,7 +786,8 @@ app.get('/api/articles', async (c) => {
     content_html: (row.content_html as string) || null,
     full_content_html: (row.full_content_html as string) || null,
     ai_summary: (row.ai_summary as string) || null,
-    thumbnail_url: (row.thumbnail_url as string) || null,
+    // Keep '' (looked up, no image) apart from null (not looked up yet).
+    thumbnail_url: row.thumbnail_url == null ? null : String(row.thumbnail_url),
     published_at: String(row.published_at),
     date_source: String(row.date_source),
     is_read: Boolean(Number(row.is_read)),
@@ -929,6 +931,25 @@ app.put('/api/feeds/:feedId/view-mode', async (c) => {
   return c.json({ viewMode });
 });
 
+// Thumbnail for an article whose feed shipped none: look up the page's
+// og:image once. '' records "looked up, none" so the page is not fetched
+// again; unreachable pages are left unchecked for a later try.
+app.post('/api/articles/:id/thumbnail', async (c) => {
+  const article = await c.env.DB.prepare('SELECT id, url, thumbnail_url FROM articles WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; url: string; thumbnail_url: string | null }>();
+  if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
+  if (article.thumbnail_url !== null) return c.json({ thumbnailUrl: article.thumbnail_url || null });
+
+  const found = await fetchPreviewImage(article.url);
+  if (found !== undefined) {
+    await c.env.DB.prepare('UPDATE articles SET thumbnail_url = ? WHERE id = ? AND thumbnail_url IS NULL')
+      .bind(found ?? '', article.id)
+      .run();
+  }
+  return c.json({ thumbnailUrl: found ?? null });
+});
+
 // Web view: may the original page be framed inside the reader pane?
 app.get('/api/articles/:id/embeddable', async (c) => {
   const article = await c.env.DB.prepare('SELECT url FROM articles WHERE id = ?')
@@ -984,7 +1005,7 @@ app.post('/api/articles/:id/reader-view', async (c) => {
   await c.env.DB.prepare(
     `UPDATE articles
      SET full_content_html = ?,
-         thumbnail_url = COALESCE(thumbnail_url, ?),
+         thumbnail_url = COALESCE(NULLIF(thumbnail_url, ''), ?),
          published_at = COALESCE(?, published_at)
      WHERE id = ?`
   )

@@ -14,6 +14,64 @@ import {
   type ArticleItem,
   type LayoutMode,
 } from '../client/api';
+import { useArticleThumbnail } from '../client/thumbnails';
+
+const hideBrokenImage = (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const box = e.currentTarget.parentElement;
+  if (box) box.style.display = 'none';
+};
+
+// Small magazine thumbnail; a placeholder holds the spot while the article
+// page is checked for an image, and nothing remains when it has none.
+const MagazineThumbnail: React.FC<{ article: ArticleItem; isDark: boolean }> = ({
+  article,
+  isDark,
+}) => {
+  const { ref, url, pending } = useArticleThumbnail<HTMLDivElement>(article);
+  if (!url && !pending) return null;
+  return (
+    <div
+      ref={ref}
+      className={`sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${
+        isDark ? 'bg-slate-800 border-slate-800' : 'bg-slate-100 border-slate-200'
+      } ${pending ? 'animate-pulse' : ''}`}
+    >
+      {url && (
+        <img
+          src={url}
+          alt={article.title}
+          loading="lazy"
+          className="w-full h-full object-cover"
+          onError={hideBrokenImage}
+        />
+      )}
+    </div>
+  );
+};
+
+// Card cover: the article image, or the gradient banner when there is none.
+const CardCover: React.FC<{ article: ArticleItem }> = ({ article }) => {
+  const { ref, url } = useArticleThumbnail<HTMLDivElement>(article);
+  return (
+    <div ref={ref} className="w-full h-full">
+      {url ? (
+        <img
+          src={url}
+          alt={article.title}
+          loading="lazy"
+          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center p-6 text-center">
+          <Rss className="w-10 h-10 text-emerald-500/30" />
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface ArticleListProps {
   articles: ArticleItem[];
@@ -242,21 +300,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
               <div>
                 {/* Cover Image or Stylish Gradient Banner */}
                 <div className="h-44 w-full overflow-hidden relative bg-gradient-to-br from-slate-800 via-slate-900 to-emerald-950">
-                  {article.thumbnail_url ? (
-                    <img
-                      src={article.thumbnail_url}
-                      alt={article.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center p-6 text-center">
-                      <Rss className="w-10 h-10 text-emerald-500/30" />
-                    </div>
-                  )}
+                  <CardCover article={article} />
 
                   {!article.is_read && (
                     <span className="absolute top-3 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-slate-950 shadow">
@@ -390,25 +434,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 : 'bg-white border-slate-200 hover:border-slate-300'
             }`}
           >
-            {/* Left Thumbnail */}
-            {article.thumbnail_url && (
-              <div
-                className={`sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${
-                  isDark ? 'bg-slate-800 border-slate-800' : 'bg-slate-100 border-slate-200'
-                }`}
-              >
-                <img
-                  src={article.thumbnail_url}
-                  alt={article.title}
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).parentElement!.style.display =
-                      'none';
-                  }}
-                />
-              </div>
-            )}
+            <MagazineThumbnail article={article} isDark={isDark} />
 
             <div className="flex-1 min-w-0">
               {/* Always one line: source and author truncate instead of wrapping.
