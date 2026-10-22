@@ -9,6 +9,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  Globe,
   Loader2,
   RefreshCw,
   Rss,
@@ -19,6 +20,27 @@ import {
   formatRelativeTime,
   type ArticleItem,
 } from '../client/api';
+
+// The three body views RSS readers offer: the feed's own content, the full
+// article extracted from the original page, and the original page itself.
+type ViewMode = 'feed' | 'reader' | 'web';
+
+const VIEW_MODES = [
+  { id: 'feed', label: '피드', title: '피드 본문 — RSS에 담긴 내용', Icon: Rss },
+  { id: 'reader', label: '리더', title: '전체 본문 — 원문에서 본문만 깔끔하게', Icon: BookOpen },
+  { id: 'web', label: '웹', title: '웹 페이지 — 원본 사이트 그대로', Icon: Globe },
+] as const;
+
+const VIEW_MODE_KEY = 'sfeed_reader_view_mode';
+
+function loadViewMode(): ViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_MODE_KEY);
+    return saved === 'reader' || saved === 'web' ? saved : 'feed';
+  } catch {
+    return 'feed';
+  }
+}
 
 interface ArticleDrawerProps {
   article: ArticleItem | null;
@@ -46,7 +68,10 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   hasNext,
   isDark,
 }) => {
-  const [readerMode, setReaderMode] = useState(false);
+  // The chosen view sticks across articles, like a reader's default view.
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const [readerFailedFor, setReaderFailedFor] = useState<string | null>(null);
+  const [frame, setFrame] = useState<{ articleId: string; embeddable: boolean; url: string } | null>(null);
   const [checkingDate, setCheckingDate] = useState(false);
   const [scrapingReader, setScrapingReader] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -55,11 +80,36 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   );
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
 
+  // Reader view: extract the full article once; the server caches it.
   useEffect(() => {
-    if (article) {
-      setReaderMode(Boolean(article.full_content_html));
-    }
-  }, [article?.id]);
+    if (!article || viewMode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
+    let active = true;
+    setScrapingReader(true);
+    apiRequest<{ fullContentHtml: string; publishedAt?: string }>(`/api/articles/${article.id}/reader-view`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+      .then((res) => {
+        if (!active) return;
+        onUpdateArticleFields(article.id, {
+          full_content_html: res.fullContentHtml,
+          ...(res.publishedAt ? { published_at: res.publishedAt } : {}),
+        });
+      })
+      .catch(() => { if (active) setReaderFailedFor(article.id); })
+      .finally(() => { if (active) setScrapingReader(false); });
+    return () => { active = false; setScrapingReader(false); };
+  }, [article?.id, viewMode]);
+
+  // Web view: ask the server whether the site allows being framed.
+  useEffect(() => {
+    if (!article || viewMode !== 'web' || frame?.articleId === article.id) return;
+    let active = true;
+    apiRequest<{ embeddable: boolean; url: string }>(`/api/articles/${article.id}/embeddable`)
+      .then((res) => { if (active) setFrame({ articleId: article.id, ...res }); })
+      .catch(() => { if (active) setFrame({ articleId: article.id, embeddable: true, url: article.url }); });
+    return () => { active = false; };
+  }, [article?.id, viewMode]);
 
   useEffect(() => {
     if (!article || article.date_source === 'original') { setCheckingDate(false); return; }
@@ -78,38 +128,18 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     <p className="text-sm">왼쪽 목록에서 글을 누르면 여기에 표시됩니다.</p>
   </div>;
 
-  const handleToggleReaderView = async () => {
-    if (readerMode) {
-      setReaderMode(false);
-      return;
-    }
-
-    if (article.full_content_html) {
-      setReaderMode(true);
-      return;
-    }
-
-    setScrapingReader(true);
+  const chooseViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (mode === 'reader') setReaderFailedFor(null);
     try {
-      const res = await apiRequest<{
-        fullContentHtml: string;
-        scrapedFromWeb?: boolean;
-        publishedAt?: string;
-      }>(`/api/articles/${article.id}/reader-view`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      });
-      onUpdateArticleFields(article.id, {
-        full_content_html: res.fullContentHtml,
-        ...(res.publishedAt ? { published_at: res.publishedAt } : {}),
-      });
-      setReaderMode(true);
+      localStorage.setItem(VIEW_MODE_KEY, mode);
     } catch {
-      // ignore
-    } finally {
-      setScrapingReader(false);
+      // the choice still applies for this session
     }
   };
+
+  const showingReader = viewMode === 'reader' && Boolean(article.full_content_html);
+  const readerFailed = viewMode === 'reader' && readerFailedFor === article.id;
 
   const handleSummarizeAI = async (force = false) => {
     setSummarizing(true);
@@ -138,7 +168,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   };
 
   const activeHtml =
-    readerMode && article.full_content_html
+    showingReader && article.full_content_html
       ? article.full_content_html
       : article.content_html || `<p>${article.summary || article.title}</p>`;
 
@@ -219,8 +249,47 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
           {/* Right Reader Controls */}
           <div className="flex flex-wrap items-center gap-1.5">
+            {/* Body view: feed content / reader (full article) / web page */}
+            <div
+              role="radiogroup"
+              aria-label="본문 보기 방식"
+              className={`flex items-center rounded-xl border p-0.5 ${
+                isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              {VIEW_MODES.map(({ id, label, title, Icon }) => {
+                const selected = viewMode === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    title={title}
+                    onClick={() => chooseViewMode(id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition cursor-pointer ${
+                      selected
+                        ? isDark
+                          ? 'bg-slate-700 text-white'
+                          : 'bg-slate-900 text-white'
+                        : isDark
+                        ? 'text-slate-400 hover:text-white'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    {id === 'reader' && scrapingReader ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Icon className="w-3.5 h-3.5" />
+                    )}
+                    <span className="sfeed-reader-control-label">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* AI Summary Trigger */}
-            <button
+            {viewMode !== 'web' && <button
               type="button"
               onClick={() => handleSummarizeAI(false)}
               disabled={summarizing}
@@ -238,30 +307,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
               )}
               <span className="sfeed-reader-control-label">{article.ai_summary ? 'AI 요약 완료' : 'AI 핵심 요약'}</span>
-            </button>
-
-            {/* Full-Text Reader View Scraper Trigger */}
-            <button
-              type="button"
-              onClick={handleToggleReaderView}
-              disabled={scrapingReader}
-              aria-label={readerMode ? '원문 리더 뷰 켜짐' : '원문 전체 불러오기'}
-              title={readerMode ? '기본 RSS 본문 보기' : '원문 전체 불러오기'}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
-                readerMode
-                  ? 'bg-blue-500/20 border-blue-500/40 text-blue-400 font-semibold'
-                  : isDark
-                  ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {scrapingReader ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <BookOpen className="w-3.5 h-3.5" />
-              )}
-              <span className="sfeed-reader-control-label">{readerMode ? '원문 리더 뷰 켜짐' : '원문 전체 불러오기'}</span>
-            </button>
+            </button>}
 
             {/* Read/Unread Toggle */}
             <button
@@ -300,7 +346,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </button>
 
             {/* Font Size Toggle */}
-            <button
+            {viewMode !== 'web' && <button
               type="button"
               onClick={cycleFontSize}
               title="글자 크기 변경"
@@ -311,7 +357,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               }`}
             >
               <Type className="w-4 h-4" />
-            </button>
+            </button>}
 
             {/* Open Original Link */}
             <a
@@ -330,7 +376,73 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           </div>
         </div>
 
-        {/* Scrollable Article Content Area */}
+        {viewMode === 'web' ? (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {!frame || frame.articleId !== article.id ? (
+              <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>원본 사이트를 여는 중…</span>
+              </div>
+            ) : frame.embeddable ? (
+              <>
+                <div
+                  className={`px-4 py-1.5 border-b text-[11px] flex items-center justify-between gap-2 shrink-0 ${
+                    isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
+                  }`}
+                >
+                  <span className="truncate min-w-0">{frame.url}</span>
+                  <a
+                    href={frame.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 hover:underline"
+                  >
+                    사이트가 보이지 않으면 새 창에서 열기
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <iframe
+                  key={article.id}
+                  src={frame.url}
+                  title={article.title}
+                  className="flex-1 w-full min-h-0 border-0 bg-white"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                />
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
+                <Globe className="w-9 h-9 text-slate-400" aria-hidden="true" />
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <a
+                    href={frame.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold inline-flex items-center gap-1.5 transition"
+                  >
+                    새 창에서 열기
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => chooseViewMode('reader')}
+                    className={`px-4 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                      isDark
+                        ? 'border-slate-700 text-slate-200 hover:bg-slate-800'
+                        : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    리더로 보기
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
         <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">
@@ -456,22 +568,21 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               </div>
             )}
 
-          {/* Reader View Mode Banner */}
-          {readerMode && (
-            <div className="px-3.5 py-2 rounded-xl bg-blue-500/10 border border-blue-500/30 text-xs text-blue-300 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-blue-400" />
-                <span>
-                  원문 웹페이지에서 스크래핑한 <strong>Reader View</strong> 전체 본문입니다.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReaderMode(false)}
-                className="underline hover:text-white cursor-pointer"
-              >
-                기본 RSS 본문 보기
-              </button>
+          {/* Reader view status: loading, or fell back to the feed body */}
+          {viewMode === 'reader' && !showingReader && (scrapingReader || readerFailed) && (
+            <div
+              className={`px-3.5 py-2 rounded-xl border text-xs flex items-center gap-2 ${
+                isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
+              }`}
+            >
+              {scrapingReader ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>원문에서 전체 본문을 불러오는 중이에요. 그동안 피드 본문을 보여드려요.</span>
+                </>
+              ) : (
+                <span>원문 전체 본문을 불러오지 못해 피드 본문을 보여드려요.</span>
+              )}
             </div>
           )}
 
@@ -493,17 +604,6 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               원문 출처: <span className="font-medium">{article.feed_title}</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {!readerMode && (
-                <button
-                  type="button"
-                  onClick={handleToggleReaderView}
-                  disabled={scrapingReader}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-blue-400" />
-                  <span>원문 전체 스크래핑(Reader View)</span>
-                </button>
-              )}
               <a
                 href={article.url}
                 target="_blank"
@@ -516,6 +616,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

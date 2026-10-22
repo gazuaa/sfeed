@@ -15,6 +15,7 @@ import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
 import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFailures';
 import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
+import { checkEmbeddable } from './framing';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
 import { summarizeArticleWithAI } from './aiSummarizer';
@@ -904,6 +905,15 @@ app.post('/api/articles/:id/publication-date', async (c) => {
 });
 
 // Reader View: Scrape full article body from original URL
+// Web view: may the original page be framed inside the reader pane?
+app.get('/api/articles/:id/embeddable', async (c) => {
+  const article = await c.env.DB.prepare('SELECT url FROM articles WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ url: string }>();
+  if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
+  return c.json(await checkEmbeddable(article.url, new URL(c.req.url).origin));
+});
+
 app.post('/api/articles/:id/reader-view', async (c) => {
   const articleId = c.req.param('id');
   const body = await c.req
