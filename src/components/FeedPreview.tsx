@@ -124,7 +124,7 @@ export const FeedPreview: React.FC<FeedPreviewProps> = ({
                   </div>
                   {article.summary && <p className="mt-2 text-xs text-slate-400 leading-relaxed line-clamp-3 break-words">{article.summary}</p>}
                   <time dateTime={article.publishedAt} className="block mt-2 text-[11px] text-slate-500">
-                    {formatRelativeTime(article.publishedAt)}
+                    {article.dateSource === 'updated' || article.dateSource === 'collected' ? '발행일 미제공' : formatRelativeTime(article.publishedAt)}
                   </time>
                 </a>
               </li>

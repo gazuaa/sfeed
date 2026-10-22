@@ -102,6 +102,7 @@ export interface ArticleItem {
   ai_summary: string | null;
   thumbnail_url: string | null;
   published_at: string;
+  date_source?: string;
   is_read: boolean;
   is_saved: boolean;
 }

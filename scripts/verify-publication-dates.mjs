@@ -9,6 +9,7 @@ try {
   const { upsertFeedAndArticles } = await vite.ssrLoadModule('/src/server/seedService.ts');
   const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
+  const { formatArticleDate } = await vite.ssrLoadModule('/src/client/api.ts');
   const url = 'https://www.hankyung.com/article/202609117709i';
   const published = '2026-09-10T15:58:00.000Z'; // Sep 11, 00:58 KST
   const updated = '2026-10-21T14:15:13.000Z';
@@ -22,6 +23,9 @@ try {
   assert.equal(extractOriginalPublishedAt('<meta property="article:modified_time" content="2026-10-21T00:00:00Z">', url), null);
   assert.equal(extractOriginalPublishedAt(`<meta content="2026-09-11T00:58:00+09:00" property="article:published_time"><meta property="article:modified_time" content="${updated}">`, url), published);
   assert.equal(extractOriginalPublishedAt('<time datetime="2026-09-11T00:58:00+09:00" itemprop="datePublished">Yesterday</time>', url), published);
+  assert.equal(extractOriginalPublishedAt('<time class="entry-date published" datetime="2026-09-11T00:58:00+09:00">Yesterday</time>', 'https://other.test/blog/post'), published);
+  assert.equal(extractOriginalPublishedAt('<meta name="parsely-pub-date" content="2026-09-11T00:58:00+09:00">', 'https://other.test/blog/post'), published);
+  assert.equal(extractOriginalPublishedAt('<meta property="article:published_time" content="2026-10-21T20:16:02">', 'https://decrypt.co/article'), null, 'timezone-less overseas metadata must not be shifted by a Korean timezone assumption');
   const structured = (data) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
   assert.equal(extractOriginalPublishedAt(structured({ '@graph': [
     { '@type': 'NewsArticle', url: 'https://example.test/related', datePublished: updated },
@@ -57,7 +61,7 @@ try {
   const login = await app.request('/api/auth/google/quick', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'dates@example.test' }) }, env);
   const { token, user } = await login.json();
   const parsed = rss();
-  const legacy = { ...parsed, articles: parsed.articles.map((article) => ({ ...article, publishedAt: updated, originalPublishedAt: null })) };
+  const legacy = { ...parsed, articles: parsed.articles.map((article) => ({ ...article, publishedAt: updated, originalPublishedAt: null, dateSource: 'feed' })) };
   const { feedId } = await upsertFeedAndArticles(db, legacy);
   const row = await db.prepare('SELECT * FROM articles WHERE feed_id = ?').bind(feedId).first();
   // The old timestamp is not near created_at, so the old heuristic missed it.
@@ -85,6 +89,30 @@ try {
   globalThis.fetch = async () => new Response(`<meta property="article:modified_time" content="${updated}"><article><p>${'Real article content. '.repeat(30)}</p></article>`);
   assert.equal((await (await read({ force: true })).json()).publishedAt, published);
   assert.equal((await (await read()).json()).publishedAt, published, 'cached reader responses must include the publication date');
+  // Every publisher is checked on article open, not only Hankyung and not only
+  // when the user explicitly switches to Reader View.
+  const other = { ...rss('', updated), xmlUrl: 'https://other.test/rss', articles: [{ ...rss('', updated).articles[0], guid: 'other-story', url: 'https://other.test/post', dateSource: 'updated' }] };
+  const otherFeed = await upsertFeedAndArticles(db, other);
+  await db.prepare('INSERT INTO subscriptions(id,user_id,feed_id,created_at) VALUES(?,?,?,?)').bind('date-sub', user.id, otherFeed.feedId, updated).run();
+  const otherRow = await db.prepare('SELECT * FROM articles WHERE feed_id=?').bind(otherFeed.feedId).first();
+  let fetched = 0;
+  globalThis.fetch = async () => { fetched++; return new Response(`<script type="application/ld+json">{"@type":"BlogPosting","url":"https://other.test/post","datePublished":"2026-09-11T00:58:00+09:00","dateModified":"${updated}"}</script>`); };
+  const dateRequest = () => app.request(`/api/articles/${otherRow.id}/publication-date`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }, env);
+  const verified = await (await dateRequest()).json();
+  assert.equal(verified.publishedAt, published);
+  assert.equal(verified.dateSource, 'original');
+  await dateRequest();
+  assert.equal(fetched, 1, 'reopening must reuse the saved original date');
+  assert.equal((await db.prepare('SELECT published_at FROM articles WHERE id=?').bind(otherRow.id).first()).published_at, published);
+  // A later feed refresh (including missing-image repair) cannot replace a
+  // verified original date with the old nine-hour heuristic.
+  await upsertFeedAndArticles(db, { ...other, articles: other.articles.map((a) => ({ ...a, publishedAt: '2026-09-10T06:58:00.000Z', dateSource: 'feed', thumbnailUrl: 'https://other.test/photo.jpg' })) });
+  assert.equal((await db.prepare('SELECT published_at FROM articles WHERE id=?').bind(otherRow.id).first()).published_at, published);
+  assert.equal(formatArticleDate({ published_at: updated, date_source: 'updated' }), '발행일 미제공');
+  assert.equal(formatArticleDate({ published_at: updated, date_source: 'collected' }), '발행일 미제공');
+  assert.notEqual(formatArticleDate({ published_at: published, date_source: 'original' }), '발행일 미제공');
+  const privateArticle = await app.request(`/api/articles/${row.id}/publication-date`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }, env);
+  assert.equal(privateArticle.status, 404, 'unsubscribed articles must not be fetched through another account');
   console.log('PASS: original publisher/card dates precede generator and modification times; KST and valid RSS/Atom dates preserved; unrelated/invalid dates rejected; existing IDs/read/bookmarks preserved; Reader View persists and returns original dates; D1 <=100 parameters.');
 } finally {
   globalThis.fetch = originalFetch;

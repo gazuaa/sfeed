@@ -47,6 +47,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   isDark,
 }) => {
   const [readerMode, setReaderMode] = useState(false);
+  const [checkingDate, setCheckingDate] = useState(false);
   const [scrapingReader, setScrapingReader] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [aiMeta, setAiMeta] = useState<{ provider?: string; model?: string } | null>(
@@ -58,6 +59,17 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     if (article) {
       setReaderMode(Boolean(article.full_content_html));
     }
+  }, [article?.id]);
+
+  useEffect(() => {
+    if (!article || article.date_source === 'original') { setCheckingDate(false); return; }
+    let active = true;
+    setCheckingDate(true);
+    apiRequest<{ publishedAt: string; dateSource: ArticleItem['date_source'] }>(`/api/articles/${article.id}/publication-date`, { method: 'POST' })
+      .then((result) => { if (active) onUpdateArticleFields(article.id, { published_at: result.publishedAt, date_source: result.dateSource }); })
+      .catch(() => {})
+      .finally(() => { if (active) setCheckingDate(false); });
+    return () => { active = false; };
   }, [article?.id]);
 
   if (!article) return null;
@@ -143,7 +155,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
       {/* Slide-over Reader Panel */}
       <div
-        className={`relative z-10 w-full max-w-3xl h-full flex flex-col border-l shadow-2xl overflow-hidden ${
+        className={`sfeed-reader relative z-10 w-full max-w-3xl h-full flex flex-col border-l shadow-2xl overflow-hidden ${
           isDark
             ? 'bg-slate-950 border-slate-800 text-slate-100'
             : 'bg-white border-slate-200 text-slate-900'
@@ -151,7 +163,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       >
         {/* Top Action Bar */}
         <div
-          className={`px-4 sm:px-6 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+          className={`sfeed-reader-toolbar px-4 sm:px-6 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
             isDark
               ? 'bg-slate-900/90 border-slate-800'
               : 'bg-slate-50 border-slate-200'
@@ -331,7 +343,9 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                 </span>
               )}
               <span className="text-slate-500">·</span>
-              <span className="text-slate-400">
+              <span className="text-slate-400" title={article.date_source === 'original' ? '원문 발행일' : '피드에서 제공한 발행일'}>
+                {checkingDate ? '원문 발행일 확인 중…' : article.date_source === 'updated' || article.date_source === 'collected' ? '발행일 미제공' : <>
+                {article.date_source !== 'original' && '피드 제공 · '}
                 {new Date(article.published_at).toLocaleString('ko-KR', {
                   year: 'numeric',
                   month: 'long',
@@ -340,6 +354,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   minute: '2-digit',
                 })}{' '}
                 ({formatRelativeTime(article.published_at)})
+                </>}
               </span>
               {article.author && (
                 <>

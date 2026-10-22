@@ -38,14 +38,25 @@ function sameArticle(left: string, right: string): boolean {
 
 export function extractOriginalPublishedAt(html: string | null | undefined, url: string): string | null {
   if (!html) return null;
+  const parseHtmlDate = (value: unknown) => {
+    if (typeof value !== 'string') return null;
+    // Feed parsing has a KST convention for Korean CMS dates. Do not apply
+    // that convention to an overseas publisher's timezone-less metadata.
+    // Keep its feed date until an explicit offset can be verified instead.
+    if (!HAS_ZONE.test(value.trim())) {
+      try { if (!/(?:\.kr|(?:^|\.)(?:hankyung|aitimes)\.com)$/i.test(new URL(url).hostname)) return null; }
+      catch { return null; }
+    }
+    return parsePublicationDate(value);
+  };
   // Ignore comments and non-JSON scripts so examples quoted in a post are not
   // mistaken for the page's own metadata.
   const source = html.replace(/<!--[\s\S]*?-->/g, '');
   const markup = source.replace(/<script\b[\s\S]*?<\/script>/gi, '');
   for (const match of markup.matchAll(/<meta\b[^>]*>/gi)) {
     const attrs = attributes(match[0]);
-    if (['article:published_time', 'datepublished'].includes((attrs.property || attrs.itemprop || attrs.name || '').toLowerCase())) {
-      const date = parsePublicationDate(attrs.content);
+    if (['article:published_time', 'datepublished', 'pubdate', 'publishdate', 'publish-date', 'dc.date.issued', 'parsely-pub-date', 'sailthru.date', 'citation_publication_date'].includes((attrs.property || attrs.itemprop || attrs.name || '').toLowerCase())) {
+      const date = parseHtmlDate(attrs.content);
       if (date) return date;
     }
   }
@@ -63,7 +74,7 @@ export function extractOriginalPublishedAt(html: string | null | undefined, url:
         const main = obj.mainEntityOfPage;
         const identity = obj.url || (typeof main === 'object' && main ? (main as Record<string, unknown>)['@id'] : main) || obj['@id'];
         if (types.some((type) => typeof type === 'string' && /^(?:NewsArticle|Article|BlogPosting|ReportageNewsArticle|TechArticle)$/.test(type)) && (!identity || (typeof identity === 'string' && sameArticle(identity, url)))) {
-          const date = parsePublicationDate(obj.datePublished);
+          const date = parseHtmlDate(obj.datePublished);
           if (date) return date;
         }
         // Do not descend into related articles, comments or quoted objects.
@@ -75,8 +86,15 @@ export function extractOriginalPublishedAt(html: string | null | undefined, url:
   }
   for (const match of markup.matchAll(/<time\b([^>]*)>([\s\S]*?)<\/time>/gi)) {
     const attrs = attributes(match[1]);
+    if (attrs.itemprop?.toLowerCase() === 'datepublished' || /\bpubdate\b/i.test(match[1]) || (attrs.class?.split(/\s+/).some((name) => ['published', 'date-published', 'published-date', 'entry-published'].includes(name)) && !/modified|updated/i.test(attrs.class))) {
+      const date = parseHtmlDate(attrs.datetime || match[2].replace(/<[^>]*>/g, '').trim());
+      if (date) return date;
+    }
+  }
+  for (const match of markup.matchAll(/<(?:span|p)\b([^>]*)>([^<]*)<\/(?:span|p)>/gi)) {
+    const attrs = attributes(match[1]);
     if (attrs.itemprop?.toLowerCase() === 'datepublished') {
-      const date = parsePublicationDate(attrs.datetime || match[2].replace(/<[^>]*>/g, '').trim());
+      const date = parseHtmlDate(attrs.content || match[2]);
       if (date) return date;
     }
   }

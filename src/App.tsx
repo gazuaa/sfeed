@@ -433,6 +433,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!user || markReadTarget) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&

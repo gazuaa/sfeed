@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { apiRequest, setStoredToken, type UserProfile } from '../client/api';
+import { InstallAppButton } from './PwaInstall';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -116,7 +117,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             text: 'signin_with',
             shape: 'pill',
             locale: 'ko',
-            width: 340,
+            width: Math.max(200, Math.min(340, (gsiBtnRef.current.parentElement?.clientWidth || 372) - 34)),
           });
         } catch {
           // ignore if blocked offline
@@ -167,7 +168,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row">
+    <div className="sfeed-login min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row">
       {/* Left Hero Section */}
       <div className="lg:w-7/12 p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800/80 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/30">
         <div className="relative z-10">
@@ -268,6 +269,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <span>Powered by React 19 · Hono · Cloudflare D1 · Workers AI</span>
           </div>
           <span>GitHub + Cloudflare 자동 배포 아키텍처</span>
+          <InstallAppButton />
           <a href="/privacy" className="hover:text-slate-300 hover:underline underline-offset-2">
             개인정보처리방침
           </a>

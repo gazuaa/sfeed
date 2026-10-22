@@ -13,6 +13,7 @@ export interface ParsedArticle {
   thumbnailUrl: string | null;
   publishedAt: string;
   originalPublishedAt?: string | null;
+  dateSource?: 'original' | 'feed' | 'updated' | 'collected';
 }
 
 export interface ParsedFeed {
@@ -165,13 +166,13 @@ const MAX_FEED_ITEMS = 1000;
 // served by Naver blogs) issued/created/modified. Publication dates come first.
 const ITEM_DATE_FIELDS = ['pubDate', 'published', 'dc:date', 'issued', 'created', 'updated', 'modified'];
 
-function extractItemDate(item: Record<string, unknown>): string {
+function extractItemDate(item: Record<string, unknown>): { value: string; source: 'feed' | 'updated' | 'collected' } {
   for (const field of ITEM_DATE_FIELDS) {
     const text = extractText(item[field]);
     const parsed = parsePublicationDate(text);
-    if (parsed) return parsed;
+    if (parsed) return { value: parsed, source: ['updated', 'modified'].includes(field) ? 'updated' : 'feed' };
   }
-  return '';
+  return { value: new Date().toISOString(), source: 'collected' };
 }
 
 export function getFaviconForSite(siteUrl: string | null, xmlUrl: string): string | null {
@@ -259,8 +260,9 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
         summary: summary || null,
         contentHtml: contentHtml || null,
         thumbnailUrl,
-        publishedAt: originalPublishedAt || pubDateRaw || new Date().toISOString(),
+        publishedAt: originalPublishedAt || pubDateRaw.value,
         originalPublishedAt,
+        dateSource: originalPublishedAt ? 'original' : pubDateRaw.source,
       });
     }
 
@@ -346,8 +348,9 @@ function parseXmlFeedContentRaw(xmlText: string, xmlUrl: string): ParsedFeed {
         summary: summary || null,
         contentHtml: contentHtml || null,
         thumbnailUrl,
-        publishedAt: originalPublishedAt || pubDateRaw || new Date().toISOString(),
+        publishedAt: originalPublishedAt || pubDateRaw.value,
         originalPublishedAt,
+        dateSource: originalPublishedAt ? 'original' : pubDateRaw.source,
       });
     }
 

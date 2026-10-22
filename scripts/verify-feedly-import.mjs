@@ -166,6 +166,7 @@ test('publish an unfinished feed, resume checkpoints, and preserve existing arti
         url TEXT, author TEXT, summary TEXT, content_html TEXT, thumbnail_url TEXT,
         published_at TEXT, created_at TEXT, UNIQUE(feed_id,guid));
       INSERT INTO feeds VALUES('f1','https://example.test/feed','Example');
+      CREATE TABLE article_date_checks(article_id TEXT PRIMARY KEY, source TEXT, checked_at TEXT);
       INSERT INTO subscriptions VALUES('u1','f1');
       INSERT INTO articles(id,feed_id,guid,title) VALUES('keep-original','f1','g1','Existing');`);
     const entry = (number) => ({ feedlyId: `e${number}`, guid: `g${number}`, title: `Entry ${number}`, url: `https://example.test/${number}`, publishedAt: '2026-10-01T00:00:00Z' });

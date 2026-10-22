@@ -2,6 +2,7 @@ import { app } from './server/app';
 import type { Env } from './server/types';
 import { fetchAndParseFeed } from './server/rssParser';
 import { upsertFeedAndArticles } from './server/seedService';
+import { checkFeedPublicationDates } from './server/articlePublication';
 
 export default {
   async fetch(request: Request, env: Env, ctx: unknown): Promise<Response> {
@@ -13,10 +14,11 @@ export default {
 
     if (env.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request);
-      if (url.pathname === '/' || url.pathname.endsWith('.html')) {
+      if (url.pathname === '/' || url.pathname.endsWith('.html') || ['/sw.js', '/offline.js', '/manifest.webmanifest'].includes(url.pathname)) {
         const headers = new Headers(assetResponse.headers);
         headers.set('Cache-Control', 'no-store');
         headers.set('X-Content-Type-Options', 'nosniff');
+        if (url.pathname === '/sw.js') headers.set('Service-Worker-Allowed', '/');
         return new Response(assetResponse.body, {
           status: assetResponse.status,
           statusText: assetResponse.statusText,
@@ -51,5 +53,6 @@ export default {
         }
       })
     );
+    await checkFeedPublicationDates(env.DB, feeds.map((feed) => feed.id));
   },
 };

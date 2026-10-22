@@ -10,7 +10,7 @@ import {
   Plus,
 } from 'lucide-react';
 import {
-  formatRelativeTime,
+  formatArticleDate,
   type ArticleItem,
   type LayoutMode,
 } from '../client/api';
@@ -182,7 +182,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 {/* Right Timestamp & Quick Actions */}
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-[11px] text-slate-500 whitespace-nowrap">
-                    {formatRelativeTime(article.published_at)}
+                    {formatArticleDate(article)}
                   </span>
 
                   <button
@@ -287,7 +287,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                       <span className="font-medium truncate">{article.feed_title}</span>
                     </div>
                     <span className="shrink-0 text-[11px] text-slate-500">
-                      {formatRelativeTime(article.published_at)}
+                      {formatArticleDate(article)}
                     </span>
                   </div>
 
@@ -421,7 +421,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
                 <span className="text-slate-500">·</span>
                 <span className="text-slate-400">
-                  {formatRelativeTime(article.published_at)}
+                  {formatArticleDate(article)}
                 </span>
 
                 {article.author && (

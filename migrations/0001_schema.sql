@@ -104,6 +104,13 @@ CREATE TABLE IF NOT EXISTS article_states (
 CREATE INDEX IF NOT EXISTS idx_article_states_user_saved ON article_states(user_id, is_saved);
 CREATE INDEX IF NOT EXISTS idx_article_states_user_read ON article_states(user_id, is_read);
 
+-- Date provenance is kept separately so older imports can be checked in place.
+CREATE TABLE IF NOT EXISTS article_date_checks (
+  article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  source TEXT NOT NULL CHECK(source IN ('original', 'feed', 'updated', 'collected')),
+  checked_at TEXT
+);
+
 -- Unresolved import failures are private to the signed-in user.
 CREATE TABLE IF NOT EXISTS opml_import_failures (
   user_id TEXT NOT NULL,

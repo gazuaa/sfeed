@@ -59,6 +59,7 @@ export interface ArticleItem {
   ai_summary: string | null;
   thumbnail_url: string | null;
   published_at: string;
+  date_source?: 'original' | 'feed' | 'updated' | 'collected';
   is_read: boolean;
   is_saved: boolean;
 }
@@ -94,6 +95,7 @@ export interface FeedPreviewResponse {
     url: string;
     summary: string | null;
     publishedAt: string;
+    dateSource?: ArticleItem['date_source'];
   }[];
 }
 
@@ -163,4 +165,9 @@ export function formatRelativeTime(isoDate: string): string {
   } catch {
     return '';
   }
+}
+
+export function formatArticleDate(article: Pick<ArticleItem, 'published_at' | 'date_source'>): string {
+  if (article.date_source === 'updated' || article.date_source === 'collected') return '발행일 미제공';
+  return formatRelativeTime(article.published_at);
 }

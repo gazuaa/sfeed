@@ -7,7 +7,9 @@ export function generateId(prefix = ''): string {
 }
 
 interface ExistingArticle {
+  id: string;
   guid: string;
+  date_source: string | null;
   published_at: string;
   created_at: string;
   no_thumbnail: number;
@@ -89,9 +91,9 @@ export async function upsertFeedAndArticles(
   for (let offset = 0; offset < parsed.articles.length; offset += 80) {
     const chunk = parsed.articles.slice(offset, offset + 80);
     const rows = await db.prepare(
-      `SELECT guid, published_at, created_at,
-              thumbnail_url IS NULL AS no_thumbnail, content_html IS NULL AS no_content
-       FROM articles WHERE feed_id = ? AND guid IN (${chunk.map(() => '?').join(', ')})`
+      `SELECT a.id,a.guid,a.published_at,a.created_at,d.source AS date_source,
+              a.thumbnail_url IS NULL AS no_thumbnail,a.content_html IS NULL AS no_content
+       FROM articles a LEFT JOIN article_date_checks d ON d.article_id=a.id WHERE a.feed_id = ? AND a.guid IN (${chunk.map(() => '?').join(', ')})`
     ).bind(feedId, ...chunk.map((article) => article.guid)).all<ExistingArticle>();
     for (const row of rows.results || []) existing.set(row.guid, row);
   }
@@ -106,7 +108,7 @@ export async function upsertFeedAndArticles(
       (Boolean(row.no_thumbnail) && Boolean(article.thumbnailUrl)) ||
       (Boolean(row.no_content) && Boolean(article.contentHtml)) ||
       (Boolean(article.originalPublishedAt) && row.published_at !== article.publishedAt) ||
-      needsDateRepair(row, article.publishedAt)
+      (row.date_source !== 'original' && needsDateRepair(row, article.publishedAt))
     );
   });
 
@@ -121,6 +123,7 @@ export async function upsertFeedAndArticles(
   // earlier, so they never overwrite a date.
   let insertedCount = 0;
   const seenGuids = new Set(existing.keys());
+  const articleIds = new Map([...existing].map(([guid, row]) => [guid, row.id]));
   const statements = [];
   for (let offset = 0; offset < toWrite.length; offset += 8) {
     const chunk = toWrite.slice(offset, offset + 8);
@@ -129,8 +132,10 @@ export async function upsertFeedAndArticles(
     for (const article of chunk) {
       if (!seenGuids.has(article.guid)) insertedCount++;
       seenGuids.add(article.guid);
+      const id = articleIds.get(article.guid) || generateId('art');
+      articleIds.set(article.guid, id);
       values.push(
-        generateId('art'), feedId, article.guid, article.title, article.url,
+        id, feedId, article.guid, article.title, article.url,
         article.author, article.summary, article.contentHtml, article.thumbnailUrl,
         article.publishedAt, now
       );
@@ -143,8 +148,9 @@ export async function upsertFeedAndArticles(
         thumbnail_url = COALESCE(articles.thumbnail_url, excluded.thumbnail_url),
         content_html = COALESCE(articles.content_html, excluded.content_html),
         published_at = CASE
-          WHEN ${originalDateGuids.length ? `articles.guid IN (${originalDateGuids.map(() => '?').join(', ')}) OR ` : ''}
-               ((abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
+          ${originalDateGuids.length ? `WHEN articles.guid IN (${originalDateGuids.map(() => '?').join(', ')}) THEN excluded.published_at` : ''}
+          WHEN EXISTS(SELECT 1 FROM article_date_checks d WHERE d.article_id=articles.id AND d.source='original') THEN articles.published_at
+          WHEN ((abs(julianday(articles.published_at) - julianday(articles.created_at)) < 5.0 / 1440
                 OR julianday(articles.published_at) > julianday(articles.created_at) + 10.0 / 1440)
               AND julianday(excluded.published_at) < julianday(articles.published_at) - 1.0 / 24)
             OR abs(julianday(articles.published_at) - julianday(excluded.published_at) - 9.0 / 24) < 1.0 / 86400
@@ -154,6 +160,17 @@ export async function upsertFeedAndArticles(
     ).bind(...values, ...originalDateGuids));
   }
   if (statements.length > 0) await db.batch(statements);
+
+  const dates = parsed.articles.filter((article) => {
+    const previous = existing.get(article.guid)?.date_source;
+    return !previous || (previous !== 'original' && previous !== (article.dateSource || 'feed'));
+  });
+  const dateStatements = [];
+  for (let offset = 0; offset < dates.length; offset += 30) {
+    const chunk = dates.slice(offset, offset + 30);
+    dateStatements.push(db.prepare(`INSERT INTO article_date_checks(article_id,source,checked_at) VALUES ${chunk.map(() => '(?,?,?)').join(',')} ON CONFLICT(article_id) DO UPDATE SET source=excluded.source,checked_at=COALESCE(excluded.checked_at,article_date_checks.checked_at)`).bind(...chunk.flatMap((article) => [articleIds.get(article.guid), article.dateSource || 'feed', article.originalPublishedAt ? now : null])));
+  }
+  if (dateStatements.length) await db.batch(dateStatements);
 
   return { feedId, insertedCount };
 }

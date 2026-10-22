@@ -15,6 +15,7 @@ import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFai
 import { fetchAndParseFeed, parseOpml, generateOpml } from './rssParser';
 import { scrapeFullArticle } from './readerScraper';
 import { extractOriginalPublishedAt } from './publicationDate';
+import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
 import { summarizeArticleWithAI } from './aiSummarizer';
 import {
   generateId,
@@ -407,6 +408,7 @@ app.get('/api/discover/feeds/:id/preview', async (c) => {
         url: article.url,
         summary: article.summary,
         publishedAt: article.publishedAt,
+        dateSource: article.dateSource,
       }));
     return c.json({ articles });
   } catch {
@@ -733,6 +735,7 @@ app.get('/api/articles', async (c) => {
       a.ai_summary,
       a.thumbnail_url,
       a.published_at,
+      COALESCE(dc.source, 'feed') AS date_source,
       COALESCE(st.is_read, CASE WHEN a.published_at < ? THEN 1 ELSE 0 END) as is_read,
       COALESCE(st.is_saved, 0) as is_saved
     FROM articles a
@@ -740,6 +743,7 @@ app.get('/api/articles', async (c) => {
     JOIN feeds f ON f.id = a.feed_id
     LEFT JOIN folders fl ON fl.id = s.folder_id
     LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
+    LEFT JOIN article_date_checks dc ON dc.article_id = a.id
     WHERE ${conditions.join(' AND ')}
     ORDER BY a.published_at DESC, a.id DESC
     LIMIT ?
@@ -769,6 +773,7 @@ app.get('/api/articles', async (c) => {
     ai_summary: (row.ai_summary as string) || null,
     thumbnail_url: (row.thumbnail_url as string) || null,
     published_at: String(row.published_at),
+    date_source: String(row.date_source),
     is_read: Boolean(Number(row.is_read)),
     is_saved: Boolean(Number(row.is_saved)),
   }));
@@ -876,6 +881,14 @@ app.post('/api/articles/mark-all-read', async (c) => {
     .run();
 
   return c.json({ markedCount: Number(res.meta?.changes ?? 0) });
+});
+
+// Runs for any subscribed publisher when its article is opened, independently
+// of Reader View. Repeated opens use the saved result rather than refetching.
+app.post('/api/articles/:id/publication-date', async (c) => {
+  const article = await c.env.DB.prepare(`SELECT a.id,a.url,a.title,a.summary,a.content_html,a.full_content_html,a.published_at,d.source AS date_source,d.checked_at FROM articles a LEFT JOIN article_date_checks d ON d.article_id=a.id WHERE a.id=? AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id=a.feed_id AND s.user_id=?)`).bind(c.req.param('id'), c.get('user').id).first<PublicationArticle>();
+  if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
+  return c.json(await resolveArticlePublication(c.env.DB, article));
 });
 
 // Reader View: Scrape full article body from original URL

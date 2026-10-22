@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
+import { InstallAppButton } from './PwaInstall';
 
 interface HeaderBarProps {
   title: string;
@@ -51,7 +52,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <header
-      className={`sticky top-0 z-30 border-b backdrop-blur-md px-4 lg:px-8 py-3.5 transition-colors ${
+      className={`sfeed-header sticky top-0 z-30 border-b backdrop-blur-md px-4 lg:px-8 py-3.5 transition-colors ${
         isDark
           ? 'bg-slate-950/85 border-slate-800/80 text-slate-100'
           : 'bg-white/90 border-slate-200 text-slate-900'
@@ -84,6 +85,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
         {/* Right: Search, Unread Filter, View Switcher, Refresh, Mark Read, Theme */}
         <div className="flex flex-wrap items-center gap-2">
+          <InstallAppButton />
           {/* Keyword Search Input */}
           <div className="relative flex-1 sm:flex-initial sm:w-60">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />

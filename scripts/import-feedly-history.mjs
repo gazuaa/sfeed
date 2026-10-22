@@ -138,6 +138,7 @@ async function download(stripHtmlToSummary, decodeHtmlEntities, extractOriginalP
           thumbnailUrl: visual && /^https?:\/\//.test(visual) ? visual : null,
           publishedAt: originalPublishedAt || new Date(entry.published || entry.crawled).toISOString(),
           originalPublishedAt,
+          dateSource: originalPublishedAt ? 'original' : entry.published ? 'feed' : 'collected',
         });
       });
       if (lines.length) appendFileSync(dataPath(feed.xml_url), lines.join('\n') + '\n');
@@ -201,6 +202,11 @@ function write(extractSummaryPublishedAt) {
           `INSERT INTO articles (id, feed_id, guid, title, url, author, summary, content_html, thumbnail_url, published_at, created_at)
            VALUES ${values.join(', ')} ON CONFLICT(feed_id, guid) DO NOTHING;`
         );
+        const metadata = chunk.slice(i, i + ROWS_PER_STATEMENT).map((entry) => {
+          const original = entry.originalPublishedAt || extractSummaryPublishedAt(entry.summary, entry.title, entry.url);
+          return '(' + [entry.guid, original ? 'original' : entry.dateSource || 'feed', original ? now : null].map(sql).join(',') + ')';
+        });
+        statements.push(`WITH dates(guid,source,checked_at) AS (VALUES ${metadata.join(',')}) INSERT INTO article_date_checks(article_id,source,checked_at) SELECT a.id,d.source,d.checked_at FROM dates d JOIN articles a ON a.feed_id=${sql(feed.id)} AND a.guid=d.guid WHERE true ON CONFLICT(article_id) DO NOTHING;`);
       }
       execute(statements);
       offset += chunk.length;
