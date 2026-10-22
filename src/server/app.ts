@@ -14,7 +14,7 @@ import { normalizeFeedUrl } from '../shared/feedDiscovery';
 import { importOpmlFeed, OpmlSourceError } from './opmlImporter';
 import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFailures';
 import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './rssParser';
-import { scrapeFullArticle } from './readerScraper';
+import { READER_FALLBACK_MARK, realFullContent, scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
 import { fetchPreviewImage } from './previewImage';
 import { analyseBuilderPage, builderParsedFeed, builderSiteInfo, publicPageUrl } from './rssBuilder';
@@ -820,7 +820,7 @@ app.get('/api/articles', async (c) => {
     author: (row.author as string) || null,
     summary: (row.summary as string) || null,
     content_html: (row.content_html as string) || null,
-    full_content_html: (row.full_content_html as string) || null,
+    full_content_html: realFullContent(row.full_content_html as string | null),
     ai_summary: (row.ai_summary as string) || null,
     // Keep '' (looked up, no image) apart from null (not looked up yet).
     thumbnail_url: row.thumbnail_url == null ? null : String(row.thumbnail_url),
@@ -1020,7 +1020,7 @@ app.post('/api/articles/:id/reader-view', async (c) => {
     return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
   }
 
-  if (article.full_content_html && !body.force) {
+  if (realFullContent(article.full_content_html) && !body.force) {
     const publishedAt = extractOriginalPublishedAt(article.content_html, article.url) || extractOriginalPublishedAt(article.full_content_html, article.url) || article.published_at;
     if (publishedAt !== article.published_at) {
       await c.env.DB.prepare('UPDATE articles SET published_at = ? WHERE id = ?').bind(publishedAt, article.id).run();
@@ -1037,6 +1037,20 @@ app.post('/api/articles/:id/reader-view', async (c) => {
     article.content_html,
     article.title
   );
+
+  if (!scraped.fullContentHtml) {
+    // Keep a real body from an earlier extraction; drop only a made-up one
+    // cached by older versions so it stops showing.
+    await c.env.DB.prepare(
+      `UPDATE articles
+       SET full_content_html = CASE WHEN instr(full_content_html, ?) > 0 THEN NULL ELSE full_content_html END,
+           published_at = COALESCE(?, published_at)
+       WHERE id = ?`
+    )
+      .bind(READER_FALLBACK_MARK, scraped.originalPublishedAt, article.id)
+      .run();
+    return c.json({ error: '원문 본문을 불러오지 못했습니다. 사이트가 자동 접근을 막고 있을 수 있습니다.' }, 502);
+  }
 
   await c.env.DB.prepare(
     `UPDATE articles
@@ -1098,7 +1112,7 @@ app.post('/api/articles/:id/summarize', async (c) => {
     feedTitle: article.feed_title,
     summary: article.summary,
     contentHtml: article.content_html,
-    fullContentHtml: article.full_content_html,
+    fullContentHtml: realFullContent(article.full_content_html),
   });
 
   await c.env.DB.prepare('UPDATE articles SET ai_summary = ? WHERE id = ?')

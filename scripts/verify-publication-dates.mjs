@@ -96,6 +96,13 @@ try {
   globalThis.fetch = async () => new Response(`<meta property="article:modified_time" content="${updated}"><article><p>${'Real article content. '.repeat(30)}</p></article>`);
   assert.equal((await (await read({ force: true })).json()).publishedAt, published);
   assert.equal((await (await read()).json()).publishedAt, published, 'cached reader responses must include the publication date');
+  // A blocked page is an error, not a made-up body; a real cached body stays.
+  globalThis.fetch = async () => new Response('<title>Vercel Security Checkpoint</title>', { status: 429 });
+  assert.equal((await read({ force: true })).status, 502);
+  assert.match((await db.prepare('SELECT full_content_html FROM articles WHERE id = ?').bind(row.id).first()).full_content_html, /Real article content/);
+  await db.prepare("UPDATE articles SET full_content_html = '<div class=\"reader-fallback-content\">x</div>' WHERE id = ?").bind(row.id).run();
+  assert.equal((await read()).status, 502, 'an old made-up body is not served from cache');
+  assert.equal((await db.prepare('SELECT full_content_html FROM articles WHERE id = ?').bind(row.id).first()).full_content_html, null);
   // Every publisher is checked on article open, not only Hankyung and not only
   // when the user explicitly switches to Reader View.
   const other = { ...rss('', updated), xmlUrl: 'https://other.test/rss', articles: [{ ...rss('', updated).articles[0], guid: 'other-story', url: 'https://other.test/post', dateSource: 'updated' }] };

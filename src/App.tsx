@@ -23,6 +23,7 @@ import { ArticleDrawer } from './components/ArticleDrawer';
 import { ResizableWorkspace } from './components/ResizableWorkspace';
 import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
 
 export const App: React.FC = () => {
@@ -388,21 +389,42 @@ export const App: React.FC = () => {
     await fetchBootstrap();
   };
 
+  // Deleting a folder or a subscription waits for a confirmation dialog.
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'folder' | 'feed'; id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDeleteFolder = async (folderId: string) => {
-    await apiRequest(`/api/folders/${folderId}`, {
-      method: 'DELETE',
-    });
-    if (activeFolderId === folderId) {
-      handleSelectScope('all', null, null);
-    }
-    await fetchBootstrap();
+    setDeleteError(null);
+    setDeleteTarget({ kind: 'folder', id: folderId, name: folders.find((folder) => folder.id === folderId)?.name || '이 폴더' });
   };
 
-  const handleUnsubscribe = async (subscriptionId: string, _title: string) => {
-    await apiRequest(`/api/subscriptions/${subscriptionId}`, {
-      method: 'DELETE',
-    });
-    await Promise.all([fetchBootstrap(), fetchArticles()]);
+  const handleUnsubscribe = async (subscriptionId: string, title: string) => {
+    setDeleteError(null);
+    setDeleteTarget({ kind: 'feed', id: subscriptionId, name: title });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (deleteTarget.kind === 'folder') {
+        await apiRequest(`/api/folders/${deleteTarget.id}`, { method: 'DELETE' });
+        if (activeFolderId === deleteTarget.id) handleSelectScope('all', null, null);
+        await fetchBootstrap();
+      } else {
+        const feedId = subscriptions.find((sub) => sub.id === deleteTarget.id)?.feed_id;
+        await apiRequest(`/api/subscriptions/${deleteTarget.id}`, { method: 'DELETE' });
+        if (activeScope === 'feed' && feedId && activeFeedId === feedId) handleSelectScope('all', null, null);
+        await Promise.all([fetchBootstrap(), fetchArticles()]);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '삭제하지 못했습니다.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -681,6 +703,26 @@ export const App: React.FC = () => {
           onCancel={() => { if (!markingAllRead) setMarkReadTarget(null); }}
           onConfirm={confirmMarkAllRead}
         />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title={deleteTarget.kind === 'folder' ? '폴더를 삭제할까요?' : '구독을 취소할까요?'}
+          confirmLabel={deleteTarget.kind === 'folder' ? '폴더 삭제' : '구독 취소'}
+          busyLabel="삭제 중…"
+          tone="danger"
+          isDark={isDark}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+          onConfirm={confirmDelete}
+        >
+          {deleteTarget.kind === 'folder' ? (
+            <p><strong>{deleteTarget.name}</strong> 폴더를 삭제합니다. 안에 있던 피드 {subscriptions.filter((sub) => sub.folder_id === deleteTarget.id).length}개는 구독을 유지한 채 미분류로 옮겨집니다.</p>
+          ) : (
+            <p><strong>{deleteTarget.name}</strong> 피드를 목록에서 뺍니다. 나중에 다시 구독하면 지금까지의 글과 읽음·저장 기록이 그대로 돌아옵니다.</p>
+          )}
+        </ConfirmDialog>
       )}
 
       {/* Discover / Add Feed / OPML Modal */}

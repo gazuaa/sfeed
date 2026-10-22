@@ -157,6 +157,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
   const showingReader = viewMode === 'reader' && Boolean(article.full_content_html);
   const readerFailed = viewMode === 'reader' && readerFailedFor === article.id;
+  // Feeds built from a sitemap, or title-only feeds, carry no body at all.
+  const bodyless = !showingReader && !article.content_html && !article.summary;
 
   const handleSummarizeAI = async (force = false) => {
     setSummarizing(true);
@@ -638,7 +640,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             )}
 
           {/* Reader view status: loading, or fell back to the feed body */}
-          {viewMode === 'reader' && !showingReader && (scrapingReader || readerFailed) && (
+          {viewMode === 'reader' && !showingReader && (scrapingReader || (readerFailed && !bodyless)) && (
             <div
               className={`px-3.5 py-2 rounded-xl border text-xs flex items-center gap-2 ${
                 isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
@@ -647,7 +649,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               {scrapingReader ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>원문에서 전체 본문을 불러오는 중이에요. 그동안 피드 본문을 보여드려요.</span>
+                  <span>{bodyless ? '원문에서 본문을 불러오는 중이에요.' : '원문에서 전체 본문을 불러오는 중이에요. 그동안 피드 본문을 보여드려요.'}</span>
                 </>
               ) : (
                 <span>원문 전체 본문을 불러오지 못해 피드 본문을 보여드려요.</span>
@@ -655,13 +657,47 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </div>
           )}
 
-          {/* Main HTML Body */}
-          <div
-            className={`sfeed-article-content ${fontSizeClass} ${
-              isDark ? 'text-slate-200' : 'text-slate-800'
-            }`}
-            dangerouslySetInnerHTML={{ __html: activeHtml }}
-          />
+          {/* Main HTML Body, or where to read it when the feed has none */}
+          {bodyless ? (
+            !scrapingReader && (
+              <div className={`rounded-2xl border p-6 text-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}>
+                <p className="text-sm font-semibold">{readerFailed ? '원문 본문을 불러오지 못했어요' : '이 글은 피드에 본문이 없어요'}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  {readerFailed
+                    ? '사이트가 자동 접근이나 다른 서비스 안에서 보여주기를 막고 있을 수 있어요. 원문 사이트에서 읽어 주세요.'
+                    : '원문 사이트에서 읽거나, 리더 보기로 본문을 불러와 보세요.'}
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <a
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold inline-flex items-center gap-1.5 transition"
+                  >
+                    <span>원문 사이트에서 읽기</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  {viewMode !== 'reader' && (
+                    <button
+                      type="button"
+                      onClick={() => chooseViewMode('reader')}
+                      className={`px-4 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'}`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>리더로 보기</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          ) : (
+            <div
+              className={`sfeed-article-content ${fontSizeClass} ${
+                isDark ? 'text-slate-200' : 'text-slate-800'
+              }`}
+              dangerouslySetInnerHTML={{ __html: activeHtml }}
+            />
+          )}
 
           {/* Bottom Callout to Original Article */}
           <div

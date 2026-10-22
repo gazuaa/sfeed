@@ -2,8 +2,15 @@ import { sanitizeContentHtml } from './rssParser';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { extractPreviewImage } from './previewImage';
 
+// Bodies cached before failed extractions stopped being stored carry this
+// class; treat them as never extracted.
+export const READER_FALLBACK_MARK = 'reader-fallback-content';
+export const realFullContent = (html: string | null | undefined): string | null =>
+  html && !html.includes(READER_FALLBACK_MARK) ? html : null;
+
 export interface ScrapedArticleResult {
-  fullContentHtml: string;
+  /** null when the page could not be read; nothing is made up in its place. */
+  fullContentHtml: string | null;
   leadImageUrl: string | null;
   scrapedFromWeb: boolean;
   originalPublishedAt: string | null;
@@ -77,14 +84,9 @@ export async function scrapeFullArticle(
     // Fallback below
   }
 
-  // Fallback if site blocks automated requests or running offline
-  const baseHtml = fallbackHtml || `<p>${title}</p>`;
+  // The site blocks automated requests, or the page has no readable body.
   return {
-    fullContentHtml: `<div class="reader-fallback-content">
-      ${baseHtml}
-      <hr />
-      <p><em>원문 링크(<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>)의 핵심 본문 데이터입니다.</em></p>
-    </div>`,
+    fullContentHtml: null,
     leadImageUrl: null,
     scrapedFromWeb: false,
     originalPublishedAt: extractOriginalPublishedAt(fallbackHtml, url),
