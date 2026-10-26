@@ -25,7 +25,8 @@ import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
-import { useMobileViewport } from './client/mobile';
+import { useMobileViewport, useScrollChrome } from './client/mobile';
+import { useTextSize } from './client/textSize';
 import { useMobileNavigation } from './client/navigation';
 import { MobileHeader, MobileDock, type LibraryTab } from './components/MobileChrome';
 import { MobileLibrary } from './components/MobileLibrary';
@@ -82,6 +83,9 @@ export const App: React.FC = () => {
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const isMobile = useMobileViewport();
+  const chromeHidden = useScrollChrome(articleListRef, isMobile && Boolean(user) && !mobileSidebarOpen && !selectedArticleId, `${activeScope}:${activeFolderId}:${activeFeedId}:${unreadOnly}:${savedOnly}:${searchQuery}`);
+  const [textSize] = useTextSize();
+  useEffect(() => { document.documentElement.style.setProperty('--sfeed-text-scale', String(textSize)); }, [textSize]);
   // The desktop sidebar has its own 저장 list; drop the phone-only filter there.
   useEffect(() => { if (!isMobile) setSavedOnly(false); }, [isMobile]);
   useMobileNavigation(isMobile && !authChecking ? user?.id ?? null : null, {
@@ -656,6 +660,7 @@ export const App: React.FC = () => {
   // on the library they switch which count each feed shows, and inside a
   // folder or feed they filter that list.
   const applyMobileFilter = (tab: LibraryTab) => {
+    if (activeScope === 'saved') setActiveScope('all');
     const unread = tab === 'unread';
     setSavedOnly(tab === 'saved');
     if (tab !== 'saved' && unread !== unreadOnly) {
@@ -706,7 +711,7 @@ export const App: React.FC = () => {
         }
         header={
           <>
-          <div className="lg:hidden"><MobileHeader title={headerInfo.title.replace(/\s*\([^)]*\)/g, '')} search={searchQuery} onSearch={setSearchQuery} onBack={() => setMobileSidebarOpen(true)} onAdd={() => openMobileDiscover()} {...mobileSettings} /></div>
+          <div className="lg:hidden"><MobileHeader hidden={chromeHidden} title={headerInfo.title.replace(/\s*\([^)]*\)/g, '')} search={searchQuery} onSearch={setSearchQuery} onBack={() => setMobileSidebarOpen(true)} onAdd={() => openMobileDiscover()} {...mobileSettings} /></div>
           <div className="hidden lg:block"><HeaderBar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -790,8 +795,8 @@ export const App: React.FC = () => {
         )}
       </ResizableWorkspace>
 
-      {isMobile && <div hidden={!mobileSidebarOpen}><MobileLibrary user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
-      {!mobileSidebarOpen && !selectedArticle && <MobileDock active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
+      {isMobile && <div hidden={!mobileSidebarOpen}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {!mobileSidebarOpen && !selectedArticle && <MobileDock hidden={chromeHidden} active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
       {markReadTarget && (
         <MarkAllReadDialog

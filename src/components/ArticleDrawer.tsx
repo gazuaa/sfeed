@@ -28,6 +28,7 @@ import {
   type ArticleItem,
   type ArticleViewMode as ViewMode,
 } from '../client/api';
+import { FONT_SCALES, useTextSize } from '../client/textSize';
 
 const VIEW_MODES = [
   { id: 'feed', label: '피드', title: '피드 본문 — RSS에 담긴 내용', Icon: Rss },
@@ -45,20 +46,6 @@ function loadWebZoom(): number {
   try {
     const saved = Number(localStorage.getItem(WEB_ZOOM_KEY));
     return WEB_ZOOM_STEPS.includes(saved) ? saved : 1;
-  } catch {
-    return 1;
-  }
-}
-
-// Article text size, remembered per device like the web zoom. The drawer is
-// remounted for every article, so the size must live outside its state.
-const FONT_SCALES = [0.85, 0.92, 1, 1.1, 1.2, 1.35, 1.5];
-const FONT_SCALE_KEY = 'sfeed_font_scale';
-
-function loadFontScale(): number {
-  try {
-    const saved = Number(localStorage.getItem(FONT_SCALE_KEY));
-    return FONT_SCALES.includes(saved) ? saved : 1;
   } catch {
     return 1;
   }
@@ -106,7 +93,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [aiMeta, setAiMeta] = useState<{ provider?: string; model?: string } | null>(
     null
   );
-  const [fontScale, setFontScale] = useState(loadFontScale);
+  const [fontScale, setFontScale] = useTextSize();
   const [webZoom, setWebZoom] = useState(loadWebZoom);
   const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
   // Sites that refuse to be framed get a script-free copy fetched by the server.
@@ -119,11 +106,6 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     const index = FONT_SCALES.indexOf(fontScale);
     const next = step === 0 ? 1 : FONT_SCALES[Math.min(FONT_SCALES.length - 1, Math.max(0, index + step))];
     setFontScale(next);
-    try {
-      localStorage.setItem(FONT_SCALE_KEY, String(next));
-    } catch {
-      // the size still applies to this article
-    }
   };
 
   // -1 zooms out, +1 zooms in, 0 resets to 100%.

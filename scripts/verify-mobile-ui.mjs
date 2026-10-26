@@ -1,0 +1,49 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createServer } from 'vite';
+
+const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+try {
+  const { scrollChrome } = await vite.ssrLoadModule('/src/client/mobile.ts');
+  let position = { top: 0, travel: 0, hidden: false };
+  for (const top of [7, 14, 22, 30, 38]) position = scrollChrome(position, top, 400);
+  assert.equal(position.hidden, true, 'slow downward motion hides the bars');
+  position = scrollChrome(position, 35, 400);
+  assert.equal(position.hidden, true, 'tiny changes do not flicker');
+  position = scrollChrome(position, 20, 400);
+  assert.equal(position.hidden, false, 'upward scrolling reveals the bars');
+  position = scrollChrome({ top: 400, travel: 80, hidden: true }, 460, 400);
+  position = scrollChrome(position, 400, 400);
+  assert.equal(position.hidden, true, 'bottom rubber-banding must not reveal chrome');
+  assert.equal(scrollChrome(position, 420, 400, true).hidden, false, 'settings and input focus keep controls visible');
+  assert.equal(scrollChrome(position, -30, 400).hidden, false);
+
+  const { MobileLibrary } = await vite.ssrLoadModule('/src/components/MobileLibrary.tsx');
+  const { MobileSettings } = await vite.ssrLoadModule('/src/components/MobileChrome.tsx');
+  const settings = { theme: 'dark', layout: 'magazine', onChangeTheme() {}, onChangeLayout() {}, onOpenOpml() {} };
+  const props = { ...settings, user: { id: 'test', name: 'Test', email: 'mobile@example.test' }, folders: [], subscriptions: [], counts: { totalArticles: 123, totalUnread: 24, savedCount: 7 }, onChangeCountTab() {}, onSelectTab() {}, onSelectFolder() {}, onSelectFeed() {}, onAdd() {}, onRefresh() {}, refreshing: false, onCreateFolder() {}, onDeleteFolder() {}, onUnsubscribe() {}, onLogout() {} };
+  for (const [countTab, count] of [['all', 123], ['unread', 24], ['saved', 7]]) {
+    const html = renderToStaticMarkup(React.createElement(MobileLibrary, { ...props, countTab }));
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    assert.ok(text.includes(`전체 글 ${count}`), text);
+    assert.equal((text.match(/전체 글/g) ?? []).length, 1);
+    assert.ok(!text.includes('안 읽은 글') && !text.includes('저장한 글'));
+  }
+  const library = renderToStaticMarkup(React.createElement(MobileSettings, { ...settings, library: true }));
+  assert.ok(!library.includes('매거진 뷰') && !library.includes('목록 보기'));
+  assert.match(library, /type="range"/); assert.match(library, /글자 크기/);
+  const list = renderToStaticMarkup(React.createElement(MobileSettings, settings));
+  assert.match(list, /매거진 뷰/);
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const storage = new Map([['sfeed_font_scale', '1.2']]);
+  try {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) } });
+    const { readTextSize, setTextSize } = await vite.ssrLoadModule('/src/client/textSize.ts');
+    assert.equal(readTextSize(), 1.2, 'existing reader size is retained');
+    setTextSize(1.35); assert.equal(storage.get('sfeed_font_scale'), '1.35');
+    setTextSize(20); assert.equal(readTextSize(), 1.35, 'invalid sizes cannot break layout');
+    setTextSize(1);
+  } finally { if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage); else delete globalThis.localStorage; }
+  console.log('PASS: one filtered library entry, correct counts, context-specific settings, shared persistent text size, scroll direction thresholds, edge bounce and focused-input handling.');
+} finally { await vite.close(); }

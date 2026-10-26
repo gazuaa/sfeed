@@ -77,7 +77,7 @@ export function ResizableWorkspace({ userId, isDark, sidebar, header, reader, fo
     {sidebar}
     {splitter('channels')}
     <div className="sfeed-workspace-main flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      <div className="shrink-0" inert={mobileReaderOpen || undefined} aria-hidden={mobileReaderOpen || undefined}>{header}</div>
+      <div className="sfeed-workspace-header shrink-0" inert={mobileReaderOpen || undefined} aria-hidden={mobileReaderOpen || undefined}>{header}</div>
       <div className="sfeed-content-panes flex-1 min-w-0 min-h-0 overflow-hidden">
         <main ref={listRef} inert={mobileReaderOpen || undefined} aria-hidden={mobileReaderOpen || undefined} id="feed-article-list" aria-label="피드 목록" tabIndex={0} className="sfeed-feed-list min-w-0 min-h-0 overflow-y-auto overscroll-contain">{children}</main>
         {splitter('list')}
