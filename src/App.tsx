@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   apiRequest,
   getStoredToken,
@@ -26,6 +26,7 @@ import { MarkAllReadDialog } from './components/MarkAllReadDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
 import { useMobileViewport } from './client/mobile';
+import { useMobileNavigation } from './client/navigation';
 import { MobileHeader, MobileDock, type LibraryTab } from './components/MobileChrome';
 import { MobileLibrary } from './components/MobileLibrary';
 
@@ -64,7 +65,11 @@ export const App: React.FC = () => {
   const [loadingMoreArticles, setLoadingMoreArticles] = useState(false);
   // Query of the list currently shown; an older page is dropped if the view changed meanwhile.
   const articleQueryRef = useRef('');
+  const articleRequestRef = useRef(0);
   const articleListRef = useRef<HTMLElement>(null);
+  const pendingScroll = useRef<number | null>(null);
+  const articleCache = useRef(new Map<string, ArticleItem>());
+  const [restoredArticle, setRestoredArticle] = useState<ArticleItem | null>(null);
   const [refreshingFeeds, setRefreshingFeeds] = useState(false);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
@@ -75,6 +80,20 @@ export const App: React.FC = () => {
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const isMobile = useMobileViewport();
+  useMobileNavigation(isMobile && !authChecking ? user?.id ?? null : null, {
+    scope: activeScope, folderId: activeFolderId, feedId: activeFeedId,
+    search: searchQuery, unread: unreadOnly, articleId: selectedArticleId, library: mobileSidebarOpen,
+  }, (location, scroll) => {
+    pendingScroll.current = scroll;
+    setActiveScope(location.scope);
+    setActiveFolderId(location.folderId);
+    setActiveFeedId(location.feedId);
+    setSearchQuery(location.search);
+    setUnreadOnly(location.unread);
+    setSelectedArticleId(location.articleId);
+    setMobileSidebarOpen(location.library);
+    setDiscoverOpen(false);
+  }, () => articleListRef.current?.scrollTop ?? 0);
   const [markReadTarget, setMarkReadTarget] = useState<{
     scope: ScopeType;
     folderId: string | null;
@@ -87,8 +106,18 @@ export const App: React.FC = () => {
   const [markReadError, setMarkReadError] = useState<string | null>(null);
 
   useEffect(() => {
-    articleListRef.current?.scrollTo({ top: 0 });
+    if (pendingScroll.current === null) articleListRef.current?.scrollTo({ top: 0 });
   }, [activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+
+  useLayoutEffect(() => {
+    for (const article of articles) articleCache.current.set(article.id, article);
+  }, [articles]);
+
+  useEffect(() => {
+    articleCache.current.clear();
+    setRestoredArticle(null);
+    return () => { articleRequestRef.current++; articleQueryRef.current = ''; };
+  }, [user?.id]);
 
   // Sync HTML root class with theme
   useEffect(() => {
@@ -159,6 +188,7 @@ export const App: React.FC = () => {
 
   const fetchArticles = useCallback(async () => {
     if (!user) return;
+    const request = ++articleRequestRef.current;
     setLoadingArticles(true);
     try {
       const qs = buildArticleQuery();
@@ -166,14 +196,35 @@ export const App: React.FC = () => {
       const res = await apiRequest<{ articles: ArticleItem[]; hasMore?: boolean }>(
         `/api/articles?${qs.toString()}`
       );
+      if (request !== articleRequestRef.current) return;
       setArticles(res.articles);
       setHasMoreArticles(Boolean(res.hasMore));
     } catch {
       // ignore
     } finally {
-      setLoadingArticles(false);
+      if (request === articleRequestRef.current) setLoadingArticles(false);
     }
   }, [user, buildArticleQuery]);
+
+  useEffect(() => {
+    if (pendingScroll.current === null || loadingArticles || mobileSidebarOpen || selectedArticleId || articleQueryRef.current !== buildArticleQuery().toString()) return;
+    articleListRef.current?.scrollTo({ top: pendingScroll.current });
+    pendingScroll.current = null;
+  }, [articles, loadingArticles, mobileSidebarOpen, selectedArticleId, buildArticleQuery]);
+
+  useEffect(() => {
+    if (!user || !selectedArticleId || articleCache.current.has(selectedArticleId)) return;
+    let active = true;
+    // A read article may no longer be in the unread list or the loaded page.
+    // Restore it by ID without changing its read/save state.
+    apiRequest<{ articles: ArticleItem[] }>(`/api/articles?articleId=${encodeURIComponent(selectedArticleId)}`)
+      .then(({ articles: found }) => {
+        if (!active) return;
+        if (found[0]) { articleCache.current.set(found[0].id, found[0]); setRestoredArticle(found[0]); }
+        else setSelectedArticleId(null);
+      }).catch(() => { if (active) setSelectedArticleId(null); });
+    return () => { active = false; };
+  }, [user?.id, selectedArticleId]);
 
   const loadMoreArticles = useCallback(async () => {
     const last = articles[articles.length - 1];
@@ -264,6 +315,9 @@ export const App: React.FC = () => {
         typeof changes.isRead === 'boolean' ? changes.isRead : article.is_read;
       const nextSaved =
         typeof changes.isSaved === 'boolean' ? changes.isSaved : article.is_saved;
+      const nextArticle = { ...article, is_read: nextRead, is_saved: nextSaved };
+      articleCache.current.set(article.id, nextArticle);
+      setRestoredArticle((prev) => prev?.id === article.id ? nextArticle : prev);
 
       // Optimistic UI update
       setArticles((prev) =>
@@ -282,6 +336,8 @@ export const App: React.FC = () => {
         fetchBootstrap();
       } catch {
         // Revert on failure
+        articleCache.current.set(article.id, article);
+        setRestoredArticle((prev) => prev?.id === article.id ? article : prev);
         fetchArticles();
       }
     },
@@ -290,6 +346,7 @@ export const App: React.FC = () => {
 
   const handleSelectArticle = useCallback(
     (article: ArticleItem) => {
+      articleCache.current.set(article.id, article);
       setSelectedArticleId(article.id);
       if (!article.is_read) {
         handleUpdateArticleState(article, { isRead: true });
@@ -318,6 +375,9 @@ export const App: React.FC = () => {
     articleId: string,
     fields: Partial<ArticleItem>
   ) => {
+    const cached = articleCache.current.get(articleId);
+    if (cached) articleCache.current.set(articleId, { ...cached, ...fields });
+    setRestoredArticle((prev) => prev?.id === articleId ? { ...prev, ...fields } : prev);
     setArticles((prev) =>
       prev.map((a) => (a.id === articleId ? { ...a, ...fields } : a))
     );
@@ -444,8 +504,8 @@ export const App: React.FC = () => {
   };
 
   const selectedArticle = useMemo(
-    () => articles.find((a) => a.id === selectedArticleId) || null,
-    [articles, selectedArticleId]
+    () => articles.find((a) => a.id === selectedArticleId) || (selectedArticleId ? articleCache.current.get(selectedArticleId) : null) || (restoredArticle?.id === selectedArticleId ? restoredArticle : null) || null,
+    [articles, selectedArticleId, restoredArticle]
   );
   const selectedViewMode: ArticleViewMode =
     subscriptions.find((s) => s.feed_id === selectedArticle?.feed_id)?.view_mode ?? 'feed';

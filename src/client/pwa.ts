@@ -11,6 +11,28 @@ export function installPlatform(userAgent: string, maxTouchPoints = 0): 'ios' | 
 // or private route/query information from the current page.
 export const installAddress = (address: string) => new URL('/', address).href;
 
+export function isIOSSafari(browser: { userAgent: string; maxTouchPoints?: number; standalone?: boolean; brave?: unknown }): boolean {
+  const named = /CriOS|FxiOS|EdgiOS|OPiOS|Brave|Whale|SamsungBrowser|NAVER|DaumApps|KAKAOTALK|Instagram|FBAN|FBAV|Line/i.test(browser.userAgent);
+  return installPlatform(browser.userAgent, browser.maxTouchPoints) === 'ios' && typeof browser.standalone !== 'undefined' && !named && !browser.brave;
+}
+
+// Same handoff as MUUSED: start copying before navigating synchronously, so
+// the Safari scheme retains the user's tap. A browser switch is not guaranteed;
+// only show the manual fallback when no page-leave event was observed.
+export function openInSafari(onStuck: (copied: boolean) => void): () => void {
+  const address = installAddress(window.location.href);
+  let copied = false;
+  let left = false;
+  const markLeft = () => { left = true; };
+  try { void navigator.clipboard?.writeText(address).then(() => { copied = true; }).catch(() => {}); } catch { /* manual copying remains available */ }
+  document.addEventListener('visibilitychange', markLeft, { once: true });
+  window.addEventListener('pagehide', markLeft, { once: true });
+  const cleanup = () => { document.removeEventListener('visibilitychange', markLeft); window.removeEventListener('pagehide', markLeft); clearTimeout(timer); };
+  const timer = setTimeout(() => { cleanup(); if (!left) onStuck(copied); }, 1400);
+  try { window.location.href = `x-safari-${address}`; } catch { /* unsupported schemes use the timed fallback */ }
+  return cleanup;
+}
+
 interface InstallEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -40,7 +62,13 @@ export async function promptInstall(): Promise<boolean> {
     return true;
   } catch { return false; }
 }
-export function openInstallHelp() { window.dispatchEvent(new Event('sfeed:install')); }
+let cancelHandoff: (() => void) | null = null;
+export function openInstallHelp() {
+  cancelHandoff?.();
+  if (installPlatform(navigator.userAgent, navigator.maxTouchPoints) === 'ios' && !isIOSSafari(navigator)) {
+    cancelHandoff = openInSafari((copied) => window.dispatchEvent(new CustomEvent('sfeed:install', { detail: { safariFailed: true, copied } })));
+  } else window.dispatchEvent(new Event('sfeed:install'));
+}
 
 export function registerServiceWorker() {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;

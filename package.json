@@ -20,6 +20,7 @@
     "test:real-feeds": "node scripts/verify-real-feeds.mjs",
     "test:dates": "node scripts/verify-publication-dates.mjs",
     "test:pwa": "node scripts/verify-pwa.mjs",
+    "test:navigation": "node scripts/verify-navigation.mjs",
     "test:discovery": "node scripts/verify-discovery.mjs",
     "test:panels": "node scripts/verify-panel-widths.mjs",
     "test:builder": "node scripts/verify-rss-builder.mjs",

@@ -717,6 +717,9 @@ app.post('/api/feeds/refresh', async (c) => {
 // Fetch articles with filtering, search, layout support
 app.get('/api/articles', async (c) => {
   const user = c.get('user');
+  // History restoration must also find a read article outside the current
+  // filtered/paginated list. The subscription join still enforces ownership.
+  const articleId = c.req.query('articleId');
   const scope = c.req.query('scope') || 'all'; // 'all' | 'today' | 'saved' | 'folder' | 'feed'
   const folderId = c.req.query('folderId') || '';
   const feedId = c.req.query('feedId') || '';
@@ -732,7 +735,10 @@ app.get('/api/articles', async (c) => {
   // The first placeholder sits in the SELECT list: the default read state by age.
   const params: unknown[] = [cutoff, user.id];
 
-  if (scope === 'folder' && folderId) {
+  if (articleId) {
+    conditions.push('a.id = ?');
+    params.push(articleId);
+  } else if (scope === 'folder' && folderId) {
     conditions.push('s.folder_id = ?');
     params.push(folderId);
   } else if (scope === 'feed' && feedId) {
@@ -746,12 +752,12 @@ app.get('/api/articles', async (c) => {
     params.push(twentyFourHoursAgo);
   }
 
-  if (unreadOnly && scope !== 'saved') {
+  if (!articleId && unreadOnly && scope !== 'saved') {
     conditions.push('a.published_at >= ? AND COALESCE(st.is_read, 0) = 0');
     params.push(cutoff);
   }
 
-  if (search) {
+  if (!articleId && search) {
     conditions.push(
       '(a.title LIKE ? OR a.summary LIKE ? OR a.author LIKE ? OR f.title LIKE ?)'
     );
@@ -759,7 +765,7 @@ app.get('/api/articles', async (c) => {
     params.push(likePattern, likePattern, likePattern, likePattern);
   }
 
-  if (before) {
+  if (!articleId && before) {
     conditions.push('(a.published_at < ? OR (a.published_at = ? AND a.id < ?))');
     params.push(before, before, beforeId);
   }

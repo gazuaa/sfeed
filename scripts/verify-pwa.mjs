@@ -57,12 +57,59 @@ try {
   const fakeWindow = new EventTarget();
   fakeWindow.matchMedia = () => ({ matches: false, addEventListener() {} });
   globalThis.window = fakeWindow;
-  const { installState, promptInstall, installPlatform, installAddress } = await vite.ssrLoadModule('/src/client/pwa.ts');
+  const { installState, promptInstall, installPlatform, installAddress, isIOSSafari, openInSafari, openInstallHelp } = await vite.ssrLoadModule('/src/client/pwa.ts');
   assert.equal(installPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Brave/1.86 Mobile/15E148 Safari/604.1'), 'ios');
   assert.equal(installPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/26.0 Safari/605.1.15', 5), 'ios', 'iPad desktop user agent must use iOS instructions');
   assert.equal(installPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/26.0 Safari/605.1.15', 0), 'mac-safari');
   assert.equal(installPlatform('Mozilla/5.0 (Linux; Android 16) Chrome/145 Brave/1.86'), 'android');
   assert.equal(installAddress('https://sfeed.test/auth/callback?session_token=private#secret'), 'https://sfeed.test/', 'browser handoff must not include a token or a private route');
+  const safariUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Mobile/15E148 Safari/604.1';
+  for (const [browser, expected] of [
+    [{ userAgent: safariUA, standalone: false }, true],
+    [{ userAgent: safariUA, standalone: false, brave: {} }, false],
+    [{ userAgent: safariUA }, false],
+    [{ userAgent: safariUA.replace('Version/26.0', 'CriOS/144'), standalone: false }, false],
+    [{ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/26.0 Safari/605.1.15', maxTouchPoints: 5, standalone: false }, true],
+    [{ userAgent: 'Mozilla/5.0 (Linux; Android 16) Chrome/145', standalone: false }, false],
+  ]) assert.equal(isIOSSafari(browser), expected);
+  const descriptors = ['window', 'document', 'navigator', 'setTimeout', 'clearTimeout'].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
+  try {
+    for (const mode of ['copied', 'blocked-copy', 'no-clipboard', 'pagehide', 'visibilitychange', 'navigation-throws', 'cancel']) {
+      const order = [], fallback = [], timers = new Map();
+      const win = new EventTarget(), doc = new EventTarget();
+      Object.defineProperty(win, 'location', { value: {
+        get href() { return 'https://sfeed.test/auth/callback?session_token=private#secret'; },
+        set href(value) { order.push(['navigate', value]); if (mode === 'navigation-throws') throw new Error('unsupported'); },
+      } });
+      const nav = { userAgent: safariUA, brave: {}, clipboard: mode === 'no-clipboard' ? undefined : { writeText(address) { order.push(['copy', address]); return mode === 'blocked-copy' ? Promise.reject(new Error('blocked')) : Promise.resolve(); } } };
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: win });
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: nav });
+      globalThis.setTimeout = (fn, delay) => { assert.equal(delay, 1400); timers.set(1, fn); return 1; };
+      globalThis.clearTimeout = (id) => timers.delete(id);
+      const cancel = openInSafari((copied) => fallback.push(copied));
+      await Promise.resolve(); await Promise.resolve();
+      assert.deepEqual(order.at(-1), ['navigate', 'x-safari-https://sfeed.test/']);
+      if (mode !== 'no-clipboard') assert.deepEqual(order[0], ['copy', 'https://sfeed.test/'], 'copy must start before synchronously handing off the tap');
+      if (mode === 'pagehide') win.dispatchEvent(new Event('pagehide'));
+      if (mode === 'visibilitychange') doc.dispatchEvent(new Event('visibilitychange'));
+      if (mode === 'cancel') cancel();
+      for (const run of [...timers.values()]) run();
+      assert.deepEqual(fallback, ['pagehide', 'visibilitychange', 'cancel'].includes(mode) ? [] : [!['blocked-copy', 'no-clipboard'].includes(mode)]);
+    }
+    // The actual install button routes iOS Brave to Safari and Safari to help.
+    const win = new EventTarget(); let target = '';
+    win.location = { get href() { return 'https://sfeed.test/'; }, set href(value) { target = value; } };
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: win });
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: new EventTarget() });
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: safariUA, brave: {} } });
+    openInstallHelp(); assert.equal(target, 'x-safari-https://sfeed.test/');
+    let help = 0; win.addEventListener('sfeed:install', () => help++);
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: safariUA, standalone: false } });
+    openInstallHelp(); assert.equal(help, 1);
+  } finally {
+    for (const [name, descriptor] of descriptors) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
+  }
   assert.equal(installState(), 'manual');
   assert.equal(await promptInstall(), false);
   let prompts = 0;
@@ -82,7 +129,7 @@ try {
   delete globalThis.window;
   const { renderToStaticMarkup } = await import('react-dom/server');
   const { createElement } = await import('react');
-  const { PwaInstall } = await vite.ssrLoadModule('/src/components/PwaInstall.tsx');
+  const { PwaInstall, InstallAppButton } = await vite.ssrLoadModule('/src/components/PwaInstall.tsx');
   const previousAgent = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
   try {
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/144 Mobile/15E148 Safari/604.1' });
@@ -95,9 +142,10 @@ try {
     assert.ok(!iosHelp.includes('이 브라우저에는'), 'modern iOS browsers must not be incorrectly told they cannot install');
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Brave/1.86 Mobile/15E148 Safari/604.1' });
     const braveHelp = renderToStaticMarkup(createElement(PwaInstall));
-    assert.match(braveHelp, /Brave 등 다른 브라우저/);
+    assert.match(braveHelp, /Safari로 열기/);
     assert.match(braveHelp, /Safari에서 열어 주세요/);
+    assert.match(renderToStaticMarkup(createElement(InstallAppButton)), /Safari로 열기/);
     assert.ok(!braveHelp.includes('Chrome·Edge의 주소창'), 'iOS Brave must not get desktop install instructions');
   } finally { if (previousAgent) Object.defineProperty(navigator, 'userAgent', previousAgent); else delete navigator.userAgent; }
-  console.log('PASS: install manifest, PNG dimensions, iOS metadata, native prompt lifecycle, safe public-only offline caching, API/auth exclusion, fresh app shell, upgrade cleanup and deployment headers.');
+  console.log('PASS: install manifest, iPhone/iPad browser detection, Safari handoff before losing the tap, copy/navigation failures and fallback, native prompt lifecycle, safe public-only offline caching and deployment headers.');
 } finally { delete globalThis.window; await vite.close(); }
