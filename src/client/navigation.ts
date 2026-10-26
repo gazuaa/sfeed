@@ -71,6 +71,8 @@ export class MobileNavigation {
     }
   }
   canGoBack() { return this.current.index > 0 && !this.restoring; }
+  /** From a list, whether Back returns to the library or to an earlier state of the list. */
+  backTarget(): 'library' | 'other' { return this.current.library !== null && this.current.library === this.current.index - 1 ? 'library' : 'other'; }
   back() { if (this.canGoBack()) this.history.go(-1); }
   record(location: MobileLocation, scroll = 0) {
     this.observed = location;

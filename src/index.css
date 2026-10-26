@@ -131,6 +131,9 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-text-size input { flex: 1; min-width: 0; height: 44px; accent-color: #10b981; }
   .sfeed-mobile-text-size > span { font-size: 13px; }
   .sfeed-mobile-text-size > span:last-child { font-size: 22px; }
+  /* Closed unless open, or revealed under the list while swiping back to it. */
+  .sfeed-mobile-library-host:not([data-open]) { display: none; }
+  html[data-sfeed-swipe="library"] .sfeed-mobile-library-host { display: block; }
   .sfeed-mobile-library { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; height: auto; min-height: 0; background: var(--sfeed-background); color: var(--sfeed-text); }
   .sfeed-mobile-library > .sfeed-mobile-header { position: absolute; inset: 0 0 auto; }
   .sfeed-mobile-library-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: calc(var(--sfeed-mobile-header-height) + 4px) 14px calc(100px + env(safe-area-inset-bottom)); }
