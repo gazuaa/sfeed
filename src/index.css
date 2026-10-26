@@ -95,6 +95,9 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
      a real theme color instead of letting it blur the top of the app. */
   .sfeed-glass-sample { position: fixed; top: 0; left: 0; right: 0; height: 6px; background: var(--sfeed-mobile-surface); z-index: 1; pointer-events: none; }
   .sfeed-workspace-main { position: relative; }
+  /* Fill the actual fixed viewport. Combining inset: 0 with a separate
+     100dvh height can truncate the app above the iOS home-indicator area. */
+  .sfeed-workspace { position: fixed; inset: 0; height: auto; }
   .sfeed-workspace-header { position: absolute; inset: 0 0 auto; z-index: 10; }
   html { --sfeed-mobile-surface: #fff; --sfeed-mobile-raised: #f1f5f9; --sfeed-mobile-glass: #ffffffed; --sfeed-mobile-muted: #64748b; --sfeed-mobile-line: #e2e8f0; --sfeed-mobile-selected: #d1fae5; }
   html.dark { --sfeed-mobile-surface: #0f172a; --sfeed-mobile-raised: #1e293b; --sfeed-mobile-glass: #1e293be8; --sfeed-mobile-muted: #94a3b8; --sfeed-mobile-line: #29364c; --sfeed-mobile-selected: #064e3b; }
@@ -127,7 +130,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-text-size input { flex: 1; min-width: 0; height: 44px; accent-color: #10b981; }
   .sfeed-mobile-text-size > span { font-size: 13px; }
   .sfeed-mobile-text-size > span:last-child { font-size: 22px; }
-  .sfeed-mobile-library { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; height: 100dvh; min-height: 0; background: var(--sfeed-background); color: var(--sfeed-text); }
+  .sfeed-mobile-library { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; height: auto; min-height: 0; background: var(--sfeed-background); color: var(--sfeed-text); }
   .sfeed-mobile-library > .sfeed-mobile-header { position: absolute; inset: 0 0 auto; }
   .sfeed-mobile-library-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: calc(var(--sfeed-mobile-header-height) + 4px) 14px calc(100px + env(safe-area-inset-bottom)); }
   .sfeed-mobile-section-title { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 2px 8px; margin-top: 6px; color: var(--sfeed-mobile-muted); font-size: calc(12px * var(--sfeed-text-scale)); font-weight: 550; }

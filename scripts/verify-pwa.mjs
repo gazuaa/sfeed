@@ -18,6 +18,8 @@ const html = readFileSync('dist/index.html', 'utf8');
 assert.match(html, /rel="manifest" href="\/manifest.webmanifest"/);
 assert.match(html, /viewport-fit=cover/);
 assert.match(html, /apple-mobile-web-app-capable/);
+assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="default"/);
+assert.ok(!html.includes('content="black-translucent"'), 'avoid the iOS standalone viewport offset that leaves an unreachable bottom strip');
 const handlers = {}, storage = new Map(), deleted = [], fetched = [];
 const cache = { addAll: async (paths) => { for (const path of paths) { assert.ok(existsSync('public' + path)); storage.set(path, new Response(readFileSync('public' + path))); } }, match: async (path) => storage.get(path)?.clone() };
 let offline = false, skipped = 0, claimed = 0;
