@@ -241,7 +241,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         {feed.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {feed.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">#{tag}</span>
+              <span key={tag} className={`text-[10px] px-1.5 py-0.5 rounded ${isDark ? 'bg-slate-800/80 text-slate-400' : 'bg-slate-200/80 text-slate-500'}`}>#{tag}</span>
             ))}
           </div>
         )}
@@ -273,7 +273,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-4">
       <div
         className="fixed inset-0 bg-black/65 backdrop-blur-xs"
         onClick={() => { if (!modalBusy) onClose(); }}
@@ -283,7 +283,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="discovery-title"
-        className={`relative z-10 w-full ${builderOpen ? 'max-w-5xl' : 'max-w-3xl'} max-h-[88dvh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`relative z-10 w-full ${builderOpen ? 'max-w-5xl' : 'max-w-3xl'} h-dvh sm:h-auto sm:max-h-[88dvh] sm:rounded-2xl sm:border shadow-2xl flex flex-col overflow-hidden ${
           isDark
             ? 'bg-slate-900 border-slate-800 text-slate-100'
             : 'bg-white border-slate-200 text-slate-900'
@@ -291,7 +291,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
       >
         {/* Modal Header */}
         <div
-          className={`px-4 sm:px-6 py-4 shrink-0 border-b flex items-center justify-between gap-3 ${
+          className={`sfeed-discover-header px-4 sm:px-6 py-3 sm:py-4 shrink-0 border-b flex items-center justify-between gap-3 ${
             isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
           }`}
         >
@@ -303,7 +303,7 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
               <h2 id="discovery-title" className="text-base font-bold">
                 피드 추가
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="hidden sm:block text-xs text-slate-400">
                 피드 이름이나 RSS·웹사이트 주소를 검색하고 미리본 뒤 구독하세요
               </p>
             </div>
@@ -369,13 +369,13 @@ export const DiscoverModal: React.FC<DiscoverModalProps> = ({
         )}
 
         {/* Modal Body */}
-        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+        <div ref={bodyRef} className="sfeed-discover-body flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
           {/* Unified feed search and URL preview */}
           {tab === 'curated' && <form role="search" aria-label="피드 검색" onSubmit={(event) => { event.preventDefault(); if (previewUrl) setPreviewRetry((value) => value + 1); }} className="mb-5">
             <label htmlFor="feed-discovery-search" className="sr-only">피드 이름 또는 RSS·웹사이트 주소</label>
             <div className="relative">
               <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setUrlFeedOpen(false); setSubscribeTarget(null); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 검색 또는 RSS·웹사이트 URL 입력" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
+              <input id="feed-discovery-search" type="search" value={query} disabled={busyUrl !== null || builderBusy} onChange={(event) => { setQuery(event.target.value); setBuilderOpen(false); setUrlFeedOpen(false); setSubscribeTarget(null); setPreviewFeed(null); setUrlPreview(null); setPreviewError(null); setFeedback(null); }} placeholder="피드 이름 또는 웹사이트·RSS 주소" autoComplete="off" className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`} />
             </div>
             <p className="text-[11px] text-slate-400 mt-2">이름으로 추천 피드를 찾거나, 주소를 입력해 최근 글을 미리보세요.</p>
           </form>}

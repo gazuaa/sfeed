@@ -30,6 +30,10 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
   .sfeed-article-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container (min-width: 1024px) { .sfeed-article-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 480px) {
+  /* A phone-wide row keeps the feed name and the time readable. */
+  .sfeed-magazine-author { display: none; }
+}
 @container (max-width: 639px) {
   .sfeed-list-items { padding: 16px; }
   .sfeed-compact-row { flex-direction: column; align-items: stretch; gap: 4px; }
@@ -57,6 +61,11 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 }
 .sfeed-sidebar-footer { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
 .sfeed-header { padding-top: calc(.875rem + env(safe-area-inset-top)); }
+@media (max-width: 639px) {
+  /* The feed-add sheet fills a phone screen: keep clear of the notch and home bar. */
+  .sfeed-discover-header { padding-top: calc(.75rem + env(safe-area-inset-top)); }
+  .sfeed-discover-body { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+}
 .sfeed-login { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .sfeed-reader { padding-bottom: env(safe-area-inset-bottom); }
 .sfeed-reader-toolbar { padding-top: calc(.75rem + env(safe-area-inset-top)); }
@@ -122,6 +131,16 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-folder-feeds { padding: 0 8px 8px 30px; }
   .sfeed-mobile-folder-feeds .sfeed-mobile-library-row { min-height: 52px; border-radius: 12px; padding: 8px; font-size: 14px; }
   .sfeed-mobile-feed-row img { flex-shrink: 0; width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
+  .sfeed-mobile-row-wrap { display: flex; align-items: center; }
+  .sfeed-mobile-row-wrap > .sfeed-mobile-library-row { min-width: 0; flex: 1; }
+  .sfeed-mobile-delete { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; margin-right: 6px; border-radius: 12px; color: #f43f5e; cursor: pointer; }
+  .sfeed-mobile-delete:hover, .sfeed-mobile-delete:focus-visible { background: #f43f5e1a; }
+  .sfeed-mobile-section-actions { display: flex; align-items: center; }
+  .sfeed-mobile-section-title .sfeed-mobile-edit { padding: 0 10px; font-size: 14px; font-weight: 600; }
+  /* The floating banner would cover the lists; the library shows a card instead. */
+  .sfeed-install-banner { display: none; }
+  .sfeed-install-card { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px; border: 1px solid var(--sfeed-mobile-line); border-radius: 20px; background: var(--sfeed-mobile-surface); }
+  .sfeed-install-card img { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; }
   .sfeed-mobile-new-folder { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 12px; }
   .sfeed-mobile-new-folder input { min-width: 0; flex: 1; min-height: 46px; padding: 8px 12px; border: 1px solid var(--sfeed-mobile-line); border-radius: 12px; background: var(--sfeed-mobile-surface); font-size: 16px; }
   .sfeed-mobile-new-folder button { min-height: 44px; padding-inline: 8px; font-size: 13px; color: #10b981; }

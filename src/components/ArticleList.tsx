@@ -465,7 +465,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 </span>
                 <span className="shrink-0">· {formatArticleDate(article)}</span>
                 {article.author && (
-                  <span className="truncate min-w-0">· {article.author}</span>
+                  <span className="sfeed-magazine-author truncate min-w-0">· {article.author}</span>
                 )}
               </div>
 

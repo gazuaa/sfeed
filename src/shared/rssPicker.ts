@@ -310,7 +310,10 @@ export function pickerRuntime(extract: typeof extractPicked, baseUrl: string, su
   const start = suggestion();
   if (start) {
     pick(start);
-    document.querySelector('[data-sfeed-item]')?.scrollIntoView({ block: 'center' });
+    // Scroll the page copy only: scrollIntoView would also move the dialog
+    // around the frame and hide the builder's controls.
+    const first = document.querySelector('[data-sfeed-item]');
+    try { if (first) window.scrollTo(0, Math.max(0, first.getBoundingClientRect().top + window.scrollY - window.innerHeight / 3)); } catch {}
   }
 }
 

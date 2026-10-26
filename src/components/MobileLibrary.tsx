@@ -1,33 +1,40 @@
 import { useState } from 'react';
-import { Archive, Bookmark, ChevronDown, ChevronRight, Folder, FolderPlus, LogOut, Rss } from 'lucide-react';
+import { Archive, Bookmark, ChevronDown, ChevronRight, Folder, FolderPlus, LogOut, Rss, Trash2 } from 'lucide-react';
 import type { BootstrapResponse, FolderItem, SubscriptionItem, UserProfile } from '../client/api';
 import { MobileHeader, MobileDock, type LibraryTab, type MobileSettingsProps } from './MobileChrome';
+import { InstallCard } from './PwaInstall';
 
-export function MobileLibrary({ user, folders, subscriptions, counts, unreadOnly, active, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, onCreateFolder, onLogout, ...settings }: MobileSettingsProps & {
-  user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts']; unreadOnly: boolean; active: LibraryTab;
-  onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; onCreateFolder: (name: string) => Promise<void>; onLogout: () => void;
+export function MobileLibrary({ user, folders, subscriptions, counts, unreadOnly, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
+  user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts']; unreadOnly: boolean;
+  onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; onCreateFolder: (name: string) => Promise<void>;
+  /** Both ask for confirmation before anything is removed. */
+  onDeleteFolder: (id: string) => void; onUnsubscribe: (subscriptionId: string, title: string) => void; onLogout: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  // Touch screens have no hover, so removing feeds and folders lives in an edit mode.
+  const [editing, setEditing] = useState(false);
   const matches = (value: string) => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const count = (feed: SubscriptionItem) => unreadOnly ? feed.unread_count : feed.total_count;
-  const feedRow = (feed: SubscriptionItem) => <button className="sfeed-mobile-library-row sfeed-mobile-feed-row" key={feed.id} onClick={() => onSelectFeed(feed.feed_id)}>{feed.favicon_url ? <img src={feed.favicon_url} alt="" /> : <Rss size={20} />}<span>{feed.title}</span><span className="sfeed-mobile-count">{count(feed).toLocaleString()}</span><ChevronRight size={17} /></button>;
+  const deleteButton = (label: string, onDelete: () => void) => <button type="button" className="sfeed-mobile-delete" aria-label={label} onClick={onDelete}><Trash2 size={17} /></button>;
+  const feedRow = (feed: SubscriptionItem) => <div className="sfeed-mobile-row-wrap" key={feed.id}><button className="sfeed-mobile-library-row sfeed-mobile-feed-row" onClick={() => onSelectFeed(feed.feed_id)}>{feed.favicon_url ? <img src={feed.favicon_url} alt="" /> : <Rss size={20} />}<span>{feed.title}</span><span className="sfeed-mobile-count">{count(feed).toLocaleString()}</span>{!editing && <ChevronRight size={17} />}</button>{editing && deleteButton(`${feed.title} 구독 취소`, () => onUnsubscribe(feed.id, feed.title))}</div>;
   const ungrouped = subscriptions.filter((feed) => !feed.folder_id || !folders.some((folder) => folder.id === feed.folder_id));
   return <section className="sfeed-mobile-library lg:hidden" aria-label="내 피드">
     <MobileHeader library title="SFeed" search={query} onSearch={setQuery} onAdd={onAdd} {...settings} />
     <div className="sfeed-mobile-library-scroll">
+      {!query.trim() && <InstallCard />}
       {!query.trim() && <><h2 className="sfeed-mobile-section-title">라이브러리</h2><div className="sfeed-mobile-library-group">{([{ id: 'all', name: '전체 글', Icon: Archive, count: counts.totalArticles }, { id: 'unread', name: '안 읽은 글', Icon: null, count: counts.totalUnread }, { id: 'saved', name: '저장한 글', Icon: Bookmark, count: counts.savedCount }] as const).map(({ id, name, Icon, count }) => <button key={id} className="sfeed-mobile-library-row" onClick={() => onSelectTab(id)}>{Icon ? <Icon size={21} /> : <span className="sfeed-unread-dot" />}<span>{name}</span><span className="sfeed-mobile-count">{count.toLocaleString()}</span><ChevronRight size={17} /></button>)}</div></>}
-      <div className="sfeed-mobile-section-title"><h2>{query.trim() ? '검색 결과' : '폴더'}</h2><button aria-label="폴더 추가" onClick={() => setNewFolder('')}><FolderPlus size={18} /></button></div>
+      <div className="sfeed-mobile-section-title"><h2>{query.trim() ? '검색 결과' : '폴더'}</h2><span className="sfeed-mobile-section-actions">{(folders.length > 0 || subscriptions.length > 0) && <button className="sfeed-mobile-edit" aria-pressed={editing} onClick={() => setEditing((value) => !value)}>{editing ? '완료' : '편집'}</button>}<button aria-label="폴더 추가" onClick={() => setNewFolder('')}><FolderPlus size={18} /></button></span></div>
       {newFolder !== null && <form className="sfeed-mobile-new-folder" onSubmit={async (event) => { event.preventDefault(); if (!newFolder.trim() || creating) return; setCreating(true); setError(''); try { await onCreateFolder(newFolder.trim()); setNewFolder(null); } catch { setError('폴더를 만들지 못했습니다. 다시 시도해 주세요.'); } finally { setCreating(false); } }}><input aria-label="새 폴더 이름" placeholder="새 폴더 이름" value={newFolder} onChange={(event) => setNewFolder(event.target.value)} autoFocus /><button disabled={creating || !newFolder.trim()}>추가</button><button type="button" disabled={creating} onClick={() => setNewFolder(null)}>취소</button>{error && <p role="alert">{error}</p>}</form>}
-      <div className="sfeed-mobile-library-group">{folders.filter((folder) => matches(folder.name) || subscriptions.some((feed) => feed.folder_id === folder.id && matches(feed.title))).map((folder) => { const feeds = subscriptions.filter((feed) => feed.folder_id === folder.id); return <div key={folder.id}><div className="sfeed-mobile-folder-row"><button className="sfeed-mobile-library-row" onClick={() => onSelectFolder(folder.id)}><Folder size={21} /><span>{folder.name}</span><span className="sfeed-mobile-count">{feeds.reduce((sum, feed) => sum + count(feed), 0).toLocaleString()}</span></button><button className="sfeed-mobile-expand" aria-label={`${folder.name} 피드 ${expanded[folder.id] ? '접기' : '펼치기'}`} aria-expanded={Boolean(expanded[folder.id])} onClick={() => setExpanded((value) => ({ ...value, [folder.id]: !value[folder.id] }))}><ChevronDown size={18} className={expanded[folder.id] ? 'rotate-180' : ''} /></button></div>{(expanded[folder.id] || query.trim()) && <div className="sfeed-mobile-folder-feeds">{feeds.filter((feed) => matches(feed.title) || matches(folder.name)).map(feedRow)}{feeds.length === 0 && <p className="sfeed-mobile-empty">이 폴더에 구독한 피드가 없습니다.</p>}</div>}</div>; })}</div>
+      <div className="sfeed-mobile-library-group">{folders.filter((folder) => matches(folder.name) || subscriptions.some((feed) => feed.folder_id === folder.id && matches(feed.title))).map((folder) => { const feeds = subscriptions.filter((feed) => feed.folder_id === folder.id); return <div key={folder.id}><div className="sfeed-mobile-folder-row"><button className="sfeed-mobile-library-row" onClick={() => onSelectFolder(folder.id)}><Folder size={21} /><span>{folder.name}</span><span className="sfeed-mobile-count">{feeds.reduce((sum, feed) => sum + count(feed), 0).toLocaleString()}</span></button>{editing ? deleteButton(`${folder.name} 폴더 삭제`, () => onDeleteFolder(folder.id)) : <button className="sfeed-mobile-expand" aria-label={`${folder.name} 피드 ${expanded[folder.id] ? '접기' : '펼치기'}`} aria-expanded={Boolean(expanded[folder.id])} onClick={() => setExpanded((value) => ({ ...value, [folder.id]: !value[folder.id] }))}><ChevronDown size={18} className={expanded[folder.id] ? 'rotate-180' : ''} /></button>}</div>{(expanded[folder.id] || query.trim() || editing) && <div className="sfeed-mobile-folder-feeds">{feeds.filter((feed) => matches(feed.title) || matches(folder.name)).map(feedRow)}{feeds.length === 0 && <p className="sfeed-mobile-empty">이 폴더에 구독한 피드가 없습니다.</p>}</div>}</div>; })}</div>
       {ungrouped.length > 0 && <><h2 className="sfeed-mobile-section-title">미분류 피드</h2><div className="sfeed-mobile-library-group">{ungrouped.filter((feed) => matches(feed.title)).map(feedRow)}</div></>}
       {query.trim() && !subscriptions.some((feed) => matches(feed.title)) && !folders.some((folder) => matches(folder.name)) && <p className="sfeed-mobile-empty">일치하는 폴더나 피드가 없습니다.</p>}
       {!subscriptions.length && <div className="sfeed-mobile-empty"><Rss size={28} /><p>관심 있는 피드를 추가해 보세요.</p><button onClick={onAdd}>피드 찾아보기</button></div>}
       <div className="sfeed-mobile-account"><span><strong>{user.name}</strong><small>{user.email}</small></span><button className="sfeed-mobile-icon" aria-label="로그아웃 / 계정 전환" onClick={onLogout}><LogOut size={20} /></button></div>
     </div>
-    <MobileDock library active={active} onSelect={onSelectTab} onRefresh={onRefresh} refreshing={refreshing} onAdd={onAdd} onMarkAllRead={() => {}} />
+    <MobileDock library active={null} onSelect={onSelectTab} onRefresh={onRefresh} refreshing={refreshing} onAdd={onAdd} onMarkAllRead={() => {}} />
   </section>;
 }

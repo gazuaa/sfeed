@@ -155,7 +155,6 @@ try {
   assert.match(firstLook.snapshot, /Report number 0/);
   assert.ok(!/<script/i.test(firstLook.snapshot));
   const pageCopy = parseHTML(firstLook.snapshot);
-  pageCopy.window.Element.prototype.scrollIntoView = () => {};
   const posted = [];
   const pageGlobals = { document: pageCopy.document, window: pageCopy.window, parent: { postMessage: (message) => posted.push(message) }, Element: pageCopy.window.Element };
   const savedGlobals = Object.fromEntries(Object.keys(pageGlobals).map((key) => [key, globalThis[key]]));
