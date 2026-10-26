@@ -9,7 +9,6 @@ registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <div className="sfeed-glass-sample" aria-hidden="true" />
     <App />
     <PwaInstall />
   </React.StrictMode>

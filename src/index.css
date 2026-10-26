@@ -6,6 +6,10 @@ html.dark { --sfeed-background: #020617; --sfeed-panel: #0f172a; --sfeed-text: #
 :root { --sfeed-article-font: 1rem; --sfeed-text-scale: 1; }
 body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color: var(--sfeed-text); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .min-h-screen { min-height: 100dvh; }
+.sfeed-glass-sample { display: none; position: fixed; top: 0; left: 0; right: 0; height: 6px; background: var(--sfeed-panel); z-index: 1000; pointer-events: none; }
+@media (max-width: 1023px), (display-mode: standalone) {
+  .sfeed-glass-sample { display: block; }
+}
 .sfeed-channel-list, .sfeed-feed-list { scrollbar-gutter: stable; }
 .sfeed-channel-list:focus-visible, .sfeed-feed-list:focus-visible { outline: 2px solid #10b981; outline-offset: -2px; }
 .sfeed-feed-list { padding-bottom: env(safe-area-inset-bottom); }
@@ -91,9 +95,6 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
 
 @media (max-width: 1023px) {
   :root { --sfeed-mobile-header-height: calc(133px + env(safe-area-inset-top)); }
-  /* MUUSED's fixed, opaque 6px sample gives iOS PWA scroll-edge chrome
-     a real theme color instead of letting it blur the top of the app. */
-  .sfeed-glass-sample { position: fixed; top: 0; left: 0; right: 0; height: 6px; background: var(--sfeed-mobile-surface); z-index: 1; pointer-events: none; }
   .sfeed-workspace-main { position: relative; }
   /* Fill the actual fixed viewport. Combining inset: 0 with a separate
      100dvh height can truncate the app above the iOS home-indicator area. */
@@ -188,7 +189,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   html.dark .sfeed-magazine-copy > div > span.font-medium, html.dark .sfeed-mobile-body-modes button[aria-checked=true] { color: #34d399; }
   .sfeed-reader { max-width: none; padding-bottom: 0; border: 0; }
   .sfeed-reader-toolbar { display: none; }
-  .sfeed-mobile-reader-top { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; position: relative; z-index: 4; gap: 6px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-glass); backdrop-filter: blur(20px); }
+  .sfeed-mobile-reader-top { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; position: relative; z-index: 4; gap: 6px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); }
   .sfeed-mobile-body-modes { display: flex; padding: 3px; border-radius: 24px; background: var(--sfeed-mobile-raised); }
   .sfeed-mobile-body-modes button { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 56px; height: 44px; padding: 0 8px; border-radius: 21px; color: var(--sfeed-mobile-muted); font-size: 11px; }
   .sfeed-mobile-body-modes button[aria-checked=true] { color: #059669; background: var(--sfeed-mobile-surface); box-shadow: 0 1px 5px #0001; }

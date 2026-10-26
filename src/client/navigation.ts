@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import type { ScopeType } from './api';
+import { bindSwipeBack } from './swipeBack';
 
 export interface MobileLocation {
   scope: ScopeType;
@@ -69,6 +70,8 @@ export class MobileNavigation {
       this.apply(safe);
     }
   }
+  canGoBack() { return this.current.index > 0 && !this.restoring; }
+  back() { if (this.canGoBack()) this.history.go(-1); }
   record(location: MobileLocation, scroll = 0) {
     this.observed = location;
     if (this.restoring) {
@@ -111,7 +114,8 @@ export function useMobileNavigation(account: string | null, location: MobileLoca
     controller.current = navigation;
     const pop = (event: PopStateEvent) => navigation.pop(event.state);
     window.addEventListener('popstate', pop);
-    return () => { window.removeEventListener('popstate', pop); controller.current = null; };
+    const unbindSwipe = bindSwipeBack(document, navigation);
+    return () => { unbindSwipe(); window.removeEventListener('popstate', pop); controller.current = null; };
   }, [account]);
   useLayoutEffect(() => { controller.current?.record(location, latest.current.getScroll()); });
 }

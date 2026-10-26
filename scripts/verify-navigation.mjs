@@ -4,6 +4,7 @@ import { createServer } from 'vite';
 const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
 try {
   const { MobileNavigation } = await vite.ssrLoadModule('/src/client/navigation.ts');
+  const { bindSwipeBack } = await vite.ssrLoadModule('/src/client/swipeBack.ts');
   const library = { scope: 'all', folderId: null, feedId: null, search: '', unread: false, articleId: null, library: true };
   const list = { ...library, scope: 'folder', folderId: 'crypto', library: false };
   const a = { ...list, articleId: 'article-a' }, b = { ...list, articleId: 'article-b' };
@@ -16,10 +17,12 @@ try {
   };
   const restore = (next, position) => { location = next; scroll = position; };
   navigation = new MobileNavigation(history, 'owner', library, restore);
+  assert.equal(navigation.canGoBack(), false, 'swiping at the root must not leave the app');
   const open = (next, top = 0) => { location = next; navigation.record(next, top); };
   const back = () => { history.go(-1); navigation.record(location); };
   const forward = () => { history.go(1); navigation.record(location); };
   open(list); open(a, 620); open(b);
+  assert.equal(navigation.canGoBack(), true);
   assert.equal(entries.length, 4);
   back(); assert.deepEqual(location, a);
   back(); assert.deepEqual(location, list); assert.equal(scroll, 620);
@@ -51,6 +54,45 @@ try {
   assert.deepEqual(history.state.sfeedNavigation.location, library);
   back(); assert.equal(location.articleId, null); assert.equal(location.library, true);
 
+  // Exercise the installed touch listeners with the same native event path.
+  const doc = new EventTarget(), view = new EventTarget();
+  view.innerWidth = 390; view.visualViewport = { scale: 1 };
+  view.getComputedStyle = (node) => ({ overflowX: node.horizontal ? 'auto' : 'visible' });
+  doc.defaultView = view; doc.querySelector = () => null; doc.getSelection = () => null;
+  const container = {};
+  const target = { parentElement: null, scrollWidth: 100, clientWidth: 100, horizontal: false, control: false,
+    closest(selector) { return selector.startsWith('.sfeed-feed-list') ? container : this.control ? {} : null; } };
+  let backs = 0, allowed = true;
+  const unbind = bindSwipeBack(doc, { canGoBack: () => allowed, back: () => backs++ });
+  const touch = (type, x, y, time, options = {}) => {
+    const event = new Event(type, { cancelable: options.cancelable !== false });
+    Object.defineProperties(event, { target: { value: target }, timeStamp: { value: time },
+      touches: { value: type === 'touchend' ? [] : Array.from({ length: options.fingers ?? 1 }, () => ({ clientX: x, clientY: y })) },
+      changedTouches: { value: [{ clientX: x, clientY: y }] } });
+    doc.dispatchEvent(event); return event;
+  };
+  const swipe = (fromX, fromY, toX, toY, duration = 240, options = {}) => {
+    touch('touchstart', fromX, fromY, 0, options);
+    const move = touch('touchmove', toX, toY, duration / 2, options);
+    const end = touch('touchend', toX, toY, duration, options);
+    return { move, end };
+  };
+  const ordinary = swipe(95, 300, 240, 310);
+  assert.equal(backs, 1); assert.equal(ordinary.move.defaultPrevented, true); assert.equal(ordinary.end.defaultPrevented, true);
+  const vertical = swipe(95, 300, 105, 500);
+  assert.equal(vertical.move.defaultPrevented, false); assert.equal(backs, 1);
+  for (const gesture of [[10, 300, 200, 300], [95, 300, 125, 300], [95, 300, 240, 500], [240, 300, 95, 300]]) swipe(...gesture);
+  swipe(95, 300, 240, 300, 1200); swipe(95, 300, 240, 300, 240, { fingers: 2 });
+  swipe(95, 300, 240, 300, 240, { cancelable: false });
+  assert.equal(backs, 1, 'edge, short, diagonal, leftward, long, pinch and browser-owned gestures do not navigate');
+  target.control = true; swipe(95, 300, 240, 300); target.control = false;
+  target.horizontal = true; target.scrollWidth = 500; swipe(95, 300, 240, 300); target.horizontal = false;
+  view.visualViewport.scale = 1.5; swipe(95, 300, 240, 300); view.visualViewport.scale = 1;
+  allowed = false; swipe(95, 300, 240, 300); allowed = true;
+  touch('touchstart', 95, 300, 0); view.dispatchEvent(new Event('popstate')); touch('touchend', 240, 300, 240);
+  assert.equal(backs, 1, 'controls, horizontal content, zoom, root and a native history traversal are preserved');
+  unbind(); swipe(95, 300, 240, 300); assert.equal(backs, 1, 'listeners are removed after logout or switching to desktop');
+
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
   const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');
   const db = new LocalD1Database(':memory:', 'migrations/0001_schema.sql');
@@ -70,5 +112,5 @@ try {
   assert.equal((await get(other.token)).articles.length, 0, 'a single-article lookup still requires a subscription');
   assert.equal((await get(owner.token, '/api/articles?unreadOnly=true')).articles.length, 0, 'history restoration must not mark read articles unread');
   assert.equal((await app.request(query, {}, env)).status, 401);
-  console.log('PASS: mobile Back/Forward, article/list/library order, close shortcuts, scroll/filter/search restoration, reload, account isolation and read/saved article recovery.');
+  console.log('PASS: ordinary right-swipe Back; native gesture, vertical scroll, horizontal content, controls and pinch preservation; mobile history, scroll/filter restoration, reload and account isolation.');
 } finally { await vite.close(); }
