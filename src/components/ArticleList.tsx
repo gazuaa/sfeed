@@ -424,6 +424,10 @@ export const ArticleList: React.FC<ArticleListProps> = ({
           <article
             key={article.id}
             onClick={() => onSelectArticle(article)}
+            role="button"
+            tabIndex={0}
+            aria-label={article.title}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectArticle(article); } }}
             className={`sfeed-magazine-row group rounded-xl border p-3 flex flex-row items-start gap-3 transition duration-150 cursor-pointer ${
               isSelected
                 ? isDark
@@ -436,7 +440,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
           >
             <MagazineThumbnail article={article} isDark={isDark} />
 
-            <div className="flex-1 min-w-0">
+            <div className="sfeed-magazine-copy flex-1 min-w-0">
               {/* Always one line: source and author truncate instead of wrapping.
                   Separators belong to the item after them, so none dangle. */}
               <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap text-xs text-slate-400">

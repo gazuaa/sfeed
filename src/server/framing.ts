@@ -26,6 +26,7 @@ export function framingBlocked(headers: Headers, appOrigin: string): boolean {
 export interface EmbedCheck {
   embeddable: boolean;
   url: string;
+  reason?: 'challenge' | 'framing' | 'http' | 'mixed-content';
 }
 
 export async function checkEmbeddable(url: string, appOrigin: string): Promise<EmbedCheck> {
@@ -40,11 +41,14 @@ export async function checkEmbeddable(url: string, appOrigin: string): Promise<E
     // A bot challenge hides the page's own headers, and a framed challenge
     // cannot finish without third-party cookies: open it in a new window.
     if (res.headers.get('x-vercel-mitigated') === 'challenge' || res.headers.get('cf-mitigated') === 'challenge') {
-      return { embeddable: false, url: finalUrl };
+      return { embeddable: false, url: finalUrl, reason: 'challenge' };
     }
+    if (!res.ok) return { embeddable: false, url: finalUrl, reason: 'http' };
     // An https app cannot frame plain http pages (mixed content).
     const secureEnough = finalUrl.startsWith('https:') || appOrigin.startsWith('http:');
-    return { embeddable: secureEnough && !framingBlocked(res.headers, appOrigin), url: finalUrl };
+    if (!secureEnough) return { embeddable: false, url: finalUrl, reason: 'mixed-content' };
+    const blocked = framingBlocked(res.headers, appOrigin);
+    return { embeddable: !blocked, url: finalUrl, ...(blocked ? { reason: 'framing' as const } : {}) };
   } catch {
     // Unreachable from the server (some sites block Cloudflare): let the browser try.
     return { embeddable: true, url: appOrigin.startsWith('https:') ? url.replace(/^http:/, 'https:') : url };

@@ -1035,7 +1035,8 @@ app.post('/api/articles/:id/reader-view', async (c) => {
   const scraped = await scrapeFullArticle(
     article.url,
     article.content_html,
-    article.title
+    article.title,
+    c.env
   );
 
   if (!scraped.fullContentHtml) {

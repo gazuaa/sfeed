@@ -57,7 +57,12 @@ try {
   const fakeWindow = new EventTarget();
   fakeWindow.matchMedia = () => ({ matches: false, addEventListener() {} });
   globalThis.window = fakeWindow;
-  const { installState, promptInstall } = await vite.ssrLoadModule('/src/client/pwa.ts');
+  const { installState, promptInstall, installPlatform, installAddress } = await vite.ssrLoadModule('/src/client/pwa.ts');
+  assert.equal(installPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Brave/1.86 Mobile/15E148 Safari/604.1'), 'ios');
+  assert.equal(installPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/26.0 Safari/605.1.15', 5), 'ios', 'iPad desktop user agent must use iOS instructions');
+  assert.equal(installPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/26.0 Safari/605.1.15', 0), 'mac-safari');
+  assert.equal(installPlatform('Mozilla/5.0 (Linux; Android 16) Chrome/145 Brave/1.86'), 'android');
+  assert.equal(installAddress('https://sfeed.test/auth/callback?session_token=private#secret'), 'https://sfeed.test/', 'browser handoff must not include a token or a private route');
   assert.equal(installState(), 'manual');
   assert.equal(await promptInstall(), false);
   let prompts = 0;
@@ -84,7 +89,15 @@ try {
     const iosHelp = renderToStaticMarkup(createElement(PwaInstall));
     assert.match(iosHelp, /홈 화면에 추가/);
     assert.match(iosHelp, /웹 앱으로 열기/);
+    assert.match(iosHelp, /주소 복사/);
+    assert.match(iosHelp, /Safari에서 열 주소/);
+    assert.ok(!iosHelp.includes('지금 설치'), 'iOS must show manual steps instead of a nonexistent native install prompt');
     assert.ok(!iosHelp.includes('이 브라우저에는'), 'modern iOS browsers must not be incorrectly told they cannot install');
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Brave/1.86 Mobile/15E148 Safari/604.1' });
+    const braveHelp = renderToStaticMarkup(createElement(PwaInstall));
+    assert.match(braveHelp, /Brave 등 다른 브라우저/);
+    assert.match(braveHelp, /Safari에서 열어 주세요/);
+    assert.ok(!braveHelp.includes('Chrome·Edge의 주소창'), 'iOS Brave must not get desktop install instructions');
   } finally { if (previousAgent) Object.defineProperty(navigator, 'userAgent', previousAgent); else delete navigator.userAgent; }
   console.log('PASS: install manifest, PNG dimensions, iOS metadata, native prompt lifecycle, safe public-only offline caching, API/auth exclusion, fresh app shell, upgrade cleanup and deployment headers.');
 } finally { delete globalThis.window; await vite.close(); }

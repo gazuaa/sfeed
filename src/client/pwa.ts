@@ -1,5 +1,16 @@
 import { useSyncExternalStore } from 'react';
 
+export function installPlatform(userAgent: string, maxTouchPoints = 0): 'ios' | 'android' | 'mac-safari' | 'desktop' {
+  if (/iPad|iPhone|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) return 'ios';
+  if (/Android/.test(userAgent)) return 'android';
+  if (/Macintosh/.test(userAgent) && /Safari/.test(userAgent) && !/Chrome|Chromium|Edg|Brave/.test(userAgent)) return 'mac-safari';
+  return 'desktop';
+}
+
+// Only transfer the public app address to another browser, never login tokens
+// or private route/query information from the current page.
+export const installAddress = (address: string) => new URL('/', address).href;
+
 interface InstallEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;

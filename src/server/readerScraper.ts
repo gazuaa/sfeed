@@ -1,94 +1,63 @@
+import { parseHTML } from 'linkedom';
 import { sanitizeContentHtml } from './rssParser';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { extractPreviewImage } from './previewImage';
+import { publicPageUrl, renderPage } from './rssBuilder';
+import type { Env } from './types';
 
-// Bodies cached before failed extractions stopped being stored carry this
-// class; treat them as never extracted.
 export const READER_FALLBACK_MARK = 'reader-fallback-content';
 export const realFullContent = (html: string | null | undefined): string | null =>
   html && !html.includes(READER_FALLBACK_MARK) ? html : null;
 
 export interface ScrapedArticleResult {
-  /** null when the page could not be read; nothing is made up in its place. */
   fullContentHtml: string | null;
   leadImageUrl: string | null;
   scrapedFromWeb: boolean;
   originalPublishedAt: string | null;
 }
 
-export async function scrapeFullArticle(
-  url: string,
-  fallbackHtml: string | null,
-  title: string
-): Promise<ScrapedArticleResult> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    clearTimeout(timer);
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+/** Extract only readable, public article content; challenge and sign-in pages are never cached. */
+export function extractReaderContent(html: string, url: string, fallbackHtml: string | null): ScrapedArticleResult | null {
+  const { document } = parseHTML(html);
+  if (/security checkpoint|just a moment|verify you are human|access denied|sign in|log in/i.test(document.querySelector('title')?.textContent || '') || /"isAccessibleForFree"\s*:\s*false/.test(html)) return null;
+  const leadImageUrl = extractPreviewImage(html, url);
+  const originalPublishedAt = extractOriginalPublishedAt(html, url) || extractOriginalPublishedAt(fallbackHtml, url);
+  document.querySelectorAll('script,style,noscript,template,nav,header,footer,aside,form,iframe,object,embed,svg,math,link,meta,base,[hidden],[aria-hidden="true"]').forEach((node) => node.remove());
+  const readable = (node: { textContent: string | null }) => (node.textContent || '').replace(/\s+/g, ' ').trim().length > 120;
+  const candidates = [...document.querySelectorAll('[itemprop="articleBody"],article,.entry-content,.article-content,.prose')].filter(readable).sort((a, b) => (b.textContent?.length || 0) - (a.textContent?.length || 0));
+  const content = candidates[0] || document.querySelector('main');
+  const blocks = [...(content || document).querySelectorAll('p,h2,h3,blockquote,pre,ul,ol')];
+  const candidate = candidates[0]?.innerHTML || (content && readable(content) ? content.innerHTML : blocks.slice(0, 80).map((node) => node.outerHTML).join('\n'));
+  const { document: safe } = parseHTML(`<div id="reader-body">${candidate}</div>`);
+  for (const element of safe.querySelectorAll('*')) {
+    for (const { name, value } of Array.from(element.attributes)) {
+      if (/^on/i.test(name) || ['srcdoc', 'style'].includes(name.toLowerCase()) || (/^(?:href|src|action|formaction|xlink:href)$/i.test(name) && /^\s*(?:javascript|vbscript|data:text\/html)/i.test(value))) element.removeAttribute(name);
     }
-
-    const rawHtml = await res.text();
-
-    const leadImageUrl = extractPreviewImage(rawHtml, url);
-
-    // Strip non-content blocks first
-    const cleaned = rawHtml
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
-      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
-      .replace(/<aside[\s\S]*?<\/aside>/gi, '')
-      .replace(/<form[\s\S]*?<\/form>/gi, '');
-
-    // Prefer <article> or <main>
-    let bodyCandidate = '';
-    const articleMatch = cleaned.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-    const mainMatch = cleaned.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
-
-    if (articleMatch && articleMatch[1] && articleMatch[1].length > 300) {
-      bodyCandidate = articleMatch[1];
-    } else if (mainMatch && mainMatch[1] && mainMatch[1].length > 300) {
-      bodyCandidate = mainMatch[1];
-    } else {
-      // Collect meaningful paragraphs and headings
-      const blocks = cleaned.match(/<(?:p|h2|h3|blockquote|pre|ul|ol)[^>]*>[\s\S]*?<\/(?:p|h2|h3|blockquote|pre|ul|ol)>/gi);
-      if (blocks && blocks.length > 0) {
-        bodyCandidate = blocks.slice(0, 45).join('\n');
-      }
-    }
-
-    const sanitized = sanitizeContentHtml(bodyCandidate, url);
-    if (sanitized && sanitized.replace(/<[^>]+>/g, '').trim().length > 120) {
-      return {
-        fullContentHtml: sanitized,
-        leadImageUrl,
-        scrapedFromWeb: true,
-        originalPublishedAt: extractOriginalPublishedAt(rawHtml, url) || extractOriginalPublishedAt(fallbackHtml, url),
-      };
-    }
-  } catch {
-    // Fallback below
   }
+  const sanitized = sanitizeContentHtml(safe.querySelector('#reader-body')?.innerHTML || '', url);
+  if (!sanitized || sanitized.replace(/<[^>]+>/g, '').trim().length <= 120) return null;
+  return { fullContentHtml: sanitized, leadImageUrl, scrapedFromWeb: true, originalPublishedAt };
+}
 
-  // The site blocks automated requests, or the page has no readable body.
-  return {
-    fullContentHtml: null,
-    leadImageUrl: null,
-    scrapedFromWeb: false,
-    originalPublishedAt: extractOriginalPublishedAt(fallbackHtml, url),
-  };
+export async function scrapeFullArticle(url: string, fallbackHtml: string | null, _title: string, env?: Pick<Env, 'BROWSER'>): Promise<ScrapedArticleResult> {
+  const unavailable = (): ScrapedArticleResult => ({ fullContentHtml: null, leadImageUrl: null, scrapedFromWeb: false, originalPublishedAt: extractOriginalPublishedAt(fallbackHtml, url) });
+  try { publicPageUrl(url); } catch { return unavailable(); }
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SFeed/1.0)', Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(7000), redirect: 'follow',
+    });
+    if (res.ok && res.headers.get('x-vercel-mitigated') !== 'challenge' && res.headers.get('cf-mitigated') !== 'challenge') {
+      const result = extractReaderContent((await res.text()).slice(0, 2_000_000), publicPageUrl(res.url || url), fallbackHtml);
+      if (result) return result;
+    } else await res.body?.cancel();
+  } catch { /* Try the public browser-rendered page below. */ }
+  if (env?.BROWSER) {
+    try {
+      const page = await renderPage(url, env, 'article');
+      const result = extractReaderContent(page.html, page.url, fallbackHtml);
+      if (result) return result;
+    } catch { /* Keep a genuine feed body or an actionable error. */ }
+  }
+  return unavailable();
 }

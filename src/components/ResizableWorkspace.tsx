@@ -10,9 +10,11 @@ interface ResizableWorkspaceProps {
   footer: React.ReactNode;
   children: React.ReactNode;
   listRef: React.Ref<HTMLElement>;
+  inactive?: boolean;
+  mobileReaderOpen?: boolean;
 }
 
-export function ResizableWorkspace({ userId, isDark, sidebar, header, reader, footer, children, listRef }: ResizableWorkspaceProps) {
+export function ResizableWorkspace({ userId, isDark, sidebar, header, reader, footer, children, listRef, inactive, mobileReaderOpen }: ResizableWorkspaceProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(1280);
   const [preferred, setPreferred] = useState(() => readPanelWidths(userId));
@@ -71,13 +73,13 @@ export function ResizableWorkspace({ userId, isDark, sidebar, header, reader, fo
     }}
   ><span aria-hidden="true" /></div>;
 
-  return <div ref={shellRef} data-resizing={resizing || undefined} className={`sfeed-shell sfeed-workspace h-dvh min-h-0 overflow-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`} style={{ '--sfeed-channel-width': `${widths.channels}px`, '--sfeed-list-width': `${widths.list}px` } as React.CSSProperties}>
+  return <div ref={shellRef} inert={inactive || undefined} aria-hidden={inactive || undefined} data-resizing={resizing || undefined} className={`sfeed-shell sfeed-workspace h-dvh min-h-0 overflow-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`} style={{ '--sfeed-channel-width': `${widths.channels}px`, '--sfeed-list-width': `${widths.list}px` } as React.CSSProperties}>
     {sidebar}
     {splitter('channels')}
     <div className="sfeed-workspace-main flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      {header}
+      <div className="shrink-0" inert={mobileReaderOpen || undefined} aria-hidden={mobileReaderOpen || undefined}>{header}</div>
       <div className="sfeed-content-panes flex-1 min-w-0 min-h-0 overflow-hidden">
-        <main ref={listRef} id="feed-article-list" aria-label="피드 목록" tabIndex={0} className="sfeed-feed-list min-w-0 min-h-0 overflow-y-auto overscroll-contain">{children}</main>
+        <main ref={listRef} inert={mobileReaderOpen || undefined} aria-hidden={mobileReaderOpen || undefined} id="feed-article-list" aria-label="피드 목록" tabIndex={0} className="sfeed-feed-list min-w-0 min-h-0 overflow-y-auto overscroll-contain">{children}</main>
         {splitter('list')}
         <aside id="article-reader-pane" aria-label="글 본문" className="sfeed-reader-pane min-w-0 min-h-0 overflow-hidden">{reader}</aside>
       </div>

@@ -25,6 +25,9 @@ import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
+import { useMobileViewport } from './client/mobile';
+import { MobileHeader, MobileDock, type LibraryTab } from './components/MobileChrome';
+import { MobileLibrary } from './components/MobileLibrary';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -70,7 +73,8 @@ export const App: React.FC = () => {
   const [discoverTab, setDiscoverTab] = useState<'curated' | 'opml'>(
     'curated'
   );
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
+  const isMobile = useMobileViewport();
   const [markReadTarget, setMarkReadTarget] = useState<{
     scope: ScopeType;
     folderId: string | null;
@@ -577,6 +581,16 @@ export const App: React.FC = () => {
   }
 
   const isDark = theme === 'dark';
+  const mobileTab: LibraryTab = activeScope === 'saved' ? 'saved' : unreadOnly ? 'unread' : 'all';
+  const openMobileDiscover = (tab: 'curated' | 'opml' = 'curated') => { setDiscoverTab(tab); setDiscoverOpen(true); };
+  const selectMobileTab = (tab: LibraryTab) => { setSearchQuery(''); handleSelectLibraryTab(tab); setMobileSidebarOpen(false); };
+  const filterMobileList = (tab: LibraryTab) => {
+    if (tab === 'saved' || (activeScope !== 'folder' && activeScope !== 'feed')) { selectMobileTab(tab); return; }
+    setUnreadOnly(tab === 'unread');
+    savePreferences({ unreadOnly: tab === 'unread' });
+    setSelectedArticleId(null);
+  };
+  const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml') };
 
   return (
     <>
@@ -584,6 +598,8 @@ export const App: React.FC = () => {
         key={user.id}
         userId={user.id}
         isDark={isDark}
+        inactive={isMobile && mobileSidebarOpen}
+        mobileReaderOpen={isMobile && Boolean(selectedArticle)}
         listRef={articleListRef}
         sidebar={
           <Sidebar
@@ -606,12 +622,14 @@ export const App: React.FC = () => {
             onUnsubscribe={handleUnsubscribe}
             onLogout={handleLogout}
             isDark={isDark}
-            mobileOpen={mobileSidebarOpen}
+            mobileOpen={false}
             onCloseMobile={() => setMobileSidebarOpen(false)}
           />
         }
         header={
-          <HeaderBar
+          <>
+          <div className="lg:hidden"><MobileHeader title={headerInfo.title.replace(/\s*\([^)]*\)/g, '')} search={searchQuery} onSearch={setSearchQuery} onBack={() => setMobileSidebarOpen(true)} onAdd={() => openMobileDiscover()} {...mobileSettings} /></div>
+          <div className="hidden lg:block"><HeaderBar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             layout={layout}
@@ -622,7 +640,8 @@ export const App: React.FC = () => {
             refreshing={refreshingFeeds}
             onMarkAllRead={handleMarkAllRead}
             onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
-          />
+          /></div>
+          </>
         }
         reader={
           <ArticleDrawer
@@ -642,7 +661,7 @@ export const App: React.FC = () => {
         }
         footer={
           <footer
-            className={`hidden md:flex shrink-0 flex-wrap gap-2 items-center justify-between px-8 py-2 border-t text-[11px] ${
+            className={`hidden lg:flex shrink-0 flex-wrap gap-2 items-center justify-between px-8 py-2 border-t text-[11px] ${
               isDark
                 ? 'bg-slate-950 border-slate-900 text-slate-500'
                 : 'bg-white border-slate-200 text-slate-400'
@@ -692,6 +711,9 @@ export const App: React.FC = () => {
           />
         )}
       </ResizableWorkspace>
+
+      {isMobile && <div hidden={!mobileSidebarOpen}><MobileLibrary user={user} folders={folders} subscriptions={subscriptions} counts={counts} unreadOnly={unreadOnly} active={mobileTab} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {!mobileSidebarOpen && !selectedArticle && <MobileDock active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
       {markReadTarget && (
         <MarkAllReadDialog

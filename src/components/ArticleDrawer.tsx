@@ -16,6 +16,9 @@ import {
   RefreshCw,
   Rss,
   Type,
+  ChevronDown,
+  MoreHorizontal,
+  Share2,
 } from 'lucide-react';
 import {
   apiRequest,
@@ -77,7 +80,10 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   isDark,
 }) => {
   const [readerFailedFor, setReaderFailedFor] = useState<string | null>(null);
-  const [frame, setFrame] = useState<{ articleId: string; embeddable: boolean; url: string } | null>(null);
+  const [frame, setFrame] = useState<{ articleId: string; embeddable: boolean; url: string; reason?: string } | null>(null);
+  const [automaticReaderFor, setAutomaticReaderFor] = useState<string | null>(null);
+  const [readerRetry, setReaderRetry] = useState(0);
+  const mode = viewMode === 'web' && automaticReaderFor === article?.id ? 'reader' : viewMode;
   const [checkingDate, setCheckingDate] = useState(false);
   const [scrapingReader, setScrapingReader] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -86,6 +92,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   );
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
   const [webZoom, setWebZoom] = useState(loadWebZoom);
+  const [shareNotice, setShareNotice] = useState('');
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
 
   // -1 zooms out, +1 zooms in, 0 resets to 100%.
   const changeWebZoom = (step: -1 | 0 | 1) => {
@@ -104,7 +112,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
   // Reader view: extract the full article once; the server caches it.
   useEffect(() => {
-    if (!article || viewMode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
+    if (!article || mode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
     let active = true;
     setScrapingReader(true);
     apiRequest<{ fullContentHtml: string; publishedAt?: string }>(`/api/articles/${article.id}/reader-view`, {
@@ -121,17 +129,17 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       .catch(() => { if (active) setReaderFailedFor(article.id); })
       .finally(() => { if (active) setScrapingReader(false); });
     return () => { active = false; setScrapingReader(false); };
-  }, [article?.id, viewMode]);
+  }, [article?.id, mode, readerRetry]);
 
   // Web view: ask the server whether the site allows being framed.
   useEffect(() => {
-    if (!article || viewMode !== 'web' || frame?.articleId === article.id) return;
+    if (!article || mode !== 'web' || frame?.articleId === article.id) return;
     let active = true;
-    apiRequest<{ embeddable: boolean; url: string }>(`/api/articles/${article.id}/embeddable`)
-      .then((res) => { if (active) setFrame({ articleId: article.id, ...res }); })
+    apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`)
+      .then((res) => { if (active) { setFrame({ articleId: article.id, ...res }); if (!res.embeddable) setAutomaticReaderFor(article.id); } })
       .catch(() => { if (active) setFrame({ articleId: article.id, embeddable: true, url: article.url }); });
     return () => { active = false; };
-  }, [article?.id, viewMode]);
+  }, [article?.id, mode]);
 
   useEffect(() => {
     if (!article || article.date_source === 'original') { setCheckingDate(false); return; }
@@ -151,12 +159,13 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   </div>;
 
   const chooseViewMode = (mode: ViewMode) => {
-    if (mode === 'reader') setReaderFailedFor(null);
+    setAutomaticReaderFor(null);
+    if (mode === 'reader') { setReaderFailedFor(null); setReaderRetry((value) => value + 1); }
     onChangeViewMode(mode);
   };
 
-  const showingReader = viewMode === 'reader' && Boolean(article.full_content_html);
-  const readerFailed = viewMode === 'reader' && readerFailedFor === article.id;
+  const showingReader = mode === 'reader' && Boolean(article.full_content_html);
+  const readerFailed = mode === 'reader' && readerFailedFor === article.id;
   // Feeds built from a sitemap, or title-only feeds, carry no body at all.
   const bodyless = !showingReader && !article.content_html && !article.summary;
 
@@ -198,6 +207,13 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       ? 'text-lg'
       : 'text-base';
 
+  const shareArticle = async () => {
+    try {
+      if (navigator.share) await navigator.share({ title: article.title, url: article.url });
+      else { await navigator.clipboard.writeText(article.url); setShareNotice('링크를 복사했습니다.'); }
+    } catch (error) { if (!(error instanceof Error && error.name === 'AbortError')) setShareNotice('공유하지 못했습니다. 원문 링크를 이용해 주세요.'); }
+  };
+
   return (
     <div className="sfeed-article-reader fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-auto h-full min-w-0 min-h-0 flex justify-end">
       {/* Backdrop */}
@@ -214,6 +230,17 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
+        <div className="sfeed-mobile-reader-top lg:hidden">
+          <button className="sfeed-mobile-icon" onClick={onClose} aria-label="목록으로 돌아가기"><ChevronDown size={24} /></button>
+          <div role="radiogroup" aria-label="본문 보기 방식" className="sfeed-mobile-body-modes">{VIEW_MODES.map(({ id, label, Icon }) => <button key={id} role="radio" aria-label={label} aria-checked={mode === id} onClick={() => chooseViewMode(id)}>{id === 'reader' && scrapingReader ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}<span>{label}</span></button>)}</div>
+          <button className="sfeed-mobile-icon" aria-label="본문 도구" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((value) => !value)}><MoreHorizontal size={22} /></button>
+          {mobileToolsOpen && <div className="sfeed-mobile-reader-menu">
+            <button disabled={summarizing} onClick={() => { setMobileToolsOpen(false); void handleSummarizeAI(); }}><Sparkles size={18} />AI 핵심 요약</button>
+            <button onClick={cycleFontSize}><Type size={18} />글자 크기 · {fontSize === 'sm' ? '작게' : fontSize === 'lg' ? '크게' : '보통'}</button>
+            {mode === 'web' && <div className="sfeed-mobile-zoom"><button aria-label="사이트 축소" disabled={webZoom === WEB_ZOOM_STEPS[0]} onClick={() => changeWebZoom(-1)}><ZoomOut size={18} /></button><button onClick={() => changeWebZoom(0)} aria-label="확대 비율 초기화">{Math.round(webZoom * 100)}%</button><button aria-label="사이트 확대" disabled={webZoom === WEB_ZOOM_STEPS[WEB_ZOOM_STEPS.length - 1]} onClick={() => changeWebZoom(1)}><ZoomIn size={18} /></button></div>}
+            <a href={article.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={18} />원문 사이트 열기</a>
+          </div>}
+        </div>
         {/* Top Action Bar */}
         <div
           className={`sfeed-reader-toolbar px-4 sm:px-6 py-3 border-b flex flex-wrap items-center gap-2 shrink-0 ${
@@ -278,7 +305,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           {/* Article tools */}
           <div className={`sfeed-reader-tools flex flex-wrap items-center gap-1 border-l pl-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
             {/* AI Summary Trigger */}
-            {viewMode !== 'web' && <button
+            {mode !== 'web' && <button
               type="button"
               onClick={() => handleSummarizeAI(false)}
               disabled={summarizing}
@@ -319,7 +346,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </button>
 
             {/* Font Size Toggle */}
-            {viewMode !== 'web' && <button
+            {mode !== 'web' && <button
               type="button"
               onClick={cycleFontSize}
               title="글자 크기 변경"
@@ -333,7 +360,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </button>}
 
             {/* Web view zoom */}
-            {viewMode === 'web' && (
+            {mode === 'web' && (
               <div
                 role="group"
                 aria-label="사이트 확대·축소"
@@ -406,7 +433,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             }`}
           >
             {VIEW_MODES.map(({ id, label, title, Icon }) => {
-              const selected = viewMode === id;
+              const selected = mode === id;
               return (
                 <button
                   key={id}
@@ -439,8 +466,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
         </div>
 
-        {viewMode === 'web' ? (
-          <div className="flex-1 min-h-0 flex flex-col">
+        {mode === 'web' ? (
+          <div className="sfeed-web-view flex-1 min-h-0 flex flex-col">
             {!frame || frame.articleId !== article.id ? (
               <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -485,7 +512,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
                 <Globe className="w-9 h-9 text-slate-400" aria-hidden="true" />
                 <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                  이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.
+                  {frame.reason === 'challenge' ? '사이트의 보안 확인 때문에 웹 보기를 열 수 없어요.' : frame.reason === 'http' ? '사이트에서 페이지를 불러오지 못했어요.' : '이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.'}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <a
@@ -515,6 +542,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           </div>
         ) : (
         <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
+          {automaticReaderFor === article.id && <p role="status" className={`rounded-xl border px-3 py-2 text-xs ${isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'}`}>웹 보기를 열 수 없어 리더로 전환했습니다.</p>}
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">
             <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-400 font-medium">
@@ -640,7 +668,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             )}
 
           {/* Reader view status: loading, or fell back to the feed body */}
-          {viewMode === 'reader' && !showingReader && (scrapingReader || (readerFailed && !bodyless)) && (
+          {mode === 'reader' && !showingReader && (scrapingReader || (readerFailed && !bodyless)) && (
             <div
               className={`px-3.5 py-2 rounded-xl border text-xs flex items-center gap-2 ${
                 isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
@@ -664,7 +692,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                 <p className="text-sm font-semibold">{readerFailed ? '원문 본문을 불러오지 못했어요' : '이 글은 피드에 본문이 없어요'}</p>
                 <p className="mt-2 text-xs leading-relaxed text-slate-400">
                   {readerFailed
-                    ? '사이트가 자동 접근이나 다른 서비스 안에서 보여주기를 막고 있을 수 있어요. 원문 사이트에서 읽어 주세요.'
+                    ? '사이트에서 본문을 가져오지 못했습니다. 잠시 후 다시 시도하거나 원문 사이트에서 읽어 주세요.'
                     : '원문 사이트에서 읽거나, 리더 보기로 본문을 불러와 보세요.'}
                 </p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -677,14 +705,14 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     <span>원문 사이트에서 읽기</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                  {viewMode !== 'reader' && (
+                  {(mode !== 'reader' || readerFailed) && (
                     <button
                       type="button"
                       onClick={() => chooseViewMode('reader')}
                       className={`px-4 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'}`}
                     >
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>리더로 보기</span>
+                      <span>{readerFailed ? '본문 다시 불러오기' : '리더로 보기'}</span>
                     </button>
                   )}
                 </div>
@@ -722,6 +750,15 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           </div>
         </div>
         )}
+        {shareNotice && <p role="status" className="sfeed-mobile-share-notice lg:hidden">{shareNotice}</p>}
+        <nav aria-label="본문 조작" className="sfeed-mobile-dock sfeed-mobile-reader-dock lg:hidden">
+          <button aria-label={article.is_read ? '안 읽음으로 표시' : '읽음으로 표시'} aria-pressed={article.is_read} onClick={() => onToggleRead(article)}>{article.is_read ? <CheckCircle2 size={22} /> : <Circle size={22} />}</button>
+          <button aria-label={article.is_saved ? '저장 취소' : '나중에 읽기'} aria-pressed={article.is_saved} onClick={() => onToggleSaved(article)}><Bookmark size={22} fill={article.is_saved ? 'currentColor' : 'none'} /></button>
+          <button aria-label="이전 아티클" disabled={!hasPrev} onClick={() => onNavigateRelative('prev')}><ChevronLeft size={24} /></button>
+          <button aria-label="다음 아티클" disabled={!hasNext} onClick={() => onNavigateRelative('next')}><ChevronRight size={24} /></button>
+          <button aria-label="글 공유" onClick={() => void shareArticle()}><Share2 size={21} /></button>
+          <button aria-label="글자 크기 변경" onClick={cycleFontSize}><Type size={22} /></button>
+        </nav>
       </div>
     </div>
   );
