@@ -54,9 +54,21 @@ const PICKABLE_LINKS = 5;
 
 /** A static copy of the page for point-and-click selection, or undefined when it has nothing to pick. */
 export function pickerSnapshot(html: string, pageUrl: string): string | undefined {
+  return pageCopy(html, pageUrl, { minLinks: PICKABLE_LINKS });
+}
+
+/**
+ * The web view's stand-in for sites that refuse to be framed: the page as the
+ * server fetched it, with no scripts, shown in a sandbox. Links open in a new tab.
+ */
+export function webCopy(html: string, pageUrl: string): string {
+  return pageCopy(html, pageUrl, { linkTarget: '_blank' })!;
+}
+
+function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget }: { minLinks?: number; linkTarget?: string }): string | undefined {
   const { document } = parseHTML(html);
   stripActiveContent(document);
-  if (document.querySelectorAll('a[href]').length < PICKABLE_LINKS) return undefined;
+  if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
   for (const img of document.querySelectorAll('img')) {
     const lazy = img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original');
     if (lazy && (!img.getAttribute('src') || img.getAttribute('src')!.startsWith('data:'))) img.setAttribute('src', lazy);
@@ -66,6 +78,7 @@ export function pickerSnapshot(html: string, pageUrl: string): string | undefine
   const head = document.head || document.documentElement;
   const base = document.createElement('base');
   base.setAttribute('href', pageUrl);
+  if (linkTarget) base.setAttribute('target', linkTarget);
   const charset = document.createElement('meta');
   charset.setAttribute('charset', 'utf-8');
   head.prepend(charset, base);
@@ -180,7 +193,7 @@ export function analyseBuilderHtml(html: string, sourceUrl: string, selector?: s
   return { sourceUrl, title, groups, rendered: false };
 }
 
-async function fetchPage(url: string, accept = 'text/html,application/xhtml+xml', limit = 2_000_000): Promise<{ html: string; url: string }> {
+export async function fetchPage(url: string, accept = 'text/html,application/xhtml+xml', limit = 2_000_000): Promise<{ html: string; url: string }> {
   let current = publicPageUrl(url);
   for (let i = 0; i < 5; i++) {
     const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SFeed/1.0)', Accept: accept } });

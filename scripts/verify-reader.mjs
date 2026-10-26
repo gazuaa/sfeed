@@ -54,5 +54,18 @@ try {
   assert.equal((await request({ force: true })).status, 502);
   assert.ok((await db.prepare('SELECT full_content_html FROM articles WHERE id=?').bind(row.id).first()).full_content_html, 'a failed refresh must retain a previously read body');
   assert.deepEqual({ ...await db.prepare('SELECT is_read,is_saved FROM article_states WHERE article_id=?').bind(row.id).first() }, { is_read: 0, is_saved: 1 });
-  console.log('PASS: public body extraction, relative assets, original date, safe markup, framing/challenge/HTTP distinction, no fake challenge or paywall body, authenticated reader cache/retry and preserved saved/read state.');
+  // Web view stand-in for sites that refuse framing: a script-free copy for
+  // subscribers only, with links opening in a new tab.
+  const stranger = await (await app.request('/api/auth/google/quick', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'stranger@example.test' }) }, env)).json();
+  const copyRequest = (auth = token) => app.request(`/api/articles/${row.id}/web-copy`, { headers: { authorization: `Bearer ${auth}` } }, env);
+  globalThis.fetch = async () => new Response(html, { headers: { 'x-frame-options': 'DENY' } });
+  const copy = await (await copyRequest()).json();
+  const baseTag = copy.html.match(/<base [^>]*>/)?.[0] || '';
+  assert.ok(baseTag.includes('href="https://reader.example.test/post"') && baseTag.includes('target="_blank"'), baseTag);
+  assert.match(copy.html, /meaningful text/);
+  assert.doesNotMatch(copy.html, /<script|onerror|javascript:|<iframe/i);
+  assert.equal((await copyRequest(stranger.token)).status, 404, 'only subscribers get a copy');
+  globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
+  assert.equal((await copyRequest()).status, 502);
+  console.log('PASS: public body extraction, relative assets, original date, safe markup, framing/challenge/HTTP distinction, no fake challenge or paywall body, authenticated reader cache/retry, preserved saved/read state and a script-free web copy for subscribers.');
 } finally { globalThis.fetch = originalFetch; await vite.close(); }

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AArrowDown,
+  AArrowUp,
   ArrowLeft,
   Bookmark,
   CheckCircle2,
@@ -48,6 +50,20 @@ function loadWebZoom(): number {
   }
 }
 
+// Article text size, remembered per device like the web zoom. The drawer is
+// remounted for every article, so the size must live outside its state.
+const FONT_SCALES = [0.85, 0.92, 1, 1.1, 1.2, 1.35, 1.5];
+const FONT_SCALE_KEY = 'sfeed_font_scale';
+
+function loadFontScale(): number {
+  try {
+    const saved = Number(localStorage.getItem(FONT_SCALE_KEY));
+    return FONT_SCALES.includes(saved) ? saved : 1;
+  } catch {
+    return 1;
+  }
+}
+
 interface ArticleDrawerProps {
   article: ArticleItem | null;
   onClose: () => void;
@@ -90,10 +106,25 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [aiMeta, setAiMeta] = useState<{ provider?: string; model?: string } | null>(
     null
   );
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
+  const [fontScale, setFontScale] = useState(loadFontScale);
   const [webZoom, setWebZoom] = useState(loadWebZoom);
+  const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
+  // Sites that refuse to be framed get a script-free copy fetched by the server.
+  const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null } | null>(null);
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+
+  // -1 makes the text smaller, +1 larger, 0 resets to 100%.
+  const changeFontScale = (step: -1 | 0 | 1) => {
+    const index = FONT_SCALES.indexOf(fontScale);
+    const next = step === 0 ? 1 : FONT_SCALES[Math.min(FONT_SCALES.length - 1, Math.max(0, index + step))];
+    setFontScale(next);
+    try {
+      localStorage.setItem(FONT_SCALE_KEY, String(next));
+    } catch {
+      // the size still applies to this article
+    }
+  };
 
   // -1 zooms out, +1 zooms in, 0 resets to 100%.
   const changeWebZoom = (step: -1 | 0 | 1) => {
@@ -136,7 +167,15 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     if (!article || mode !== 'web' || frame?.articleId === article.id) return;
     let active = true;
     apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`)
-      .then((res) => { if (active) { setFrame({ articleId: article.id, ...res }); if (!res.embeddable) setAutomaticReaderFor(article.id); } })
+      .then((res) => {
+        if (!active) return;
+        setFrame({ articleId: article.id, ...res });
+        if (res.embeddable) return;
+        if (res.reason === 'challenge') { setAutomaticReaderFor(article.id); return; }
+        apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`)
+          .then((copy) => { if (active) setWebCopy({ articleId: article.id, html: copy.html }); })
+          .catch(() => { if (active) { setWebCopy({ articleId: article.id, html: null }); setAutomaticReaderFor(article.id); } });
+      })
       .catch(() => { if (active) setFrame({ articleId: article.id, embeddable: true, url: article.url }); });
     return () => { active = false; };
   }, [article?.id, mode]);
@@ -191,21 +230,25 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     }
   };
 
-  const cycleFontSize = () => {
-    setFontSize((prev) => (prev === 'sm' ? 'base' : prev === 'base' ? 'lg' : 'sm'));
-  };
+  // One control for both: the text size in feed and reader views, the site
+  // zoom in the web view.
+  const sizeControl = (className: string) => mode === 'web'
+    ? <div role="group" aria-label="사이트 확대·축소" className={className}>
+        <button type="button" aria-label="사이트 축소" disabled={webZoom === WEB_ZOOM_STEPS[0]} onClick={() => changeWebZoom(-1)}><ZoomOut size={18} /></button>
+        <button type="button" aria-label={`현재 ${Math.round(webZoom * 100)}%, 100%로 되돌리기`} onClick={() => changeWebZoom(0)}>{Math.round(webZoom * 100)}%</button>
+        <button type="button" aria-label="사이트 확대" disabled={webZoom === WEB_ZOOM_STEPS[WEB_ZOOM_STEPS.length - 1]} onClick={() => changeWebZoom(1)}><ZoomIn size={18} /></button>
+      </div>
+    : <div role="group" aria-label="글자 크기" className={className}>
+        <button type="button" aria-label="글자 작게" disabled={fontScale === FONT_SCALES[0]} onClick={() => changeFontScale(-1)}><AArrowDown size={18} /></button>
+        <button type="button" aria-label={`글자 크기 ${Math.round(fontScale * 100)}%, 기본 크기로 되돌리기`} onClick={() => changeFontScale(0)}>{Math.round(fontScale * 100)}%</button>
+        <button type="button" aria-label="글자 크게" disabled={fontScale === FONT_SCALES[FONT_SCALES.length - 1]} onClick={() => changeFontScale(1)}><AArrowUp size={18} /></button>
+      </div>;
 
   const activeHtml =
     showingReader && article.full_content_html
       ? article.full_content_html
       : article.content_html || `<p>${article.summary || article.title}</p>`;
 
-  const fontSizeClass =
-    fontSize === 'sm'
-      ? 'text-sm'
-      : fontSize === 'lg'
-      ? 'text-lg'
-      : 'text-base';
 
   const shareArticle = async () => {
     try {
@@ -236,8 +279,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           <button className="sfeed-mobile-icon" aria-label="본문 도구" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((value) => !value)}><MoreHorizontal size={22} /></button>
           {mobileToolsOpen && <div className="sfeed-mobile-reader-menu">
             <button disabled={summarizing} onClick={() => { setMobileToolsOpen(false); void handleSummarizeAI(); }}><Sparkles size={18} />AI 핵심 요약</button>
-            <button onClick={cycleFontSize}><Type size={18} />글자 크기 · {fontSize === 'sm' ? '작게' : fontSize === 'lg' ? '크게' : '보통'}</button>
-            {mode === 'web' && <div className="sfeed-mobile-zoom"><button aria-label="사이트 축소" disabled={webZoom === WEB_ZOOM_STEPS[0]} onClick={() => changeWebZoom(-1)}><ZoomOut size={18} /></button><button onClick={() => changeWebZoom(0)} aria-label="확대 비율 초기화">{Math.round(webZoom * 100)}%</button><button aria-label="사이트 확대" disabled={webZoom === WEB_ZOOM_STEPS[WEB_ZOOM_STEPS.length - 1]} onClick={() => changeWebZoom(1)}><ZoomIn size={18} /></button></div>}
+            <p className="sfeed-mobile-menu-label">{mode === 'web' ? '사이트 확대·축소' : '글자 크기'}</p>
+            {sizeControl('sfeed-mobile-zoom')}
             <a href={article.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={18} />원문 사이트 열기</a>
           </div>}
         </div>
@@ -345,19 +388,54 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               />
             </button>
 
-            {/* Font Size Toggle */}
-            {mode !== 'web' && <button
-              type="button"
-              onClick={cycleFontSize}
-              title="글자 크기 변경"
-              className={`sfeed-reader-icon ${
-                isDark
-                  ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Type className="w-4 h-4" />
-            </button>}
+            {/* Text size (feed and reader views) */}
+            {mode !== 'web' && (
+              <div
+                role="group"
+                aria-label="글자 크기"
+                className={`flex items-center rounded-xl border ${
+                  isDark
+                    ? 'bg-slate-900 border-slate-800 text-slate-300'
+                    : 'bg-white border-slate-200 text-slate-700'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => changeFontScale(-1)}
+                  disabled={fontScale === FONT_SCALES[0]}
+                  title="글자 작게"
+                  aria-label="글자 작게"
+                  className={`p-2 rounded-l-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  <AArrowDown className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeFontScale(0)}
+                  title="기본 크기로 되돌리기"
+                  aria-label={`글자 크기 ${Math.round(fontScale * 100)}%, 기본 크기로 되돌리기`}
+                  className={`min-w-[3rem] py-2 text-xs font-medium tabular-nums transition cursor-pointer ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  {Math.round(fontScale * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeFontScale(1)}
+                  disabled={fontScale === FONT_SCALES[FONT_SCALES.length - 1]}
+                  title="글자 크게"
+                  aria-label="글자 크게"
+                  className={`p-2 rounded-r-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  <AArrowUp className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Web view zoom */}
             {mode === 'web' && (
@@ -508,6 +586,47 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   />
                 </div>
               </>
+            ) : webCopy?.articleId === article.id && webCopy.html ? (
+              <>
+                <div
+                  className={`px-4 py-1.5 border-b text-[11px] flex items-center justify-between gap-2 shrink-0 ${
+                    isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
+                  }`}
+                >
+                  <span className="min-w-0">사이트가 직접 표시를 막아 사본으로 보여드려요. 동영상·댓글은 원문에서 동작해요.</span>
+                  <a
+                    href={frame.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 hover:underline"
+                  >
+                    새 창에서 열기
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
+                  {/* No allow-scripts: the copy is static, and links open in new tabs. */}
+                  <iframe
+                    key={`copy-${article.id}`}
+                    srcDoc={webCopy.html}
+                    title={article.title}
+                    className="absolute left-0 top-0 border-0 bg-white"
+                    style={{
+                      width: `${100 / webZoom}%`,
+                      height: `${100 / webZoom}%`,
+                      transform: `scale(${webZoom})`,
+                      transformOrigin: '0 0',
+                    }}
+                    sandbox="allow-popups allow-popups-to-escape-sandbox"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </>
+            ) : frame.reason !== 'challenge' && webCopy?.articleId !== article.id ? (
+              <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>사이트가 직접 표시를 막아 사본을 불러오는 중…</span>
+              </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
                 <Globe className="w-9 h-9 text-slate-400" aria-hidden="true" />
@@ -720,7 +839,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             )
           ) : (
             <div
-              className={`sfeed-article-content ${fontSizeClass} ${
+              style={{ fontSize: `calc(var(--sfeed-article-font) * ${fontScale})` }}
+              className={`sfeed-article-content ${
                 isDark ? 'text-slate-200' : 'text-slate-800'
               }`}
               dangerouslySetInnerHTML={{ __html: activeHtml }}
@@ -757,8 +877,9 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           <button aria-label="이전 아티클" disabled={!hasPrev} onClick={() => onNavigateRelative('prev')}><ChevronLeft size={24} /></button>
           <button aria-label="다음 아티클" disabled={!hasNext} onClick={() => onNavigateRelative('next')}><ChevronRight size={24} /></button>
           <button aria-label="글 공유" onClick={() => void shareArticle()}><Share2 size={21} /></button>
-          <button aria-label="글자 크기 변경" onClick={cycleFontSize}><Type size={22} /></button>
+          <button aria-label={mode === 'web' ? '사이트 확대·축소' : '글자 크기'} aria-expanded={sizeToolsOpen} onClick={() => setSizeToolsOpen((open) => !open)}><Type size={22} /></button>
         </nav>
+        {sizeToolsOpen && sizeControl('sfeed-mobile-size-popover lg:hidden')}
       </div>
     </div>
   );

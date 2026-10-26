@@ -47,7 +47,7 @@ export function MobileHeader({ title, library, search, onSearch, onBack, onAdd, 
 export function MobileDock({ active, onSelect, onRefresh, refreshing, onMarkAllRead, library, onAdd }: { /** null on the library, which is not one of the lists. */ active: LibraryTab | null; onSelect: (tab: LibraryTab) => void; onRefresh: () => void; refreshing: boolean; onMarkAllRead: () => void; library?: boolean; onAdd: () => void }) {
   return <nav aria-label="모바일 글 탐색" className="sfeed-mobile-dock lg:hidden">
     <button aria-label="피드 새로고침" disabled={refreshing} onClick={onRefresh}><RefreshCw size={21} className={refreshing ? 'animate-spin' : ''} /></button>
-    <div className="sfeed-mobile-dock-tabs">{([{ id: 'saved', label: '저장', Icon: Bookmark }, { id: 'unread', label: '안 읽음', Icon: null }, { id: 'all', label: '전체', Icon: Archive }] as const).map(({ id, label, Icon }) => <button key={id} aria-label={label} aria-pressed={active === id} onClick={() => onSelect(id)}>{Icon ? <Icon size={21} /> : <span className="sfeed-unread-dot" />}<span>{label}</span></button>)}</div>
+    <div className="sfeed-mobile-dock-tabs">{([{ id: 'all', label: '전체', Icon: Archive }, { id: 'unread', label: '안 읽음', Icon: null }, { id: 'saved', label: '저장', Icon: Bookmark }] as const).map(({ id, label, Icon }) => <button key={id} aria-label={label} aria-pressed={active === id} onClick={() => onSelect(id)}>{Icon ? <Icon size={21} /> : <span className="sfeed-unread-dot" />}<span>{label}</span></button>)}</div>
     <button aria-label={library ? '피드 추가' : '모두 읽음'} onClick={library ? onAdd : onMarkAllRead}>{library ? <Plus size={23} /> : <CheckCheck size={22} />}</button>
   </nav>;
 }

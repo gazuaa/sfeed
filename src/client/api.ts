@@ -39,6 +39,7 @@ export interface SubscriptionItem {
   last_error: string | null;
   unread_count: number;
   total_count: number;
+  saved_count: number;
   view_mode?: ArticleViewMode | null;
 }
 

@@ -4,8 +4,10 @@ import type { BootstrapResponse, FolderItem, SubscriptionItem, UserProfile } fro
 import { MobileHeader, MobileDock, type LibraryTab, type MobileSettingsProps } from './MobileChrome';
 import { InstallCard } from './PwaInstall';
 
-export function MobileLibrary({ user, folders, subscriptions, counts, unreadOnly, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
-  user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts']; unreadOnly: boolean;
+export function MobileLibrary({ user, folders, subscriptions, counts, countTab, onChangeCountTab, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
+  user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts'];
+  /** Which count each folder and feed shows; the dock tabs switch it in place. */
+  countTab: LibraryTab; onChangeCountTab: (tab: LibraryTab) => void;
   onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; onCreateFolder: (name: string) => Promise<void>;
   /** Both ask for confirmation before anything is removed. */
   onDeleteFolder: (id: string) => void; onUnsubscribe: (subscriptionId: string, title: string) => void; onLogout: () => void;
@@ -18,7 +20,7 @@ export function MobileLibrary({ user, folders, subscriptions, counts, unreadOnly
   // Touch screens have no hover, so removing feeds and folders lives in an edit mode.
   const [editing, setEditing] = useState(false);
   const matches = (value: string) => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
-  const count = (feed: SubscriptionItem) => unreadOnly ? feed.unread_count : feed.total_count;
+  const count = (feed: SubscriptionItem) => countTab === 'saved' ? feed.saved_count : countTab === 'unread' ? feed.unread_count : feed.total_count;
   const deleteButton = (label: string, onDelete: () => void) => <button type="button" className="sfeed-mobile-delete" aria-label={label} onClick={onDelete}><Trash2 size={17} /></button>;
   const feedRow = (feed: SubscriptionItem) => <div className="sfeed-mobile-row-wrap" key={feed.id}><button className="sfeed-mobile-library-row sfeed-mobile-feed-row" onClick={() => onSelectFeed(feed.feed_id)}>{feed.favicon_url ? <img src={feed.favicon_url} alt="" /> : <Rss size={20} />}<span>{feed.title}</span><span className="sfeed-mobile-count">{count(feed).toLocaleString()}</span>{!editing && <ChevronRight size={17} />}</button>{editing && deleteButton(`${feed.title} 구독 취소`, () => onUnsubscribe(feed.id, feed.title))}</div>;
   const ungrouped = subscriptions.filter((feed) => !feed.folder_id || !folders.some((folder) => folder.id === feed.folder_id));
@@ -35,6 +37,6 @@ export function MobileLibrary({ user, folders, subscriptions, counts, unreadOnly
       {!subscriptions.length && <div className="sfeed-mobile-empty"><Rss size={28} /><p>관심 있는 피드를 추가해 보세요.</p><button onClick={onAdd}>피드 찾아보기</button></div>}
       <div className="sfeed-mobile-account"><span><strong>{user.name}</strong><small>{user.email}</small></span><button className="sfeed-mobile-icon" aria-label="로그아웃 / 계정 전환" onClick={onLogout}><LogOut size={20} /></button></div>
     </div>
-    <MobileDock library active={null} onSelect={onSelectTab} onRefresh={onRefresh} refreshing={refreshing} onAdd={onAdd} onMarkAllRead={() => {}} />
+    <MobileDock library active={countTab} onSelect={onChangeCountTab} onRefresh={onRefresh} refreshing={refreshing} onAdd={onAdd} onMarkAllRead={() => {}} />
   </section>;
 }

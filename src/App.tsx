@@ -57,6 +57,8 @@ export const App: React.FC = () => {
   const [layout, setLayout] = useState<LayoutMode>('magazine');
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
   const [unreadOnly, setUnreadOnly] = useState(false);
+  // Phones only: the 저장 tab inside a folder or feed list keeps that list.
+  const [savedOnly, setSavedOnly] = useState(false);
 
   // Articles & Reader State
   const [articles, setArticles] = useState<ArticleItem[]>([]);
@@ -80,9 +82,11 @@ export const App: React.FC = () => {
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const isMobile = useMobileViewport();
+  // The desktop sidebar has its own 저장 list; drop the phone-only filter there.
+  useEffect(() => { if (!isMobile) setSavedOnly(false); }, [isMobile]);
   useMobileNavigation(isMobile && !authChecking ? user?.id ?? null : null, {
     scope: activeScope, folderId: activeFolderId, feedId: activeFeedId,
-    search: searchQuery, unread: unreadOnly, articleId: selectedArticleId, library: mobileSidebarOpen,
+    search: searchQuery, unread: unreadOnly, saved: savedOnly, articleId: selectedArticleId, library: mobileSidebarOpen,
   }, (location, scroll) => {
     pendingScroll.current = scroll;
     setActiveScope(location.scope);
@@ -90,6 +94,7 @@ export const App: React.FC = () => {
     setActiveFeedId(location.feedId);
     setSearchQuery(location.search);
     setUnreadOnly(location.unread);
+    setSavedOnly(location.saved === true);
     setSelectedArticleId(location.articleId);
     setMobileSidebarOpen(location.library);
     setDiscoverOpen(false);
@@ -107,7 +112,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (pendingScroll.current === null) articleListRef.current?.scrollTo({ top: 0 });
-  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, searchQuery]);
 
   useLayoutEffect(() => {
     for (const article of articles) articleCache.current.set(article.id, article);
@@ -180,11 +185,14 @@ export const App: React.FC = () => {
     if (activeScope === 'feed' && activeFeedId) {
       qs.set('feedId', activeFeedId);
     }
+    if (savedOnly && activeScope !== 'saved') {
+      qs.set('savedOnly', 'true');
+    }
     if (searchQuery.trim()) {
       qs.set('search', searchQuery.trim());
     }
     return qs;
-  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, searchQuery]);
+  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, searchQuery]);
 
   const fetchArticles = useCallback(async () => {
     if (!user) return;
@@ -641,14 +649,24 @@ export const App: React.FC = () => {
   }
 
   const isDark = theme === 'dark';
-  const mobileTab: LibraryTab = activeScope === 'saved' ? 'saved' : unreadOnly ? 'unread' : 'all';
+  const mobileTab: LibraryTab = activeScope === 'saved' || savedOnly ? 'saved' : unreadOnly ? 'unread' : 'all';
   const openMobileDiscover = (tab: 'curated' | 'opml' = 'curated') => { setDiscoverTab(tab); setDiscoverOpen(true); };
-  const selectMobileTab = (tab: LibraryTab) => { setSearchQuery(''); handleSelectLibraryTab(tab); setMobileSidebarOpen(false); };
-  const filterMobileList = (tab: LibraryTab) => {
-    if (tab === 'saved' || (activeScope !== 'folder' && activeScope !== 'feed')) { selectMobileTab(tab); return; }
-    setUnreadOnly(tab === 'unread');
-    savePreferences({ unreadOnly: tab === 'unread' });
+  const selectMobileTab = (tab: LibraryTab) => { setSearchQuery(''); setSavedOnly(false); handleSelectLibraryTab(tab); setMobileSidebarOpen(false); };
+  // The dock tabs filter what is on screen instead of opening another list:
+  // on the library they switch which count each feed shows, and inside a
+  // folder or feed they filter that list.
+  const applyMobileFilter = (tab: LibraryTab) => {
+    const unread = tab === 'unread';
+    setSavedOnly(tab === 'saved');
+    if (tab !== 'saved' && unread !== unreadOnly) {
+      setUnreadOnly(unread);
+      savePreferences({ unreadOnly: unread });
+    }
     setSelectedArticleId(null);
+  };
+  const filterMobileList = (tab: LibraryTab) => {
+    if (activeScope === 'folder' || activeScope === 'feed') applyMobileFilter(tab);
+    else selectMobileTab(tab);
   };
   const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml') };
 
@@ -772,7 +790,7 @@ export const App: React.FC = () => {
         )}
       </ResizableWorkspace>
 
-      {isMobile && <div hidden={!mobileSidebarOpen}><MobileLibrary user={user} folders={folders} subscriptions={subscriptions} counts={counts} unreadOnly={unreadOnly} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {isMobile && <div hidden={!mobileSidebarOpen}><MobileLibrary user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
       {!mobileSidebarOpen && !selectedArticle && <MobileDock active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
       {markReadTarget && (

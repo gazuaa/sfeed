@@ -33,7 +33,7 @@ try {
   const bootstrap = async (token) => (await app.request('/api/bootstrap', { headers: { authorization: `Bearer ${token}` } }, env)).json();
   const data = await bootstrap(owner.token);
   assert.deepEqual(data.counts, { totalUnread: 2, totalArticles: 5, savedCount: 1, todayCount: 1, todayTotal: 2 });
-  assert.deepEqual(data.subscriptions.map((s) => [s.feed_id, s.total_count, s.unread_count]).sort(), [['one', 3, 1], ['two', 2, 1]]);
+  assert.deepEqual(data.subscriptions.map((s) => [s.feed_id, s.total_count, s.unread_count, s.saved_count]).sort(), [['one', 3, 1, 1], ['two', 2, 1, 0]]);
   const render = (unreadOnly) => renderToStaticMarkup(React.createElement(Sidebar, {
     ...data, user: owner.user, unreadOnly, activeScope: 'all', activeFolderId: null, activeFeedId: null,
     isDark: true, mobileOpen: false, onSelectScope() {}, onOpenDiscover() {}, onCreateFolder() {},
@@ -48,6 +48,9 @@ try {
   assert.equal((await list('scope=all')).length, 5);
   assert.equal((await list('scope=all&unreadOnly=true')).length, 2);
   assert.deepEqual((await list('scope=saved')).map((row) => row.id), ['b'], 'saved must include already-read bookmarks');
+  // The phone's 저장 tab inside a folder or feed keeps that list, unread or not.
+  assert.deepEqual((await list('scope=folder&folderId=folder&savedOnly=true&unreadOnly=true')).map((row) => row.id), ['b']);
+  assert.deepEqual((await list('scope=feed&feedId=two&savedOnly=true')).map((row) => row.id), []);
   const otherData = await bootstrap(other.token);
   assert.equal(otherData.counts.totalArticles, 1);
   assert.equal(otherData.counts.totalUnread, 1);
@@ -63,7 +66,7 @@ try {
   assert.equal((await bootstrap(owner.token)).counts.totalUnread, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'a').first()).is_read, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'd').first()), null);
-  console.log('PASS: All/Unread/Saved navigation counts and filters; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved.');
+  console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved.');
 } finally {
   await vite.close();
 }

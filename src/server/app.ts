@@ -17,7 +17,7 @@ import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './r
 import { READER_FALLBACK_MARK, realFullContent, scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
 import { fetchPreviewImage } from './previewImage';
-import { analyseBuilderPage, builderParsedFeed, builderSiteInfo, publicPageUrl } from './rssBuilder';
+import { analyseBuilderPage, builderParsedFeed, builderSiteInfo, fetchPage, publicPageUrl, webCopy } from './rssBuilder';
 import { refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './feedLoader';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { resolveArticlePublication, type PublicationArticle } from './articlePublication';
@@ -344,6 +344,12 @@ app.get('/api/bootstrap', async (c) => {
          WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0
        ) as unread_count,
        (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id) as total_count,
+       (
+         SELECT COUNT(*)
+         FROM article_states st
+         JOIN articles a ON a.id = st.article_id
+         WHERE st.user_id = s.user_id AND st.is_saved = 1 AND a.feed_id = f.id
+       ) as saved_count,
        (SELECT v.view_mode FROM feed_view_modes v WHERE v.user_id = s.user_id AND v.feed_id = s.feed_id) as view_mode
      FROM subscriptions s
      JOIN feeds f ON f.id = s.feed_id
@@ -357,6 +363,7 @@ app.get('/api/bootstrap', async (c) => {
     ...s,
     unread_count: Number(s.unread_count || 0),
     total_count: Number(s.total_count || 0),
+    saved_count: Number(s.saved_count || 0),
   }));
 
   const totalUnread = subscriptions.reduce((sum, s) => sum + s.unread_count, 0);
@@ -724,6 +731,8 @@ app.get('/api/articles', async (c) => {
   const folderId = c.req.query('folderId') || '';
   const feedId = c.req.query('feedId') || '';
   const unreadOnly = c.req.query('unreadOnly') === 'true';
+  // Saved articles within a folder or feed (the phone's 저장 tab on a list).
+  const savedOnly = c.req.query('savedOnly') === 'true';
   const search = (c.req.query('search') || '').trim();
   const limit = Math.min(Number(c.req.query('limit') || 80), 200);
   // Keyset cursor: the last article of the previous page (published_at, id).
@@ -752,7 +761,10 @@ app.get('/api/articles', async (c) => {
     params.push(twentyFourHoursAgo);
   }
 
-  if (!articleId && unreadOnly && scope !== 'saved') {
+  if (!articleId && savedOnly && scope !== 'saved') {
+    conditions.push('COALESCE(st.is_saved, 0) = 1');
+  }
+  if (!articleId && unreadOnly && !savedOnly && scope !== 'saved') {
     conditions.push('a.published_at >= ? AND COALESCE(st.is_read, 0) = 0');
     params.push(cutoff);
   }
@@ -999,6 +1011,22 @@ app.get('/api/articles/:id/embeddable', async (c) => {
     .first<{ url: string }>();
   if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
   return c.json(await checkEmbeddable(article.url, new URL(c.req.url).origin));
+});
+
+// Web view for sites that refuse to be framed: a script-free copy of the page.
+app.get('/api/articles/:id/web-copy', async (c) => {
+  const article = await c.env.DB.prepare(
+    'SELECT a.url FROM articles a WHERE a.id = ? AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id = a.feed_id AND s.user_id = ?)'
+  )
+    .bind(c.req.param('id'), c.get('user').id)
+    .first<{ url: string }>();
+  if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
+  try {
+    const page = await fetchPage(article.url);
+    return c.json({ html: webCopy(page.html, page.url), url: page.url });
+  } catch {
+    return c.json({ error: '원문 페이지를 불러오지 못했습니다.' }, 502);
+  }
 });
 
 app.post('/api/articles/:id/reader-view', async (c) => {

@@ -7,6 +7,8 @@ export interface MobileLocation {
   feedId: string | null;
   search: string;
   unread: boolean;
+  /** 저장 tab inside a folder or feed list; missing in older history entries. */
+  saved?: boolean;
   articleId: string | null;
   library: boolean;
 }
@@ -21,8 +23,9 @@ interface Entry {
   scroll: number;
 }
 const key = 'sfeedNavigation';
-const equal = (a: MobileLocation, b: MobileLocation) => JSON.stringify(a) === JSON.stringify(b);
-const sameList = (a: MobileLocation, b: MobileLocation) => a.scope === b.scope && a.folderId === b.folderId && a.feedId === b.feedId && a.unread === b.unread && a.search === b.search;
+const normal = (location: MobileLocation): MobileLocation => ({ ...location, saved: location.saved === true });
+const equal = (a: MobileLocation, b: MobileLocation) => JSON.stringify(normal(a)) === JSON.stringify(normal(b));
+const sameList = (a: MobileLocation, b: MobileLocation) => a.scope === b.scope && a.folderId === b.folderId && a.feedId === b.feedId && a.unread === b.unread && Boolean(a.saved) === Boolean(b.saved) && a.search === b.search;
 const root = (location: MobileLocation): MobileLocation => ({ ...location, articleId: null, library: true });
 
 // Keep only navigation identifiers in history, never article bodies or tokens.
