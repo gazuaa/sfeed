@@ -2,7 +2,7 @@ import type { ArticleItem, BootstrapResponse } from './api';
 import type { ReaderSyncDelta } from '../shared/readerSync';
 import { patchPage } from './syncPages';
 import { openDeviceDatabase as openDatabase } from './deviceDatabase';
-import { retentionAge } from './cachePolicy';
+import { retentionAge, SNAPSHOT_LIMITS } from './cachePolicy';
 import { rememberArticles } from './deviceContent';
 
 export interface ArticlePage { articles: ArticleItem[]; hasMore?: boolean; syncSequence?: number; syncEpoch?: string; needsRefresh?: boolean }
@@ -13,7 +13,7 @@ export interface SnapshotStorage {
   remove(account: string): Promise<void>;
   keys?(account: string): Promise<string[]>;
 }
-export const CACHE_LIMITS = { entries: 24, bytes: 8 * 1024 * 1024, age: 30 * 86400_000 };
+export const CACHE_LIMITS = { entries: 48, bytes: 8 * 1024 * 1024, age: 30 * 86400_000 };
 export const deviceSnapshots: SnapshotStorage = {
   async keys(account) {
     const db = await openDatabase();
@@ -54,7 +54,7 @@ export const deviceSnapshots: SnapshotStorage = {
           if (item) { const [at, size] = item.key as number[]; rows.push({ key: item.primaryKey, size, at }); item.continue(); return; }
           let bytes = rows.reduce((sum, row) => sum + row.size, 0), count = rows.length;
           for (const row of rows) {
-            if (row.at + retentionAge(String((row.key as string[])[0])) > Date.now() && count <= CACHE_LIMITS.entries && bytes <= CACHE_LIMITS.bytes) break;
+            if (row.at + retentionAge(String((row.key as string[])[0])) > Date.now() && count <= SNAPSHOT_LIMITS.entries && bytes <= SNAPSHOT_LIMITS.bytes) break;
             store.delete(row.key); count--; bytes -= row.size;
           }
         };
@@ -125,6 +125,8 @@ export class ReaderCache {
     let bytes = [...this.entries.values()].reduce((sum, entry) => sum + entry.size, 0);
     for (const [key, snapshot] of this.entries) {
       if (this.entries.size <= CACHE_LIMITS.entries && bytes <= CACHE_LIMITS.bytes) break;
+      // The bootstrap holds the sync epoch that marks every saved list as current.
+      if (key === 'bootstrap') continue;
       this.entries.delete(key); bytes -= snapshot.size;
     }
   }
@@ -139,6 +141,13 @@ export class ReaderCache {
     if (key.startsWith('articles?') && this.overrides.size) snapshot.data = patchPage(snapshot.data as ArticlePage, key, [...this.overrides.values()], new Set(), new Set(), this.entries.get('bootstrap')?.data as BootstrapResponse | undefined);
     this.entries.delete(key); this.entries.set(key, snapshot);
     this.trim();
+    return snapshot.data as T;
+  }
+  /** The saved value when it is already in memory, so a ready list paints without waiting a frame. */
+  peek<T extends Snapshot['data']>(key: string): T | undefined {
+    const snapshot = this.entries.get(key);
+    if (this.closed || !snapshot || snapshot.savedAt + retentionAge(this.account) <= this.now()) return;
+    if (key.startsWith('articles?') && this.overrides.size) snapshot.data = patchPage(snapshot.data as ArticlePage, key, [...this.overrides.values()], new Set(), new Set(), this.entries.get('bootstrap')?.data as BootstrapResponse | undefined);
     return snapshot.data as T;
   }
   put(key: string, data: Snapshot['data']) {

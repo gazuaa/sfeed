@@ -58,6 +58,7 @@ export const App: React.FC = () => {
   const localNotifications = useLocalNotifications(readerCache?.account ?? '');
   const notificationArticle = useRef<string | null>(null);
   const publishSyncedPage = useRef<() => Promise<void>>(async () => {});
+  const warmListsRef = useRef<() => Promise<void>>(async () => {});
   const loggingOut = useRef(false);
   const applySyncedChanges = useRef<(delta: import('./shared/readerSync').ReaderSyncDelta) => void>(() => {});
   const readerPreloader = useMemo(() => readerCache ? new ReaderPreloader(readerCache) : null, [readerCache]);
@@ -284,11 +285,15 @@ export const App: React.FC = () => {
     bootstrapTimer.current = setTimeout(() => { bootstrapTimer.current = null; void fetchBootstrap(); }, 10_000);
   }, [fetchBootstrap]);
 
+  // A background sync ends once the visible list and the lists a tap opens
+  // next are ready, so the turning refresh button means loading is done.
+  const syncInBackground = useCallback(() => showSync(fetchBootstrap().then(() => publishSyncedPage.current()).then(() => warmListsRef.current())), [showSync, fetchBootstrap]);
+
   // Refresh another device's changes when returning to the app, without
   // making every article click run the expensive full-library counts query.
   useEffect(() => {
     if (!readerCache) return;
-    const visible = () => { if (document.visibilityState === 'visible') void showSync(fetchBootstrap().then(() => publishSyncedPage.current())); };
+    const visible = () => { if (document.visibilityState === 'visible') void syncInBackground(); };
     const sessionChanged = (event: StorageEvent) => {
       if (event.key === 'sfeed_session_token' && event.newValue !== event.oldValue) {
         void readerCache.close().finally(() => window.location.reload());
@@ -297,7 +302,7 @@ export const App: React.FC = () => {
     document.addEventListener('visibilitychange', visible);
     window.addEventListener('storage', sessionChanged);
     return () => { document.removeEventListener('visibilitychange', visible); window.removeEventListener('storage', sessionChanged); };
-  }, [readerCache, fetchBootstrap, showSync]);
+  }, [readerCache, syncInBackground]);
 
   const buildArticleQuery = useCallback(() => {
     const qs = new URLSearchParams({
@@ -359,10 +364,11 @@ export const App: React.FC = () => {
     const token = getStoredToken();
     const current = () => request === articleRequestRef.current && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
     const qs = buildArticleQuery();
-    setLoadingArticles(displayedArticleQuery.current !== qs.toString());
     articleQueryRef.current = qs.toString();
+    const ready = readerSync.ready(qs);
+    setLoadingArticles(!ready && displayedArticleQuery.current !== qs.toString());
     try {
-      const res = await readerSync.page(qs, current, () => Promise.allSettled([...stateWrites.current.values()]));
+      const res = ready ?? await readerSync.page(qs, current, () => Promise.allSettled([...stateWrites.current.values()]));
       if (res && current()) {
         displayedArticleQuery.current = qs.toString();
         setArticles(retainReadRows ? unreadSession.merge(res.articles, articleSort) : res.articles);
@@ -373,30 +379,34 @@ export const App: React.FC = () => {
   }, [readerCache, readerSync, buildArticleQuery, retainReadRows, unreadSession, fetchBootstrap, articleSort]);
   publishSyncedPage.current = fetchArticles;
 
-  useEffect(() => {
+  // The library tabs and every folder's first screen, downloaded one at a time.
+  const warmLists = useCallback((alive: () => boolean = () => true) => {
     const cache = readerCache;
-    if (!cache || !readerPreloader || preloadVersion?.cache !== cache || loadingBootstrap || loadingArticles || refreshingFeeds) return;
-    const queries = preloadArticleQueries(buildArticleQuery());
-    if (!queries.length) return;
+    if (!cache || !readerPreloader || preloadVersion?.cache !== cache) return Promise.resolve();
+    const queries = preloadArticleQueries(buildArticleQuery(), folders.map((folder) => folder.id));
     const token = authenticatedToken.current;
+    const current = () => alive() && document.visibilityState === 'visible' && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
+    if (!queries.length || !current()) return Promise.resolve();
+    return readerPreloader.run(queries, preloadVersion.version, async (query) => {
+      await Promise.allSettled([...stateWrites.current.values()]);
+      if (!current() || !cache.active) throw new Error('Session changed');
+      return apiRequest<ArticlePage>(`/api/articles?${query}`);
+    }, current);
+  }, [readerCache, readerPreloader, preloadVersion, buildArticleQuery, folders]);
+  warmListsRef.current = warmLists;
+
+  useEffect(() => {
+    if (loadingBootstrap || loadingArticles || refreshingFeeds) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
-    const current = () => !cancelled && document.visibilityState === 'visible' && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
     const start = () => {
       clearTimeout(timer);
-      if (!current()) return;
-      timer = setTimeout(() => {
-        void readerPreloader.run(queries, preloadVersion.version, async (query) => {
-          await Promise.allSettled([...stateWrites.current.values()]);
-          if (!current() || !cache.active) throw new Error('Session changed');
-          return apiRequest<ArticlePage>(`/api/articles?${query}`);
-        }, current);
-      }, 350);
+      if (document.visibilityState === 'visible') timer = setTimeout(() => void warmLists(() => !cancelled), 350);
     };
     start();
     document.addEventListener('visibilitychange', start);
     return () => { cancelled = true; clearTimeout(timer); document.removeEventListener('visibilitychange', start); };
-  }, [readerCache, readerPreloader, preloadVersion, buildArticleQuery, loadingBootstrap, loadingArticles, refreshingFeeds]);
+  }, [warmLists, loadingBootstrap, loadingArticles, refreshingFeeds]);
 
   useEffect(() => {
     if (pendingScroll.current === null || loadingArticles || mobileSidebarOpen || selectedArticleId || articleQueryRef.current !== buildArticleQuery().toString()) return;
@@ -475,9 +485,9 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      void showSync(fetchBootstrap());
+      void syncInBackground();
     }
-  }, [user, fetchBootstrap, showSync]);
+  }, [user, syncInBackground]);
 
   useEffect(() => {
     if (user) {
@@ -515,7 +525,7 @@ export const App: React.FC = () => {
   };
   useAutoRefresh(Boolean(user), autoRefreshMinutes, async () => {
     if (refreshingFeedsRef.current || !readerCache?.active) return;
-    await showSync(fetchBootstrap());
+    await syncInBackground();
   }, localNotifications);
 
   const handleSelectScope = (
@@ -696,6 +706,7 @@ export const App: React.FC = () => {
       });
       readerCache?.touch();
       await Promise.all([fetchBootstrap(), fetchArticles()]);
+      await warmListsRef.current();
     } catch {
       // ignore
     } finally {

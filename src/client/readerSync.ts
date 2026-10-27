@@ -42,6 +42,11 @@ export class ReaderSync {
     this.cache.put('bootstrap', bootstrap);
     return { bootstrap, changed: true, reset: true };
   }
+  /** A current list already in memory; anything else goes through page(). */
+  ready(query: URLSearchParams): ArticlePage | undefined {
+    const cached = this.cache.peek<ArticlePage>(articlePageKey(query));
+    return cached && !cached.needsRefresh && cached.syncEpoch && cached.syncEpoch === this.cache.epoch ? cached : undefined;
+  }
   async page(query: URLSearchParams, current: () => boolean, pending: () => Promise<unknown>): Promise<ArticlePage | undefined> {
     const key = articlePageKey(query);
     const cached = await this.cache.get<ArticlePage>(key);

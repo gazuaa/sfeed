@@ -8,7 +8,7 @@ export function feedCacheVersion(data: BootstrapResponse): string {
   return JSON.stringify(data.subscriptions.map((sub) => [sub.feed_id, sub.folder_id, sub.total_count, sub.last_fetched_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 }
 
-export function preloadArticleQueries(current: URLSearchParams): URLSearchParams[] {
+export function preloadArticleQueries(current: URLSearchParams, folderIds: string[] = []): URLSearchParams[] {
   if (current.get('search')) return [];
   const queries = [
     new URLSearchParams({ scope: 'all', unreadOnly: 'false' }),
@@ -21,9 +21,22 @@ export function preloadArticleQueries(current: URLSearchParams): URLSearchParams
     const base = { scope: scope!, [field]: current.get(field)! };
     queries.push(new URLSearchParams({ ...base, unreadOnly: 'false' }), new URLSearchParams({ ...base, unreadOnly: 'true' }), new URLSearchParams({ ...base, unreadOnly: 'false', savedOnly: 'true' }));
   }
+  // Every folder's first screen under the filter in use, so opening one
+  // after a sync shows it at once.
+  for (const folderId of folderIds) {
+    const query = new URLSearchParams({ scope: 'folder', unreadOnly: current.get('unreadOnly') ?? 'false', folderId });
+    if (current.get('savedOnly') === 'true') query.set('savedOnly', 'true');
+    queries.push(query);
+  }
   const active = articlePageKey(current);
   if (current.get('sort') === 'oldest') queries.forEach((query) => query.set('sort', 'oldest'));
-  return queries.filter((query) => articlePageKey(query) !== active);
+  // The selected folder appears twice; each list is downloaded once.
+  const seen = new Set([active]);
+  return queries.filter((query) => {
+    const key = articlePageKey(query);
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
 }
 
 // One background request at a time, after the visible screen has loaded.

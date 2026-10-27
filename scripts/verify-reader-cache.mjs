@@ -103,6 +103,11 @@ try {
   assert.equal(folderPlan.length, 5, 'only library tabs and the selected folder are warmed');
   assert.equal(folderPlan.filter((query) => query.get('folderId') === 'folder-one').length, 2);
   assert.equal(preloadArticleQueries(new URLSearchParams('scope=all&search=bitcoin')).length, 0, 'search does not trigger speculative downloads');
+  const folderWarm = preloadArticleQueries(new URLSearchParams('scope=all&unreadOnly=true&sort=oldest'), ['folder-one', 'folder-two']);
+  assert.deepEqual(folderWarm.filter((query) => query.get('scope') === 'folder').map((query) => `${query.get('folderId')}:${query.get('unreadOnly')}:${query.get('sort')}`), ['folder-one:true:oldest', 'folder-two:true:oldest'], 'every folder is warmed under the filter in use');
+  const insideFolder = preloadArticleQueries(new URLSearchParams('scope=folder&folderId=folder-one&unreadOnly=false'), ['folder-one', 'folder-two']).map((query) => articlePageKey(query));
+  assert.equal(new Set(insideFolder).size, insideFolder.length, 'the selected folder is not downloaded twice');
+  assert.ok(!insideFolder.includes(articlePageKey(new URLSearchParams('scope=folder&folderId=folder-one&unreadOnly=false'))));
   assert.equal(feedCacheVersion(bootstrap), feedCacheVersion({ ...bootstrap, subscriptions: [{ ...sub, unread_count: 0, saved_count: 1 }] }), 'read/save counts do not refetch the library');
   const updated = { ...bootstrap, subscriptions: [{ ...sub, total_count: 6, last_fetched_at: 'updated' }] };
   assert.notEqual(feedCacheVersion(bootstrap), feedCacheVersion(updated), 'a new feed update invalidates the preload version');
@@ -160,5 +165,16 @@ try {
   assert.ok(await resilient.get(articlePageKey(plan[1])), 'one failed preload does not block another list');
   await resilientLoader.run(plan, 'v1', async () => { failedRequests++; return { articles: [article] }; }, () => true);
   assert.equal(failedRequests, 3, 'a failed preload can be retried');
-  console.log('PASS: cached paint/reload, logout retention, account isolation, stale response protection, optimistic state, cache limits, bounded serial preloading, shared foreground requests, feed-update refresh, cancellation and retry.');
+  const { ReaderSync } = await vite.ssrLoadModule('/src/client/readerSync.ts');
+  const instant = new ReaderCache('instant', storage), instantSync = new ReaderSync(instant, async () => { throw Error('offline'); });
+  const folderQuery = new URLSearchParams('scope=folder&folderId=folder-one&unreadOnly=false');
+  assert.equal(instantSync.ready(folderQuery), undefined);
+  instant.put('bootstrap', { ...bootstrap, cacheEpoch: 'synced' });
+  instant.put(articlePageKey(folderQuery), { articles: [article], syncEpoch: 'synced' });
+  assert.equal(instantSync.ready(folderQuery).articles.length, 1, 'a warmed folder paints without waiting for storage or the network');
+  instant.put(articlePageKey(folderQuery), { articles: [article], syncEpoch: 'earlier' });
+  assert.equal(instantSync.ready(folderQuery), undefined, 'a list saved before the last sync is checked first');
+  for (let i = 0; i <= CACHE_LIMITS.entries; i++) instant.put(articlePageKey(new URLSearchParams(`scope=feed&feedId=many-${i}&unreadOnly=false`)), { articles: [] });
+  assert.equal(instant.epoch, 'synced', 'many saved lists never push the sync epoch out of memory');
+  console.log('PASS: cached paint/reload, logout retention, account isolation, stale response protection, optimistic state, cache limits, bounded serial preloading, folder warming, instant ready lists, shared foreground requests, feed-update refresh, cancellation and retry.');
 } finally { await vite.close(); }

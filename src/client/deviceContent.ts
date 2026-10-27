@@ -1,6 +1,6 @@
 import type { ArticleItem } from './api';
 import { openDeviceDatabase } from './deviceDatabase';
-import { cacheGeneration, CONTENT_LIMIT, estimateBytes, retentionAge } from './cachePolicy';
+import { cacheGeneration, CONTENT_LIMIT, estimateBytes, retentionAge, SNAPSHOT_LIMITS } from './cachePolicy';
 
 export interface ContentEntry { account: string; key: string; data: Partial<ArticleItem> | { html: string; url: string }; savedAt: number; size: number }
 const memory = new Map<string, ContentEntry>();
@@ -79,7 +79,7 @@ export async function maintainDeviceCache(account: string, clear = false) {
         }
         let total = rows.reduce((sum, row) => sum + row.size, 0);
         for (const row of rows) {
-          if (clear || row.at + retentionAge(account) <= Date.now() || total > (name === 'content' ? CONTENT_LIMIT : 32 * 1024 * 1024)) { store.delete(row.key); total -= row.size; }
+          if (clear || row.at + retentionAge(account) <= Date.now() || total > (name === 'content' ? CONTENT_LIMIT : SNAPSHOT_LIMITS.bytes)) { store.delete(row.key); total -= row.size; }
           else { bytes += row.size; entries++; }
         }
       };
