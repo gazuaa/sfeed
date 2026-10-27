@@ -122,6 +122,13 @@ export const App: React.FC = () => {
   const [restoredArticle, setRestoredArticle] = useState<ArticleItem | null>(null);
   const [refreshingFeeds, setRefreshingFeeds] = useState(false);
   const refreshingFeedsRef = useRef(false);
+  // Syncs on launch, on returning to the app and on the refresh interval turn
+  // the refresh button, so a list that changes on its own explains itself.
+  const [backgroundSyncs, setBackgroundSyncs] = useState(0);
+  const showSync = useCallback((task: Promise<unknown>) => {
+    setBackgroundSyncs((count) => count + 1);
+    return task.finally(() => setBackgroundSyncs((count) => count - 1));
+  }, []);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
   // Modals & Mobile Sidebar
@@ -281,7 +288,7 @@ export const App: React.FC = () => {
   // making every article click run the expensive full-library counts query.
   useEffect(() => {
     if (!readerCache) return;
-    const visible = () => { if (document.visibilityState === 'visible') void fetchBootstrap().then(() => publishSyncedPage.current()); };
+    const visible = () => { if (document.visibilityState === 'visible') void showSync(fetchBootstrap().then(() => publishSyncedPage.current())); };
     const sessionChanged = (event: StorageEvent) => {
       if (event.key === 'sfeed_session_token' && event.newValue !== event.oldValue) {
         void readerCache.close().finally(() => window.location.reload());
@@ -290,7 +297,7 @@ export const App: React.FC = () => {
     document.addEventListener('visibilitychange', visible);
     window.addEventListener('storage', sessionChanged);
     return () => { document.removeEventListener('visibilitychange', visible); window.removeEventListener('storage', sessionChanged); };
-  }, [readerCache, fetchBootstrap]);
+  }, [readerCache, fetchBootstrap, showSync]);
 
   const buildArticleQuery = useCallback(() => {
     const qs = new URLSearchParams({
@@ -468,9 +475,9 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      fetchBootstrap();
+      void showSync(fetchBootstrap());
     }
-  }, [user, fetchBootstrap]);
+  }, [user, fetchBootstrap, showSync]);
 
   useEffect(() => {
     if (user) {
@@ -508,7 +515,7 @@ export const App: React.FC = () => {
   };
   useAutoRefresh(Boolean(user), autoRefreshMinutes, async () => {
     if (refreshingFeedsRef.current || !readerCache?.active) return;
-    await fetchBootstrap();
+    await showSync(fetchBootstrap());
   }, localNotifications);
 
   const handleSelectScope = (
@@ -1070,6 +1077,7 @@ export const App: React.FC = () => {
             onChangeTheme={handleChangeTheme}
             onRefresh={handleRefreshFeeds}
             refreshing={refreshingFeeds}
+            syncing={backgroundSyncs > 0}
             onMarkAllRead={handleMarkAllRead}
             onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
             markReadOnScroll={markReadOnScroll}
@@ -1151,9 +1159,9 @@ export const App: React.FC = () => {
         )}
       </ResizableWorkspace>
 
-      {isMobile && <div className="sfeed-mobile-library-host" data-open={mobileSidebarOpen || undefined}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {isMobile && <div className="sfeed-mobile-library-host" data-open={mobileSidebarOpen || undefined}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} syncing={backgroundSyncs > 0} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
       {isMobile && !selectedArticle && <PullRefreshIndicator distance={pullDistance} refreshing={refreshingFeeds} />}
-      {!mobileSidebarOpen && !selectedArticle && <MobileDock hidden={chromeHidden} active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
+      {!mobileSidebarOpen && !selectedArticle && <MobileDock hidden={chromeHidden} active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} syncing={backgroundSyncs > 0} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
       {markReadTarget && (
         <MarkAllReadDialog

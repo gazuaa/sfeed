@@ -63,5 +63,16 @@ try {
   assert.match(render(20, false), /당겨서 새로고침/);
   assert.match(render(PULL_REFRESH_THRESHOLD, false), /놓으면 새로고침/);
   assert.match(render(0, true), /새로고침 중/);
-  console.log('PASS: pull threshold/release, progress state, request deduplication, top-only scrolling, iOS bounce, horizontal back gestures, cancellation, pinch/input/dialog guards and cleanup.');
+
+  const { MobileDock } = await vite.ssrLoadModule('/src/components/MobileChrome.tsx');
+  const dock = (props) => renderToStaticMarkup(React.createElement(MobileDock, { active: 'all', onSelect() {}, onRefresh() {}, onMarkAllRead() {}, onAdd() {}, refreshing: false, ...props }));
+  const refreshButton = (markup) => markup.match(/<button aria-label="피드 새로고침"[^>]*>.*?<\/button>/)[0];
+  assert.doesNotMatch(refreshButton(dock({})), /animate-spin|aria-busy/);
+  for (const state of [{ syncing: true }, { refreshing: true }]) {
+    const button = refreshButton(dock(state));
+    assert.match(button, /animate-spin/, 'the dock icon turns during a background sync and a full refresh');
+    assert.match(button, /aria-busy="true"/);
+    assert.doesNotMatch(button, /disabled/, 'the turning icon stays at full strength and the press is deduplicated by the refresh itself');
+  }
+  console.log('PASS: pull threshold/release, progress state, request deduplication, top-only scrolling, iOS bounce, horizontal back gestures, cancellation, pinch/input/dialog guards, cleanup and the dock sync spinner.');
 } finally { await vite.close(); }

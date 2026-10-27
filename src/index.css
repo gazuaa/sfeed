@@ -221,6 +221,8 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-dock button:disabled { opacity: .3; cursor: default; }
   .sfeed-mobile-dock button[aria-pressed=true] { background: var(--sfeed-mobile-selected); color: #059669; }
   html.dark .sfeed-mobile-dock button[aria-pressed=true] { color: #34d399; }
+  .sfeed-mobile-dock svg[data-spinning] { color: #059669; }
+  html.dark .sfeed-mobile-dock svg[data-spinning] { color: #34d399; }
   .sfeed-mobile-dock-tabs { display: flex; flex: 1; gap: 2px; padding: 0 3px; }
   .sfeed-mobile-dock-tabs button { flex: 1; }
   .sfeed-unread-dot { display: inline-block; width: 12px; height: 12px; margin: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }

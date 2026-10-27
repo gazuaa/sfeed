@@ -5,12 +5,12 @@ import { MobileHeader, MobileDock, type LibraryTab, type MobileSettingsProps } f
 import { InstallCard } from './PwaInstall';
 import { useScrollChrome } from '../client/mobile';
 
-export function MobileLibrary({ user, folders, subscriptions, counts, countTab, visible = true, onChangeCountTab, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
+export function MobileLibrary({ user, folders, subscriptions, counts, countTab, visible = true, onChangeCountTab, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, syncing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
   user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts'];
   /** Which count each folder and feed shows; the dock tabs switch it in place. */
   countTab: LibraryTab; onChangeCountTab: (tab: LibraryTab) => void;
   visible?: boolean;
-  onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; onCreateFolder: (name: string) => Promise<void>;
+  onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; syncing?: boolean; onCreateFolder: (name: string) => Promise<void>;
   /** Both ask for confirmation before anything is removed. */
   onDeleteFolder: (id: string) => void; onUnsubscribe: (subscriptionId: string, title: string) => void; onLogout: () => void;
 }) {
@@ -44,6 +44,6 @@ export function MobileLibrary({ user, folders, subscriptions, counts, countTab, 
       {!subscriptions.length && <div className="sfeed-mobile-empty"><Rss size={28} /><p>관심 있는 피드를 추가해 보세요.</p><button onClick={onAdd}>피드 찾아보기</button></div>}
       <div className="sfeed-mobile-account"><span><strong>{user.name}</strong><small>{user.email}</small></span><button className="sfeed-mobile-icon" aria-label="로그아웃 / 계정 전환" onClick={onLogout}><LogOut size={20} /></button></div>
     </div>
-    <MobileDock library hidden={chromeHidden} active={countTab} onSelect={onChangeCountTab} onRefresh={onRefresh} refreshing={refreshing} onAdd={onAdd} onMarkAllRead={() => {}} />
+    <MobileDock library hidden={chromeHidden} active={countTab} onSelect={onChangeCountTab} onRefresh={onRefresh} refreshing={refreshing} syncing={syncing} onAdd={onAdd} onMarkAllRead={() => {}} />
   </section>;
 }

@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Search,
-  RefreshCw,
   CheckCheck,
   ArrowDownUp,
   Menu,
@@ -10,6 +9,7 @@ import {
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
 import { ThemeSwitch } from './ThemeSwitch';
+import { RefreshIcon } from './RefreshIcon';
 import { DesktopReadingSettings, type DesktopSettingsProps } from './ReadingSettings';
 
 interface HeaderBarProps extends DesktopSettingsProps {
@@ -23,6 +23,8 @@ interface HeaderBarProps extends DesktopSettingsProps {
   onChangeTheme: (theme: ThemeMode) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  /** A background sync turns the icon while the button stays available. */
+  syncing?: boolean;
   onMarkAllRead: () => void;
   onOpenMobileSidebar: () => void;
 }
@@ -39,6 +41,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onChangeTheme,
   onRefresh,
   refreshing,
+  syncing = false,
   onMarkAllRead,
   onOpenMobileSidebar,
   markReadOnScroll,
@@ -135,8 +138,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              <RefreshCw
-                className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`}
+              <RefreshIcon
+                spinning={refreshing || syncing}
+                className="w-4 h-4 data-[spinning]:text-emerald-400"
               />
             </button>
 

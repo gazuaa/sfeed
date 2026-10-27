@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, RefreshCw, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
+import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
 import { ScrollReadSetting, TextSizeControl, LayoutSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps } from './ReadingSettings';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
 import { CacheSettings } from './CacheSettings';
+import { RefreshIcon } from './RefreshIcon';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
 export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps {
@@ -57,9 +58,9 @@ export function MobileHeader({ title, library, hidden, search, onSearch, onBack,
   </header>;
 }
 
-export function MobileDock({ active, onSelect, onRefresh, refreshing, onMarkAllRead, library, onAdd, hidden }: { /** null on the library, which is not one of the lists. */ active: LibraryTab | null; onSelect: (tab: LibraryTab) => void; onRefresh: () => void; refreshing: boolean; onMarkAllRead: () => void; library?: boolean; onAdd: () => void; hidden?: boolean }) {
+export function MobileDock({ active, onSelect, onRefresh, refreshing, syncing = false, onMarkAllRead, library, onAdd, hidden }: { /** null on the library, which is not one of the lists. */ active: LibraryTab | null; onSelect: (tab: LibraryTab) => void; onRefresh: () => void; refreshing: boolean; /** A background sync, which turns the icon without blocking a full refresh. */ syncing?: boolean; onMarkAllRead: () => void; library?: boolean; onAdd: () => void; hidden?: boolean }) {
   return <nav aria-label="모바일 글 탐색" className="sfeed-mobile-dock lg:hidden" data-scroll-hidden={hidden || undefined} inert={hidden || undefined} aria-hidden={hidden || undefined}>
-    <button aria-label="피드 새로고침" disabled={refreshing} onClick={onRefresh}><RefreshCw size={21} className={refreshing ? 'animate-spin' : ''} /></button>
+    <button aria-label="피드 새로고침" aria-busy={refreshing || syncing || undefined} onClick={onRefresh}><RefreshIcon size={21} spinning={refreshing || syncing} /></button>
     <div className="sfeed-mobile-dock-tabs">{([{ id: 'all', label: '전체', Icon: Archive }, { id: 'unread', label: '안 읽음', Icon: null }, { id: 'saved', label: '저장', Icon: Bookmark }] as const).map(({ id, label, Icon }) => <button key={id} aria-label={label} aria-pressed={active === id} onClick={() => onSelect(id)}>{Icon ? <Icon size={21} /> : <span className="sfeed-unread-dot" />}<span>{label}</span></button>)}</div>
     <button aria-label={library ? '피드 추가' : '모두 읽음'} onClick={library ? onAdd : onMarkAllRead}>{library ? <Plus size={23} /> : <CheckCheck size={22} />}</button>
   </nav>;
