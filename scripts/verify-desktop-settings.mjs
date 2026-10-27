@@ -36,6 +36,9 @@ try {
   doc.visibilityState = 'hidden'; doc.dispatchEvent(new Event('visibilitychange')); assert.equal(tasks.size, 0);
   doc.visibilityState = 'visible'; doc.dispatchEvent(new Event('visibilitychange')); assert.equal(tasks.size, 1);
   cleanup(); assert.equal(tasks.size, 0);
+  const minuteCleanup = bindAutoRefresh(doc, 1, async () => {}, clock);
+  assert.equal([...tasks.values()][0].delay, 60_000, 'one-minute refresh is supported');
+  minuteCleanup(); assert.equal(tasks.size, 0);
   for (const minutes of [0, 2, -1]) { bindAutoRefresh(doc, minutes, async () => {}, clock)(); assert.equal(tasks.size, 0); }
 
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
@@ -48,6 +51,8 @@ try {
   const changed = await update({ theme: 'light' });
   assert.equal(changed.autoRefreshMinutes, 5); assert.equal(changed.markReadOnScroll, true);
   assert.equal((await update({ autoRefreshMinutes: 2 })).autoRefreshMinutes, 5, 'unsupported intervals are ignored');
+  assert.equal((await update({ autoRefreshMinutes: 1 })).autoRefreshMinutes, 1, 'one-minute refresh can be saved');
+  assert.equal((await update({ theme: 'dark' })).autoRefreshMinutes, 1, 'one-minute refresh survives other preference changes');
   assert.equal((await update({ autoRefreshMinutes: 0 })).autoRefreshMinutes, 0, 'manual refresh is retained');
   console.log('PASS: account-scoped folder persistence and first paint; refresh interval settings/defaults; visible-only scheduling, overlap prevention, cleanup and manual mode.');
 } finally {
