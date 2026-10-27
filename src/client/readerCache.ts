@@ -147,7 +147,8 @@ export class ReaderCache {
     const snapshot: Snapshot = { account: this.account, key, data, savedAt: this.now(), size };
     this.entries.delete(key); this.entries.set(key, snapshot);
     this.trim();
-    void this.queue(async () => { if (!this.closed) await this.storage.write(snapshot); });
+    // Writes accepted before logout must finish; closed instances reject new puts.
+    void this.queue(() => this.storage.write(snapshot));
   }
   updateArticle(before: ArticleItem, after: ArticleItem) {
     this.revision++;
@@ -177,8 +178,9 @@ export class ReaderCache {
     const entry = this.entries.get('bootstrap');
     if (entry) this.put('bootstrap', update(entry.data as BootstrapResponse));
   }
-  invalidate() { this.revision++; this.entries.clear(); void this.queue(() => this.storage.remove(this.account)); }
-  clear() { this.closed = true; this.revision++; this.entries.clear(); return this.queue(() => this.storage.remove(this.account)); }
+  invalidate() { if (this.closed) return; this.revision++; this.entries.clear(); void this.queue(() => this.storage.remove(this.account)); }
+  close() { this.closed = true; this.revision++; this.entries.clear(); return this.writes; }
+  clear() { this.close(); return this.queue(() => this.storage.remove(this.account)); }
   flushed() { return this.writes; }
 }
 

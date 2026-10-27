@@ -63,12 +63,23 @@ try {
   assert.equal(ignored.length, beforeResponse, 'an earlier GET cannot overwrite optimistic state');
   const leaving = deferred(), afterLogout = [];
   const oldRequest = revalidate(cache, allKey, () => leaving.promise, (data) => afterLogout.push(data), () => true);
-  await cache.clear(); const visibleAtLogout = afterLogout.length;
+  cache.updateFields(article.id, { title: 'Retained at logout' });
+  await cache.close(); const visibleAtLogout = afterLogout.length;
+  assert.equal(cache.active, false);
+  cache.put(allKey, { articles: [article] });
+  cache.invalidate();
   leaving.resolve({ articles: [article] }); await oldRequest;
   assert.equal(afterLogout.length, visibleAtLogout);
   assert.equal(await cache.get(allKey), undefined);
+  const returning = new ReaderCache('alice', storage, () => now);
+  const retained = (await returning.get(allKey)).articles[0];
+  assert.equal(retained.title, 'Retained at logout', 'writes queued before logout finish and survive same-account login');
+  assert.equal(retained.full_content_html, '<p>Cached full body</p>');
+  assert.deepEqual((await returning.get('bootstrap')).counts, counts);
+  assert.equal((await bob.get(allKey)).articles[0].title, 'Bob', 'retained data stays isolated from another account');
+  await returning.clear();
   assert.ok([...rows.values()].every((row) => row.account !== 'alice'));
-  assert.equal((await bob.get(allKey)).articles[0].title, 'Bob', 'logout clears only the departing account');
+  assert.equal((await bob.get(allKey)).articles[0].title, 'Bob', 'explicit deletion affects only its own account');
 
   now += CACHE_LIMITS.age + 1;
   assert.equal(await new ReaderCache('bob', storage, () => now).get(allKey), undefined, 'old device data expires');
@@ -82,5 +93,5 @@ try {
   const bounded = await large.get(allKey);
   assert.ok(bounded.articles.length < 32); assert.equal(bounded.hasMore, true);
   assert.ok([...rows.values()].filter((row) => row.account === 'large').every((row) => row.size <= CACHE_LIMITS.bytes));
-  console.log('PASS: instant cached paint then fresh data, reload, account isolation/logout, stale response protection, read/save counts and filters, age/size limits and storage-failure fallback.');
+  console.log('PASS: instant cached paint then fresh data, reload, logout retention and queued writes, account isolation, explicit deletion, stale response protection, read/save counts and filters, age/size limits and storage-failure fallback.');
 } finally { await vite.close(); }

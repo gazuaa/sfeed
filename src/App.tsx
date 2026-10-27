@@ -225,7 +225,7 @@ export const App: React.FC = () => {
     const visible = () => { if (document.visibilityState === 'visible') void fetchBootstrap(); };
     const sessionChanged = (event: StorageEvent) => {
       if (event.key === 'sfeed_session_token' && event.newValue !== event.oldValue) {
-        void readerCache.clear(); window.location.reload();
+        void readerCache.close().finally(() => window.location.reload());
       }
     };
     document.addEventListener('visibilitychange', visible);
@@ -604,7 +604,7 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    const cleared = readerCache?.clear();
+    const flushed = readerCache?.close();
     activeCache.current = null;
     try {
       await apiRequest('/api/user/logout', { method: 'POST' });
@@ -613,7 +613,7 @@ export const App: React.FC = () => {
     }
     setStoredToken(null);
     authenticatedToken.current = null;
-    await cleared;
+    await flushed;
     setUser(null);
     setArticles([]);
     setFolders([]);
