@@ -22,6 +22,7 @@ export function preloadArticleQueries(current: URLSearchParams): URLSearchParams
     queries.push(new URLSearchParams({ ...base, unreadOnly: 'false' }), new URLSearchParams({ ...base, unreadOnly: 'true' }), new URLSearchParams({ ...base, unreadOnly: 'false', savedOnly: 'true' }));
   }
   const active = articlePageKey(current);
+  if (current.get('sort') === 'oldest') queries.forEach((query) => query.set('sort', 'oldest'));
   return queries.filter((query) => articlePageKey(query) !== active);
 }
 
@@ -38,6 +39,11 @@ export class ReaderPreloader {
       for (const query of queries) {
         if (!valid()) return;
         const key = articlePageKey(query);
+        if (this.cache.epoch) {
+          const page = await this.cache.get<ArticlePage>(key);
+          if (!valid()) return;
+          if (page?.syncEpoch === this.cache.epoch && !page.needsRefresh) continue;
+        }
         if (this.versions.get(key) === version && this.cache.has(key)) continue;
         try {
           // A first screen is enough to make navigation instant. The normal
@@ -46,7 +52,7 @@ export class ReaderPreloader {
           requestQuery.set('limit', String(PRELOAD_ARTICLE_LIMIT));
           const data = await this.cache.request(key, () => fetcher(requestQuery));
           if (!valid()) return;
-          this.cache.put(key, data);
+          this.cache.put(key, { ...data, syncEpoch: this.cache.epoch });
           this.versions.set(key, version);
         } catch {
           // A failed speculative request must not block another list or the UI.

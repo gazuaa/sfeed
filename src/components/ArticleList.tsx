@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Bookmark,
   CheckCircle2,
@@ -14,64 +14,24 @@ import {
   type ArticleItem,
   type LayoutMode,
 } from '../client/api';
-import { useArticleThumbnail } from '../client/thumbnails';
-
-const hideBrokenImage = (e: React.SyntheticEvent<HTMLImageElement>) => {
-  const box = e.currentTarget.parentElement;
-  if (box) box.style.display = 'none';
-};
-
-// Small magazine thumbnail; a placeholder holds the spot while the article
-// page is checked for an image, and nothing remains when it has none.
-const MagazineThumbnail: React.FC<{ article: ArticleItem; isDark: boolean }> = ({
-  article,
-  isDark,
-}) => {
-  const { ref, url, pending } = useArticleThumbnail<HTMLDivElement>(article);
-  if (!url && !pending) return null;
-  return (
-    <div
-      ref={ref}
-      className={`sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${
-        isDark ? 'bg-slate-800 border-slate-800' : 'bg-slate-100 border-slate-200'
-      } ${pending ? 'animate-pulse' : ''}`}
-    >
-      {url && (
-        <img
-          src={url}
-          alt={article.title}
-          loading="lazy"
-          className="w-full h-full object-cover"
-          onError={hideBrokenImage}
-        />
-      )}
-    </div>
-  );
-};
-
-// Card cover: the article image, or the gradient banner when there is none.
-const CardCover: React.FC<{ article: ArticleItem }> = ({ article }) => {
-  const { ref, url } = useArticleThumbnail<HTMLDivElement>(article);
-  return (
-    <div ref={ref} className="w-full h-full">
-      {url ? (
-        <img
-          src={url}
-          alt={article.title}
-          loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center p-6 text-center">
-          <Rss className="w-10 h-10 text-emerald-500/30" />
-        </div>
-      )}
-    </div>
-  );
-};
+// Missing/broken thumbnails use the site's logo without server-side page scraping.
+export function FeedLogo({ article }: { article: ArticleItem }) {
+  const [failed, setFailed] = useState(0);
+  let origin = '';
+  try { origin = new URL(article.feed_html_url || article.url).origin; } catch {}
+  const candidates = [...new Set([article.feed_favicon, origin ? `${origin}/favicon.ico` : null].filter(Boolean))] as string[];
+  const logo = candidates[failed];
+  return <div className="sfeed-feed-logo" aria-label={`${article.feed_title} 로고`}>{logo ? <img src={logo} alt="" loading="lazy" onError={() => setFailed((value) => value + 1)} /> : <span>{(article.feed_title || 'RSS').slice(0, 2)}</span>}</div>;
+}
+function Thumbnail({ article, card = false, isDark = false }: { article: ArticleItem; card?: boolean; isDark?: boolean }) {
+  const [broken, setBroken] = useState(false);
+  const url = article.thumbnail_url;
+  return <div className={card ? 'h-full w-full' : `sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+    {url && !broken ? <img src={url} alt={article.title} loading="lazy" className="w-full h-full object-cover" onError={() => setBroken(true)} /> : <FeedLogo article={article} />}
+  </div>;
+}
+const MagazineThumbnail = Thumbnail;
+const CardCover = ({ article }: { article: ArticleItem }) => <Thumbnail article={article} card />;
 
 interface ArticleListProps {
   articles: ArticleItem[];

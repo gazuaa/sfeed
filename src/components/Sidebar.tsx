@@ -30,6 +30,7 @@ interface SidebarProps {
   subscriptions: SubscriptionItem[];
   counts: BootstrapResponse['counts'];
   unreadOnly: boolean;
+  libraryTab?: 'all' | 'unread' | 'saved';
   activeScope: ScopeType;
   activeFolderId: string | null;
   activeFeedId: string | null;
@@ -55,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subscriptions,
   counts,
   unreadOnly,
+  libraryTab = unreadOnly ? 'unread' : 'all',
   activeScope,
   activeFolderId,
   activeFeedId,
@@ -94,10 +96,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setCreatingFolder(false);
   };
 
-  const uncategorizedSubs = subscriptions.filter(
+  const visibleSubscriptions = libraryTab === 'unread' ? subscriptions.filter((sub) => sub.unread_count > 0) : subscriptions;
+  const visibleFolders = libraryTab === 'unread' ? folders.filter((folder) => visibleSubscriptions.some((sub) => sub.folder_id === folder.id)) : folders;
+  const uncategorizedSubs = visibleSubscriptions.filter(
     (s) => !s.folder_id || !folders.some((f) => f.id === s.folder_id)
   );
-  const getFeedCount = (sub: SubscriptionItem) => unreadOnly ? sub.unread_count : sub.total_count;
+  const getFeedCount = (sub: SubscriptionItem) => libraryTab === 'saved' ? sub.saved_count : libraryTab === 'unread' ? sub.unread_count : sub.total_count;
+  const libraryCount = libraryTab === 'saved' ? counts.savedCount : libraryTab === 'unread' ? counts.totalUnread : counts.totalArticles;
 
   return (
     <>
@@ -170,11 +175,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             { id: 'unread', label: '안 읽음', icon: null, count: counts.totalUnread },
             { id: 'saved', label: '저장', icon: Bookmark, count: counts.savedCount },
           ] as const).map((tab) => {
-            const selected = tab.id === 'saved' ? activeScope === 'saved' : activeScope === 'all' && unreadOnly === (tab.id === 'unread');
+            const selected = libraryTab === tab.id;
             const Icon = tab.icon;
-            return <button key={tab.id} type="button" aria-pressed={selected} onClick={() => { onSelectLibraryTab(tab.id); onCloseMobile(); }} className={`min-w-0 flex flex-col items-center gap-1 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${selected ? isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white text-emerald-700 shadow-sm' : isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}><span className="inline-flex items-center gap-1">{Icon ? <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <span aria-hidden="true" className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"><span className="h-2 w-2 rounded-full bg-current" /></span>}<span>{tab.label}</span></span><span className="text-[10px] tabular-nums opacity-80">{tab.count.toLocaleString('ko-KR')}</span></button>;
+            return <button key={tab.id} type="button" aria-pressed={selected} onClick={() => { onSelectLibraryTab(tab.id); }} className={`min-w-0 flex flex-col items-center gap-1 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${selected ? isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white text-emerald-700 shadow-sm' : isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}><span className="inline-flex items-center gap-1">{Icon ? <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <span aria-hidden="true" className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"><span className="h-2 w-2 rounded-full bg-current" /></span>}<span>{tab.label}</span></span></button>;
           })}
         </nav>
+
+        <div className="mx-3 mb-4">
+          <button type="button" onClick={() => { onSelectScope('all', null, null); onCloseMobile(); }} className={`sfeed-desktop-all-articles flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${isDark ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-200 hover:bg-white'}`}><Archive size={17} className="text-emerald-500" /><span>전체 글</span><span className="ml-auto text-xs text-slate-400">{libraryCount.toLocaleString('ko-KR')}</span><ChevronRight size={15} /></button>
+        </div>
 
         {/* Scrollable Navigation Tree */}
         <div aria-label="구독 피드 채널" role="navigation" tabIndex={0} className="sfeed-channel-list flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 space-y-5 pb-4">
@@ -221,8 +230,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
 
             <div className="space-y-1.5">
-              {folders.map((folder) => {
-                const folderSubs = subscriptions.filter(
+              {visibleFolders.map((folder) => {
+                const folderSubs = visibleSubscriptions.filter(
                   (s) => s.folder_id === folder.id
                 );
                 const folderCount = folderSubs.reduce(
@@ -234,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   activeScope === 'folder' && activeFolderId === folder.id;
 
                 return (
-                  <div key={folder.id} className="space-y-0.5">
+                  <div key={folder.id} data-folder-id={folder.id} className="space-y-0.5">
                     <div
                       onClick={() => {
                         onSelectScope('folder', folder.id, null);
@@ -303,6 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             return (
                               <div
                                 key={sub.id}
+                                data-feed-id={sub.feed_id}
                                 onClick={() => {
                                   onSelectScope('feed', null, sub.feed_id);
                                   onCloseMobile();
@@ -371,6 +381,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     return (
                       <div
                         key={sub.id}
+                                data-feed-id={sub.feed_id}
                         onClick={() => {
                           onSelectScope('feed', null, sub.feed_id);
                           onCloseMobile();

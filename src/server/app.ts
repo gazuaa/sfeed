@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { initialSyncCursor, readerDelta, syncHead } from './readerSync';
 import { DEFAULT_AUTO_REFRESH_MINUTES, validAutoRefresh } from '../shared/preferences';
 import { cors } from 'hono/cors';
 import type {
@@ -324,6 +325,7 @@ app.post('/api/user/logout', async (c) => {
 // Bootstrap includes both totals and unread counts so filters can switch instantly.
 app.get('/api/bootstrap', async (c) => {
   const user = c.get('user');
+  const syncCursor = await initialSyncCursor(c.env.DB, user.id);
 
   const foldersRes = await c.env.DB.prepare(
     `SELECT * FROM folders WHERE user_id = ? ORDER BY sort_order ASC, name ASC`
@@ -399,6 +401,7 @@ app.get('/api/bootstrap', async (c) => {
     .first<{ cnt: number; unread: number }>();
 
   return c.json({
+    syncCursor,
     folders: foldersRes.results || [],
     subscriptions,
     counts: {
@@ -728,12 +731,19 @@ app.post('/api/feeds/refresh', async (c) => {
   });
 });
 
+app.post('/api/sync', async (c) => {
+  const body = await c.req.json<{ cursor?: unknown }>();
+  return c.json(await readerDelta(c.env.DB, c.get('user').id, body?.cursor));
+});
+
 // Fetch articles with filtering, search, layout support
 app.get('/api/articles', async (c) => {
   const user = c.get('user');
+  const { sequence: syncSequence } = await syncHead(c.env.DB);
   // History restoration must also find a read article outside the current
   // filtered/paginated list. The subscription join still enforces ownership.
   const articleId = c.req.query('articleId');
+  const oldest = c.req.query('sort') === 'oldest';
   const scope = c.req.query('scope') || 'all'; // 'all' | 'today' | 'saved' | 'folder' | 'feed'
   const folderId = c.req.query('folderId') || '';
   const feedId = c.req.query('feedId') || '';
@@ -785,7 +795,7 @@ app.get('/api/articles', async (c) => {
   }
 
   if (!articleId && before) {
-    conditions.push('(a.published_at < ? OR (a.published_at = ? AND a.id < ?))');
+    conditions.push(oldest ? '(a.published_at > ? OR (a.published_at = ? AND a.id > ?))' : '(a.published_at < ? OR (a.published_at = ? AND a.id < ?))');
     params.push(before, before, beforeId);
   }
 
@@ -821,7 +831,7 @@ app.get('/api/articles', async (c) => {
     LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
     LEFT JOIN article_date_checks dc ON dc.article_id = a.id
     WHERE ${conditions.join(' AND ')}
-    ORDER BY a.published_at DESC, a.id DESC
+    ORDER BY a.published_at ${oldest ? 'ASC' : 'DESC'}, a.id ${oldest ? 'ASC' : 'DESC'}
     LIMIT ?
   `;
 
@@ -855,7 +865,7 @@ app.get('/api/articles', async (c) => {
     is_saved: Boolean(Number(row.is_saved)),
   }));
 
-  return c.json({ articles, hasMore });
+  return c.json({ articles, hasMore, syncSequence });
 });
 
 // Scroll reading updates only visible, passed articles and preserves bookmarks.

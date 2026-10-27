@@ -77,6 +77,10 @@ export class LocalD1Database implements D1DatabaseLike {
     if (fs.existsSync(schemaFilePath)) {
       const schemaSql = fs.readFileSync(schemaFilePath, 'utf-8');
       this.db.exec(schemaSql);
+      // The canonical schema already includes older additions. Do not replay
+      // historical data-cleanup migrations every time a local DB opens.
+      const syncMigration = path.join(path.dirname(schemaFilePath), '0002_reader_sync.sql');
+      if (fs.existsSync(syncMigration)) this.db.exec(fs.readFileSync(syncMigration, 'utf-8'));
     }
   }
 

@@ -1,11 +1,14 @@
 import type { ArticleItem, BootstrapResponse } from './api';
+import type { ReaderSyncDelta } from '../shared/readerSync';
+import { patchPage } from './syncPages';
 
-export interface ArticlePage { articles: ArticleItem[]; hasMore?: boolean }
+export interface ArticlePage { articles: ArticleItem[]; hasMore?: boolean; syncSequence?: number; syncEpoch?: string; needsRefresh?: boolean }
 export interface Snapshot { account: string; key: string; data: BootstrapResponse | ArticlePage; savedAt: number; size: number }
 export interface SnapshotStorage {
   read(account: string, key: string): Promise<Snapshot | undefined>;
   write(snapshot: Snapshot): Promise<void>;
   remove(account: string): Promise<void>;
+  keys?(account: string): Promise<string[]>;
 }
 export const CACHE_LIMITS = { entries: 12, bytes: 8 * 1024 * 1024, age: 24 * 60 * 60_000 };
 let database: Promise<IDBDatabase | null> | undefined;
@@ -35,6 +38,18 @@ function openDatabase() {
   });
 }
 export const deviceSnapshots: SnapshotStorage = {
+  async keys(account) {
+    const db = await openDatabase();
+    if (!db) return [];
+    return new Promise((resolve) => {
+      const keys: string[] = [];
+      try {
+        const cursor = db.transaction('snapshots').objectStore('snapshots').index('account').openKeyCursor(IDBKeyRange.only(account));
+        cursor.onerror = () => resolve(keys);
+        cursor.onsuccess = () => { if (cursor.result) { keys.push(String((cursor.result.primaryKey as string[])[1])); cursor.result.continue(); } else resolve(keys); };
+      } catch { resolve(keys); }
+    });
+  },
   async read(account, key) {
     const db = await openDatabase();
     if (!db) return;
@@ -111,9 +126,12 @@ export class ReaderCache {
   private writes: Promise<unknown> = Promise.resolve();
   private requests = new Map<string, { revision: number; promise: Promise<Snapshot['data']> }>();
   private closed = false;
+  private overrides = new Map<string, ArticleItem>();
   revision = 0;
   constructor(readonly account: string, private storage: SnapshotStorage = deviceSnapshots, private now = Date.now) {}
   get active() { return !this.closed; }
+  touch() { if (this.active) this.revision++; }
+  get epoch() { return (this.entries.get('bootstrap')?.data as BootstrapResponse | undefined)?.cacheEpoch; }
   has(key: string) { const entry = this.entries.get(key); return this.active && Boolean(entry && entry.savedAt + CACHE_LIMITS.age > this.now()); }
   request<T extends Snapshot['data']>(key: string, fetcher: () => Promise<T>): Promise<T> {
     const previous = this.requests.get(key);
@@ -141,6 +159,7 @@ export class ReaderCache {
     // A faster network response may have populated memory while disk was read.
     const snapshot = this.entries.get(key) ?? loaded;
     if (this.closed || revision !== this.revision || snapshot?.account !== this.account || snapshot.savedAt + CACHE_LIMITS.age <= this.now()) return;
+    if (key.startsWith('articles?') && this.overrides.size) snapshot.data = patchPage(snapshot.data as ArticlePage, key, [...this.overrides.values()], new Set(), new Set(), this.entries.get('bootstrap')?.data as BootstrapResponse | undefined);
     this.entries.delete(key); this.entries.set(key, snapshot);
     this.trim();
     return snapshot.data as T;
@@ -163,6 +182,8 @@ export class ReaderCache {
     void this.queue(() => this.storage.write(snapshot));
   }
   updateArticle(before: ArticleItem, after: ArticleItem) {
+    if (this.closed) return;
+    this.overrides.set(after.id, after);
     this.revision++;
     for (const [key, snapshot] of [...this.entries]) {
       if (key === 'bootstrap') {
@@ -177,6 +198,8 @@ export class ReaderCache {
     }
   }
   updateFields(articleId: string, fields: Partial<ArticleItem>) {
+    const previous = this.overrides.get(articleId);
+    if (previous) this.overrides.set(articleId, { ...previous, ...fields });
     this.revision++;
     for (const [key, snapshot] of [...this.entries]) {
       if (key.startsWith('articles?')) {
@@ -190,8 +213,50 @@ export class ReaderCache {
     const entry = this.entries.get('bootstrap');
     if (entry) this.put('bootstrap', update(entry.data as BootstrapResponse));
   }
-  invalidate() { if (this.closed) return; this.revision++; this.entries.clear(); void this.queue(() => this.storage.remove(this.account)); }
-  close() { this.closed = true; this.revision++; this.entries.clear(); this.requests.clear(); return this.writes; }
+  async applySync(delta: ReaderSyncDelta, current: () => boolean): Promise<BootstrapResponse | undefined> {
+    const revision = this.revision;
+    const bootstrap = await this.get<BootstrapResponse>('bootstrap');
+    if (!bootstrap || !current() || !this.active || revision !== this.revision) return;
+    if (!delta.changed) {
+      const next = { ...bootstrap, syncCursor: delta.cursor };
+      this.put('bootstrap', next); return next;
+    }
+    const keys = new Set([...this.entries.keys(), ...await this.storage.keys?.(this.account).catch(() => []) ?? []]);
+    const pages = await Promise.all([...keys].filter((key) => key.startsWith('articles?')).map(async (key) => [key, await this.get<ArticlePage>(key)] as const));
+    if (!current() || !this.active || revision !== this.revision) return;
+    const old = new Map(bootstrap.subscriptions.map((sub) => [sub.feed_id, sub]));
+    const counts = new Map(delta.subscriptionCounts.map((sub) => [sub.feed_id, sub]));
+    const subscriptions = (delta.subscriptions ?? bootstrap.subscriptions).map((sub) => ({ total_count: 0, unread_count: 0, saved_count: 0, ...old.get(sub.feed_id), ...sub, ...counts.get(sub.feed_id) }));
+    const next: BootstrapResponse = { ...bootstrap, syncCursor: delta.cursor, cacheEpoch: crypto.randomUUID(), folders: delta.folders ?? bootstrap.folders, subscriptions,
+      counts: { ...bootstrap.counts, ...delta.today,
+        totalArticles: subscriptions.reduce((sum, sub) => sum + sub.total_count, 0), totalUnread: subscriptions.reduce((sum, sub) => sum + sub.unread_count, 0), savedCount: subscriptions.reduce((sum, sub) => sum + sub.saved_count, 0) } };
+    this.revision++;
+    const removed = new Set(delta.removedIds), changedBodies = new Set(delta.articleChangedIds);
+    const bodies = new Map<string, ArticleItem>();
+    for (const [, page] of pages) for (const article of page?.articles ?? []) if (!article.body_deferred) bodies.set(article.id, article);
+    const changes = delta.articles.map((article) => {
+      const body = !changedBodies.has(article.id) ? bodies.get(article.id) : undefined;
+      return body ? { ...article, content_html: body.content_html, full_content_html: body.full_content_html, ai_summary: body.ai_summary, body_deferred: false } : article;
+    });
+    for (const article of delta.articles) this.overrides.delete(article.id);
+    for (const id of removed) this.overrides.delete(id);
+    this.put('bootstrap', next);
+    for (const [key, page] of pages) if (page) {
+      const patched = patchPage(page, key, changes, removed, changedBodies, next);
+      const query = new URLSearchParams(key.slice(9));
+      // An existing feed can be newly subscribed or moved into a cached folder
+      // without any article writes. Only those affected pages need a refill.
+      const refill = subscriptions.some((sub) => {
+        const before = old.get(sub.feed_id), scope = query.get('scope');
+        if (scope === 'folder') return sub.folder_id === query.get('folderId') && (!before || before.folder_id !== sub.folder_id);
+        return !before && (scope !== 'feed' || query.get('feedId') === sub.feed_id);
+      });
+      this.put(key, { ...patched, needsRefresh: patched.needsRefresh || refill });
+    }
+    return next;
+  }
+  invalidate() { if (this.closed) return; this.revision++; this.entries.clear(); this.overrides.clear(); void this.queue(() => this.storage.remove(this.account)); }
+  close() { this.closed = true; this.revision++; this.entries.clear(); this.requests.clear(); this.overrides.clear(); return this.writes; }
   clear() { this.close(); return this.queue(() => this.storage.remove(this.account)); }
   flushed() { return this.writes; }
 }

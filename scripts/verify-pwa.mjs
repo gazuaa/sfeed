@@ -22,16 +22,18 @@ assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="defaul
 assert.ok(!html.includes('content="black-translucent"'), 'avoid the iOS standalone viewport offset that leaves an unreachable bottom strip');
 assert.ok(html.indexOf('class="sfeed-glass-sample"') < html.indexOf('id="root"'), 'the opaque edge must exist outside React before the app mounts');
 const handlers = {}, storage = new Map(), deleted = [], fetched = [];
+const messages = [], focused = [], opened = [];
+let clientWindows = [];
 const cache = { addAll: async (paths) => { for (const path of paths) { assert.ok(existsSync('public' + path)); storage.set(path, new Response(readFileSync('public' + path))); } }, match: async (path) => storage.get(path)?.clone() };
 let offline = false, skipped = 0, claimed = 0;
 vm.runInNewContext(readFileSync('public/sw.js', 'utf8'), {
-  self: { location: { origin: 'https://sfeed.test' }, addEventListener: (key, handler) => { handlers[key] = handler; }, skipWaiting: async () => { skipped++; }, clients: { claim: async () => { claimed++; } } },
-  caches: { open: async () => cache, keys: async () => ['sfeed-public-v1', 'sfeed-public-v2', 'another-app-cache'], delete: async (key) => { deleted.push(key); } },
+  self: { location: { origin: 'https://sfeed.test' }, addEventListener: (key, handler) => { handlers[key] = handler; }, skipWaiting: async () => { skipped++; }, clients: { claim: async () => { claimed++; }, matchAll: async () => clientWindows, openWindow: async (url) => opened.push(url) } },
+  caches: { open: async () => cache, keys: async () => ['sfeed-public-v1', 'sfeed-public-v2', 'sfeed-public-v3', 'another-app-cache'], delete: async (key) => { deleted.push(key); } },
   fetch: async (request) => { fetched.push(request.url); if (offline) throw new Error('offline'); return new Response('fresh network page'); },
   URL, Response,
 });
 for (const name of ['install', 'activate']) { let work; handlers[name]({ waitUntil: (promise) => { work = promise; } }); await work; }
-assert.equal(skipped, 1); assert.equal(claimed, 1); assert.deepEqual(deleted, ['sfeed-public-v1']);
+assert.equal(skipped, 1); assert.equal(claimed, 1); assert.deepEqual(deleted, ['sfeed-public-v1', 'sfeed-public-v2']);
 assert.ok(!storage.has('/'), 'the authenticated app shell must not be cached');
 const runFetch = (path, mode = 'navigate', method = 'GET') => {
   let result;
@@ -48,6 +50,21 @@ assert.match(await (await runFetch('/')).text(), /인터넷 연결을 기다리�
 assert.ok(![...storage.keys()].some((path) => path.includes('session_token')));
 assert.equal(runFetch('/api/articles'), undefined, 'offline must not masquerade as a successful article response');
 assert.equal((await runFetch('/icons/icon-192.png', 'cors')).status, 200);
+assert.equal(handlers.push, undefined, 'local detection must not introduce server push');
+const clickNotification = async (data) => {
+  let work, closed = false;
+  handlers.notificationclick({ notification: { data, close: () => { closed = true; } }, waitUntil: (promise) => { work = promise; } });
+  await work; assert.equal(closed, true);
+};
+clientWindows = [
+  { url: 'https://sfeed.test/privacy', postMessage: () => assert.fail('privacy page is not the reader'), focus: () => assert.fail('privacy page is not the reader') },
+  { url: 'https://sfeed.test/', postMessage: (data) => messages.push(data), focus: async () => focused.push(true) },
+];
+await clickNotification({ articleId: 'new-article', account: 'owner' });
+assert.equal(messages[0].type, 'sfeed-open-article'); assert.equal(messages[0].account, 'owner'); assert.equal(focused.length, 1);
+clientWindows = []; await clickNotification({ articleId: 'new-article', account: 'owner' });
+assert.equal(opened[0], 'https://sfeed.test/?article_id=new-article&account=owner');
+await clickNotification({ articleId: 'incomplete' }); assert.equal(opened.length, 1, 'notification navigation requires the matching account');
 
 const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
 try {

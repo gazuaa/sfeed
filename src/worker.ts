@@ -1,4 +1,5 @@
 import { app } from './server/app';
+import { pruneReaderChanges } from './server/readerSync';
 import type { Env } from './server/types';
 import { generatedRss, refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './server/feedLoader';
 import { checkFeedPublicationDates } from './server/articlePublication';
@@ -51,5 +52,6 @@ export default {
     const feeds = res.results || [];
     await refreshStoredFeeds(env, feeds);
     await checkFeedPublicationDates(env.DB, feeds.map((feed) => feed.id));
+    await pruneReaderChanges(env.DB);
   },
 };

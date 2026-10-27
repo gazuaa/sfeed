@@ -117,7 +117,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
   // Reader view: extract the full article once; the server caches it.
   useEffect(() => {
-    if (!article || mode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
+    if (!article || article.body_deferred || mode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
     let active = true;
     setScrapingReader(true);
     apiRequest<{ fullContentHtml: string; publishedAt?: string }>(`/api/articles/${article.id}/reader-view`, {
@@ -134,7 +134,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       .catch(() => { if (active) setReaderFailedFor(article.id); })
       .finally(() => { if (active) setScrapingReader(false); });
     return () => { active = false; setScrapingReader(false); };
-  }, [article?.id, mode, readerRetry]);
+  }, [article?.id, article?.body_deferred, mode, readerRetry]);
 
   // Web view: ask the server whether the site allows being framed.
   useEffect(() => {
@@ -155,7 +155,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   }, [article?.id, mode]);
 
   useEffect(() => {
-    if (!article || article.date_source === 'original') { setCheckingDate(false); return; }
+    if (!article || article.body_deferred || article.date_source === 'original') { setCheckingDate(false); return; }
     let active = true;
     setCheckingDate(true);
     apiRequest<{ publishedAt: string; dateSource: ArticleItem['date_source'] }>(`/api/articles/${article.id}/publication-date`, { method: 'POST' })
@@ -163,7 +163,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       .catch(() => {})
       .finally(() => { if (active) setCheckingDate(false); });
     return () => { active = false; };
-  }, [article?.id]);
+  }, [article?.id, article?.body_deferred]);
 
   if (!article) return <div className={`hidden lg:flex h-full flex-col items-center justify-center gap-3 px-8 text-center ${isDark ? 'bg-slate-950 text-slate-400' : 'bg-white text-slate-500'}`}>
     <BookOpen className="w-10 h-10 text-emerald-500/60" aria-hidden="true" />
@@ -237,6 +237,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
       {/* Inline desktop reader and full-screen mobile reader */}
       <div
+        data-article-id={article.id}
         className={`sfeed-reader relative z-10 w-full max-w-3xl lg:max-w-none h-full min-w-0 min-h-0 flex flex-col border-l lg:border-l-0 shadow-2xl lg:shadow-none overflow-hidden ${
           isDark
             ? 'bg-slate-950 border-slate-800 text-slate-100'
@@ -585,6 +586,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
           </div>
         ) : (
         <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
+          {article.body_deferred && <div role="status" className="flex items-center gap-2 text-sm text-slate-400">{article.body_load_error ? <><span>본문을 가져오지 못했습니다.</span><button className="text-emerald-500" onClick={() => onUpdateArticleFields(article.id, { body_load_error: false })}>다시 시도</button></> : <><Loader2 size={16} className="animate-spin" /><span>본문 불러오는 중…</span></>}</div>}
           {automaticReaderFor === article.id && <p role="status" className={`rounded-xl border px-3 py-2 text-xs ${isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'}`}>웹 보기를 열 수 없어 리더로 전환했습니다.</p>}
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">

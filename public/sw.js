@@ -1,7 +1,7 @@
 // Like Slap, cache only public install/offline assets. Account data and the app
 // HTML always come from the network, so switching accounts cannot expose a
 // previous user's feed and a deployment cannot leave an old app shell behind.
-const CACHE = 'sfeed-public-v2';
+const CACHE = 'sfeed-public-v3';
 const OFFLINE = '/offline.html';
 const PUBLIC_ASSETS = [OFFLINE, '/offline.js', '/favicon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 
@@ -19,4 +19,18 @@ self.addEventListener('fetch', (event) => {
   } else if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(async () => (await caches.open(CACHE)).match(OFFLINE).then((cached) => cached || new Response('인터넷에 연결한 뒤 다시 열어 주세요.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }))));
   }
+});
+
+// These notifications are created by the running client after local detection.
+// There is deliberately no server-push subscription or push handler.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data;
+  if (!data?.articleId || !data?.account) return;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+    const client = windows.find((window) => new URL(window.url).origin === self.location.origin && new URL(window.url).pathname === '/');
+    if (client) { client.postMessage({ type: 'sfeed-open-article', ...data }); return client.focus(); }
+    const url = new URL('/', self.location.origin); url.searchParams.set('article_id', data.articleId); url.searchParams.set('account', data.account);
+    return self.clients.openWindow(url.href);
+  }));
 });

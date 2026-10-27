@@ -41,8 +41,8 @@ try {
   })).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const all = render(false);
   const unread = render(true);
-  for (const text of ['전체 5 안 읽음 2 저장 1', 'Count folder 3', 'Folder feed 3', 'Loose feed 2']) assert.ok(all.includes(text), text);
-  for (const text of ['전체 5 안 읽음 2 저장 1', 'Count folder 1', 'Folder feed 1', 'Loose feed 1']) assert.ok(unread.includes(text), text);
+  for (const text of ['전체 안 읽음 저장 전체 글 5', 'Count folder 3', 'Folder feed 3', 'Loose feed 2']) assert.ok(all.includes(text), text);
+  for (const text of ['전체 안 읽음 저장 전체 글 2', 'Count folder 1', 'Folder feed 1', 'Loose feed 1']) assert.ok(unread.includes(text), text);
   assert.ok(!all.includes('오늘의 아티클'), 'the old Today navigation must be removed');
   const list = async (query) => (await (await app.request('/api/articles?' + query, { headers: { authorization: `Bearer ${owner.token}` } }, env)).json()).articles;
   assert.equal((await list('scope=all')).length, 5);

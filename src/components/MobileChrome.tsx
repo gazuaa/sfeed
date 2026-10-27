@@ -2,10 +2,12 @@ import { useEffect, useRef } from 'react';
 import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, RefreshCw, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
-import { ScrollReadSetting, TextSizeControl, type ScrollReadSettingsProps } from './ReadingSettings';
+import { ScrollReadSetting, TextSizeControl, LayoutSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps } from './ReadingSettings';
+import { LocalNotificationSetting } from './LocalNotificationSetting';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
-export interface MobileSettingsProps extends ScrollReadSettingsProps {
+export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps {
+  accountId?: string;
   theme: ThemeMode;
   onChangeTheme: (theme: ThemeMode) => void;
   layout: LayoutMode;
@@ -13,7 +15,7 @@ export interface MobileSettingsProps extends ScrollReadSettingsProps {
   onOpenOpml: () => void;
 }
 
-export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll }: MobileSettingsProps & { library?: boolean }) {
+export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes, accountId }: MobileSettingsProps & { library?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const close = () => { if (ref.current) ref.current.open = false; };
   useEffect(() => {
@@ -25,14 +27,19 @@ export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, o
   return <details ref={ref} className="sfeed-mobile-settings" onKeyDown={(event) => { if (event.key === 'Escape') { close(); ref.current?.querySelector('summary')?.focus(); } }}>
     <summary aria-label="보기 설정" className="sfeed-mobile-icon"><Settings2 size={21} /></summary>
     <div className="sfeed-mobile-settings-panel">
+      <section className="sfeed-setting-section">
       <p className="sfeed-mobile-eyebrow">화면</p>
       <div className="sfeed-mobile-setting-options">{(['light', 'dark'] as const).map((value) => { const Icon = value === 'light' ? Sun : Moon; return <button key={value} aria-label={value === 'light' ? '낮 모드' : '밤 모드'} aria-pressed={theme === value} onClick={() => onChangeTheme(value)}><Icon size={20} /></button>; })}</div>
       <p className="sfeed-mobile-eyebrow">글자 크기</p><TextSizeControl />
-      <ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} />
-      {!library && <><p className="sfeed-mobile-eyebrow">목록 보기</p>
-      <div className="sfeed-mobile-setting-options">{([{ id: 'magazine', label: '매거진 뷰', Icon: LayoutList }, { id: 'cards', label: '카드 뷰', Icon: LayoutGrid }, { id: 'list', label: '리스트 뷰', Icon: AlignJustify }] as const).map(({ id, label, Icon }) => <button key={id} aria-label={label} aria-pressed={layout === id} onClick={() => { onChangeLayout(id); close(); }}><Icon size={20} /></button>)}</div></>}
+      </section>
+      {!library && <section className="sfeed-setting-section"><LayoutSetting layout={layout} onChangeLayout={(value) => { onChangeLayout(value); close(); }} /></section>}
+      {!library && <section className="sfeed-setting-section"><ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} /></section>}
+      <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
+      {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}
+      <section className="sfeed-setting-section">
       <button className="sfeed-mobile-settings-row" onClick={() => { close(); onOpenOpml(); }}><FileCode2 size={18} />OPML 가져오기 / 내보내기</button>
       <InstallAppButton />
+      </section>
     </div>
   </details>;
 }

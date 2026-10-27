@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createServer } from 'vite';
+
+const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+const originals = Object.fromEntries(['localStorage', 'navigator', 'Notification'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+try {
+  const values = new Map(), notifications = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) } });
+  Object.defineProperty(globalThis, 'Notification', { configurable: true, value: { permission: 'granted', requestPermission: async () => 'granted' } });
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { serviceWorker: { getRegistration: async () => ({ active: true, showNotification: async (title, options) => notifications.push({ title, options }) }) } } });
+  const { setLocalNotifications, notifyNewArticles, localNotificationsEnabled } = await vite.ssrLoadModule('/src/client/localNotifications.ts');
+  setLocalNotifications('owner', true);
+  assert.equal(localNotificationsEnabled('owner'), true); assert.equal(localNotificationsEnabled('other'), false);
+  const news = [{ id: 'a', title: '새 글 제목' }];
+  await notifyNewArticles('owner', [...news, ...news]); await notifyNewArticles('owner', news);
+  assert.equal(notifications.length, 1, 'local device history and notification tags prevent duplicates');
+  assert.equal(notifications[0].title, '새 글 제목'); assert.ok(!('body' in notifications[0].options), 'notifications contain the article title only');
+  assert.equal(notifications[0].options.data.account, 'owner');
+  setLocalNotifications('owner', false); await notifyNewArticles('owner', [{ id: 'b', title: 'Muted' }]); assert.equal(notifications.length, 1);
+  setLocalNotifications('owner', true); await notifyNewArticles('owner', [{ id: 'c', title: 'Old session' }], undefined, () => false); assert.equal(notifications.length, 1, 'logout cancels late notifications');
+
+  const { bindLongPress } = await vite.ssrLoadModule('/src/client/longPress.ts');
+  const doc = new EventTarget(); let opened = 0;
+  const target = { control: false, closest(selector) { return selector.startsWith('[data-') ? {} : this.control ? {} : null; } };
+  const cleanup = bindLongPress(doc, () => opened++);
+  const touch = (type, x, y, fingers = 1) => {
+    const event = new Event(type, { cancelable: true });
+    Object.defineProperties(event, { target: { value: target }, touches: { value: type === 'touchend' ? [] : Array.from({ length: fingers }, () => ({ clientX: x, clientY: y })) } });
+    doc.dispatchEvent(event); return event;
+  };
+  touch('touchstart', 100, 200); await new Promise((resolve) => setTimeout(resolve, 480)); assert.equal(opened, 1);
+  assert.equal(touch('touchend', 100, 200).defaultPrevented, true);
+  const ghostClick = new Event('click', { cancelable: true }); doc.dispatchEvent(ghostClick); assert.equal(ghostClick.defaultPrevented, true, 'releasing a long press does not also open the article');
+  const menuClick = new Event('click', { cancelable: true });
+  Object.defineProperty(menuClick, 'target', { value: { closest: (selector) => selector === '.sfeed-context-menu' ? {} : null } });
+  doc.dispatchEvent(menuClick); assert.equal(menuClick.defaultPrevented, false, 'a menu item can be tapped immediately after a long press');
+  touch('touchstart', 100, 200); touch('touchmove', 100, 230); await new Promise((resolve) => setTimeout(resolve, 480)); assert.equal(opened, 1, 'scrolling cancels a long press');
+  target.control = true; touch('touchstart', 100, 200); target.control = false;
+  cleanup(); await new Promise((resolve) => setTimeout(resolve, 480)); assert.equal(opened, 1);
+
+  const { MobileLibrary } = await vite.ssrLoadModule('/src/components/MobileLibrary.tsx');
+  const { Sidebar } = await vite.ssrLoadModule('/src/components/Sidebar.tsx');
+  const shared = { user: { id: 'owner', name: 'Test' }, theme: 'light', layout: 'magazine', autoRefreshMinutes: 15, folders: [{ id: 'empty-folder', name: 'Zero folder' }, { id: 'unread-folder', name: 'Unread folder' }], subscriptions: [{ id: 'empty-sub', feed_id: 'empty', folder_id: 'empty-folder', title: 'Zero feed', total_count: 4, unread_count: 0, saved_count: 0 }, { id: 'unread-sub', feed_id: 'unread', folder_id: 'unread-folder', title: 'Unread feed', total_count: 3, unread_count: 1, saved_count: 0 }], counts: { totalArticles: 7, totalUnread: 1, savedCount: 0 } };
+  const mobileUnread = renderToStaticMarkup(React.createElement(MobileLibrary, { ...shared, countTab: 'unread' }));
+  assert.ok(!mobileUnread.includes('Zero folder') && !mobileUnread.includes('Zero feed')); assert.match(mobileUnread, /Unread folder/);
+  const desktopUnread = renderToStaticMarkup(React.createElement(Sidebar, { ...shared, libraryTab: 'unread' }));
+  assert.ok(!desktopUnread.includes('Zero folder') && !desktopUnread.includes('Zero feed')); assert.match(desktopUnread, /Unread feed/);
+  assert.match(renderToStaticMarkup(React.createElement(Sidebar, { ...shared, libraryTab: 'all' })), /Zero folder/);
+  const { ArticleList } = await vite.ssrLoadModule('/src/components/ArticleList.tsx');
+  const article = { id: 'no-image', feed_id: 'unread', feed_title: 'Example', feed_favicon: 'https://example.test/logo.svg', feed_html_url: 'https://example.test', title: 'No thumbnail', url: 'https://example.test/post', thumbnail_url: '', published_at: new Date().toISOString(), is_read: false, is_saved: false };
+  for (const layout of ['magazine', 'cards']) {
+    const html = renderToStaticMarkup(React.createElement(ArticleList, { articles: [article], layout, hasSubscriptions: true }));
+    assert.match(html, /sfeed-feed-logo/); assert.match(html, /https:\/\/example.test\/logo.svg/);
+  }
+  const { patchPage } = await vite.ssrLoadModule('/src/client/syncPages.ts');
+  const page = { articles: [{ ...article, id: 'new', published_at: '2026-10-27' }, { ...article, id: 'old', published_at: '2026-01-01' }], hasMore: false };
+  assert.deepEqual(patchPage(page, 'articles?scope=all&sort=oldest', [], new Set(), new Set()).articles.map((item) => item.id), ['old', 'new']);
+  console.log('PASS: local title-only notification permission/dedup/account boundaries; mobile long-press/scroll/ghost-click guards; zero-unread folders/feeds hidden; logo fallback; oldest-first local ordering.');
+} finally {
+  for (const [key, descriptor] of Object.entries(originals)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+  await vite.close();
+}

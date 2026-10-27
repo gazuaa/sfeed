@@ -3,9 +3,7 @@ import {
   Search,
   RefreshCw,
   CheckCheck,
-  LayoutList,
-  LayoutGrid,
-  AlignJustify,
+  ArrowDownUp,
   Menu,
   X,
 } from 'lucide-react';
@@ -15,6 +13,8 @@ import { ThemeSwitch } from './ThemeSwitch';
 import { DesktopReadingSettings, type DesktopSettingsProps } from './ReadingSettings';
 
 interface HeaderBarProps extends DesktopSettingsProps {
+  sort: 'newest' | 'oldest';
+  onToggleSort: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   layout: LayoutMode;
@@ -28,6 +28,9 @@ interface HeaderBarProps extends DesktopSettingsProps {
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
+  sort,
+  onToggleSort,
+  accountId,
   searchQuery,
   onSearchChange,
   layout,
@@ -69,7 +72,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Search, View Switcher, Mark Read, and right-aligned utilities */}
+        {/* Search, sorting and mark-read controls follow the list pane. */}
         <div className="flex flex-1 min-w-0 items-center gap-2">
           {/* Keyword Search Input */}
           <div className="relative flex-1 min-w-0">
@@ -97,59 +100,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             )}
           </div>
 
-          {/* Feedly 3-Mode Layout Switcher */}
-          <div
-            className={`inline-flex shrink-0 items-center p-0.5 rounded-xl border ${
-              isDark
-                ? 'bg-slate-900 border-slate-800'
-                : 'bg-slate-100 border-slate-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onChangeLayout('magazine')}
-              aria-label="매거진 뷰"
-              aria-pressed={layout === 'magazine'}
-              title="매거진 뷰 (Magazine View)"
-              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
-                layout === 'magazine'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
-              }`}
-            >
-              <LayoutList className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onChangeLayout('cards')}
-              aria-label="카드 뷰"
-              aria-pressed={layout === 'cards'}
-              title="카드 뷰 (Cards View)"
-              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
-                layout === 'cards'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onChangeLayout('list')}
-              aria-label="리스트 뷰"
-              aria-pressed={layout === 'list'}
-              title="리스트 뷰 (Title-Only Compact View)"
-              className={`p-1.5 rounded-lg flex items-center transition cursor-pointer ${
-                layout === 'list'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-950'
-              }`}
-            >
-              <AlignJustify className="w-4 h-4" />
-            </button>
-          </div>
+          <button type="button" onClick={onToggleSort} aria-label={`정렬: ${sort === 'oldest' ? '오래된순, 최신순으로 전환' : '최신순, 오래된순으로 전환'}`} title="클릭하여 최신순 / 오래된순 전환" className="sfeed-sort-button"><ArrowDownUp size={16} /><span>{sort === 'oldest' ? '오래된순' : '최신순'}</span></button>
 
           {/* Mark All Read */}
           <button
@@ -170,7 +121,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         </div>
           <div aria-hidden="true" className="sfeed-header-divider" />
           <div className="sfeed-global-controls flex shrink-0 items-center justify-end gap-2 px-4">
-            <DesktopReadingSettings markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} />
+            <DesktopReadingSettings accountId={accountId} layout={layout} onChangeLayout={onChangeLayout} markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} />
             <InstallAppButton />
             {/* Refresh Feeds */}
             <button

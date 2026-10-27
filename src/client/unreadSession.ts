@@ -14,4 +14,5 @@ export class UnreadSession {
   update(article: ArticleItem) { this.articles.set(article.id, article); }
   patch(id: string, fields: Partial<ArticleItem>) { const article = this.articles.get(id); if (article) this.articles.set(id, { ...article, ...fields }); }
   clear() { this.articles.clear(); }
+  remove(id: string) { this.articles.delete(id); }
 }

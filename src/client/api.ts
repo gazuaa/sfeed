@@ -1,3 +1,4 @@
+import type { ReaderSyncCursor } from '../shared/readerSync';
 export type LayoutMode = 'magazine' | 'cards' | 'list';
 export type ThemeMode = 'dark' | 'light';
 export type ScopeType = 'all' | 'today' | 'saved' | 'folder' | 'feed';
@@ -70,6 +71,8 @@ export interface ArticleItem {
   date_source?: 'original' | 'feed' | 'updated' | 'collected';
   is_read: boolean;
   is_saved: boolean;
+  body_deferred?: boolean;
+  body_load_error?: boolean;
 }
 
 export interface CuratedFeedItem {
@@ -85,6 +88,8 @@ export interface CuratedFeedItem {
 }
 
 export interface BootstrapResponse {
+  syncCursor?: ReaderSyncCursor;
+  cacheEpoch?: string;
   folders: FolderItem[];
   subscriptions: SubscriptionItem[];
   counts: {
