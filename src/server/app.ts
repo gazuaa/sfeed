@@ -18,6 +18,7 @@ import { clearOpmlFailure, listOpmlFailures, recordOpmlFailure } from './opmlFai
 import { fetchAndParseFeed, parseOpml, generateOpml, type ParsedFeed } from './rssParser';
 import { READER_FALLBACK_MARK, realFullContent, scrapeFullArticle } from './readerScraper';
 import { checkEmbeddable } from './framing';
+import { fetchWebView } from './webView';
 import { fetchPreviewImage } from './previewImage';
 import { analyseBuilderPage, builderParsedFeed, builderSiteInfo, fetchPage, publicPageUrl, webCopy } from './rssBuilder';
 import { refreshStoredFeeds, storedFeedColumns, type StoredFeed } from './feedLoader';
@@ -82,7 +83,7 @@ function parsePreferences(jsonStr: string | null | undefined): UserPreferences {
 async function createSessionForUser(db: Env['DB'], userId: string): Promise<string> {
   const token = `sfeed_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
   await db
     .prepare(
       `INSERT INTO sessions (token, user_id, expires_at, created_at)
@@ -261,16 +262,23 @@ app.use('/api/*', async (c, next) => {
   }
 
   const sessionRow = await c.env.DB.prepare(
-    `SELECT u.*
+    `SELECT u.*, s.expires_at AS session_expires_at
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`
   )
     .bind(token, new Date().toISOString())
-    .first<UserRecord>();
+    .first<UserRecord & { session_expires_at: string }>();
 
   if (!sessionRow) {
     return c.json({ error: '세션이 만료되었거나 유효하지 않습니다.' }, 401);
+  }
+
+  // Extend active sessions at most once per six months. Existing 30-day
+  // sessions upgrade on their next authenticated request; revoked ones stay revoked.
+  if (Date.parse(sessionRow.session_expires_at) < Date.now() + 180 * 86400_000) {
+    await c.env.DB.prepare('UPDATE sessions SET expires_at=? WHERE token=? AND expires_at=?')
+      .bind(new Date(Date.now() + 365 * 86400_000).toISOString(), token, sessionRow.session_expires_at).run();
   }
 
   c.set('user', sessionRow);
@@ -1056,8 +1064,7 @@ app.get('/api/articles/:id/web-copy', async (c) => {
     .first<{ url: string }>();
   if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
   try {
-    const page = await fetchPage(article.url);
-    return c.json({ html: webCopy(page.html, page.url), url: page.url });
+    return c.json(await fetchWebView(article.url, c.env));
   } catch {
     return c.json({ error: '원문 페이지를 불러오지 못했습니다.' }, 502);
   }
@@ -1071,9 +1078,9 @@ app.post('/api/articles/:id/reader-view', async (c) => {
 
   const article = await c.env.DB.prepare(
     `SELECT id, title, url, content_html, full_content_html, thumbnail_url, published_at
-     FROM articles WHERE id = ?`
+     FROM articles WHERE id = ? AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.feed_id=articles.feed_id AND s.user_id=?)`
   )
-    .bind(articleId)
+    .bind(articleId, c.get('user').id)
     .first<{
       id: string;
       title: string;

@@ -4,6 +4,7 @@ import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
 import { ScrollReadSetting, TextSizeControl, LayoutSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps } from './ReadingSettings';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
+import { CacheSettings } from './CacheSettings';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
 export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps {
@@ -36,6 +37,7 @@ export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, o
       {!library && <section className="sfeed-setting-section"><ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} /></section>}
       <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
       {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}
+      {accountId && <section className="sfeed-setting-section"><CacheSettings accountId={accountId} /></section>}
       <section className="sfeed-setting-section">
       <button className="sfeed-mobile-settings-row" onClick={() => { close(); onOpenOpml(); }}><FileCode2 size={18} />OPML 가져오기 / 내보내기</button>
       <InstallAppButton />

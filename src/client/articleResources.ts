@@ -1,0 +1,50 @@
+import { apiRequest, type ArticleItem } from './api';
+import { cachedArticle, readContent, writeContent } from './deviceContent';
+import { cacheGeneration } from './cachePolicy';
+
+type ReaderResult = { fullContentHtml: string; publishedAt?: string };
+type WebResult = { html: string; url: string };
+export class ArticleResources {
+  private requests = new Map<string, Promise<unknown>>();
+  private failures = new Map<string, number>();
+  constructor(readonly account: string, private current: () => boolean, private request = apiRequest) {}
+  hydrate(article: ArticleItem) { return cachedArticle(this.account, article); }
+  async cachedWeb(article: ArticleItem): Promise<WebResult | undefined> {
+    const stored = await readContent(this.account, `web:${article.id}`);
+    return stored && 'html' in stored.data ? stored.data : undefined;
+  }
+  private async once<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const running = this.requests.get(key); if (running) return running as Promise<T>;
+    const work = load().finally(() => this.requests.delete(key)); this.requests.set(key, work); return work;
+  }
+  reader(article: ArticleItem): Promise<ArticleItem> {
+    return this.once(`reader:${article.id}`, async () => {
+      const generation = cacheGeneration.get(this.account), cached = await this.hydrate(article);
+      if (cached.full_content_html) return cached;
+      if (!this.current()) throw new Error('Session changed');
+      const result = await this.request<ReaderResult>(`/api/articles/${article.id}/reader-view`, { method: 'POST', body: '{}' });
+      const updated = { ...cached, full_content_html: result.fullContentHtml, body_deferred: false, ...(result.publishedAt ? { published_at: result.publishedAt } : {}) };
+      if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `article:${article.id}`, { id: article.id, url: article.url, content_html: updated.content_html, full_content_html: updated.full_content_html, published_at: updated.published_at, date_source: updated.date_source });
+      return updated;
+    });
+  }
+  web(article: ArticleItem): Promise<WebResult> {
+    return this.once(`web:${article.id}`, async () => {
+      const generation = cacheGeneration.get(this.account), stored = await this.cachedWeb(article);
+      if (stored) return stored;
+      if (!this.current()) throw new Error('Session changed');
+      const result = await this.request<WebResult>(`/api/articles/${article.id}/web-copy`);
+      if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `web:${article.id}`, result);
+      return result;
+    });
+  }
+  async preload(articles: ArticleItem[], current: () => boolean) {
+    // One extraction at a time, only the next five visible articles. Never walk
+    // an entire imported archive or repeat failures on every list render.
+    for (const article of articles.slice(0, 5)) {
+      if (!this.current() || !current()) return;
+      if (article.full_content_html || (this.failures.get(article.id) || 0) > Date.now()) continue;
+      try { await this.reader(article); } catch { this.failures.set(article.id, Date.now() + 3600_000); }
+    }
+  }
+}

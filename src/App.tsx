@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   apiRequest,
+  ApiError,
+  rememberProfile,
+  rememberedProfile,
   getStoredToken,
   setStoredToken,
   type ArticleItem,
@@ -40,6 +43,10 @@ import { useAutoRefresh } from './client/autoRefresh';
 import { DEFAULT_AUTO_REFRESH_MINUTES } from './shared/preferences';
 import { ReaderSync } from './client/readerSync';
 import { DesktopContextMenu, type AppContextAction, type AppContextTarget } from './components/DesktopContextMenu';
+import { ArticleResources } from './client/articleResources';
+import { maintainDeviceCache } from './client/deviceContent';
+import { readDevicePreferences, saveDevicePreferences, readFeedPreference, saveFeedPreference } from './client/devicePreferences';
+import { useListAnchor } from './client/listAnchor';
 import { notifyNewArticles, useLocalNotifications } from './client/localNotifications';
 
 export const App: React.FC = () => {
@@ -57,9 +64,9 @@ export const App: React.FC = () => {
   const [preloadVersion, setPreloadVersion] = useState<{ cache: ReaderCache; version: string } | null>(null);
   const activeCache = useRef(readerCache);
   activeCache.current = readerCache;
+  const articleResources = useMemo(() => readerCache ? new ArticleResources(readerCache.account, () => readerCache.active && activeCache.current === readerCache) : null, [readerCache]);
   const stateWrites = useRef(new Map<string, Promise<unknown>>());
   const confirmedStates = useRef(new Map<string, ArticleItem>());
-  const preferenceWrites = useRef<Promise<unknown>>(Promise.resolve());
   const bootstrapFlight = useRef<{ cache: ReaderCache; revision: number; promise: Promise<void> } | null>(null);
   const bootstrapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (bootstrapTimer.current) clearTimeout(bootstrapTimer.current); bootstrapTimer.current = null; }, [readerCache]);
@@ -157,6 +164,8 @@ export const App: React.FC = () => {
     if (pendingScroll.current === null) articleListRef.current?.scrollTo({ top: 0 });
   }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, searchQuery, articleSort]);
 
+  useListAnchor(articleListRef, articles, `${activeScope}:${activeFolderId}:${activeFeedId}:${unreadOnly}:${savedOnly}:${committedSearch}:${articleSort}`);
+
   useLayoutEffect(() => {
     for (const article of articles) articleCache.current.set(article.id, article);
   }, [articles]);
@@ -179,6 +188,25 @@ export const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search), id = params.get('article_id');
     if (id && params.get('account') === account) { notificationArticle.current = id; setSelectedArticleId(id); setMobileSidebarOpen(false); }
   };
+  const applyUser = (profile: UserProfile) => {
+    const prefs = readDevicePreferences(profile.id, isMobile ? 'mobile' : 'desktop', profile.preferences);
+    saveDevicePreferences(profile.id, prefs, isMobile ? 'mobile' : 'desktop');
+    setUser(profile); setLayout(prefs.layout); setTheme(prefs.theme); setUnreadOnly(prefs.unreadOnly);
+    setDesktopLibraryTab(prefs.unreadOnly ? 'unread' : 'all'); setMarkReadOnScroll(prefs.markReadOnScroll); setAutoRefreshMinutes(prefs.autoRefreshMinutes);
+  };
+  useEffect(() => {
+    if (!user) return;
+    applyUser(user);
+  }, [user?.id, isMobile]);
+  useEffect(() => {
+    if (!readerCache) return;
+    const account = readerCache.account;
+    const cleanup = () => void maintainDeviceCache(account);
+    cleanup(); const timer = setInterval(cleanup, 3600_000);
+    const clear = (event: Event) => { if ((event as CustomEvent).detail === account) readerCache.invalidate(); };
+    window.addEventListener('sfeed-cache-cleared', clear);
+    return () => { clearInterval(timer); window.removeEventListener('sfeed-cache-cleared', clear); };
+  }, [readerCache]);
   // Check OAuth callback token or stored token on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -194,21 +222,19 @@ export const App: React.FC = () => {
       return;
     }
 
-    apiRequest<{ user: UserProfile }>('/api/user/me')
+    const remembered = rememberedProfile(token);
+    if (remembered) { authenticatedToken.current = token; applyUser(remembered); setAuthChecking(false); }
+    apiRequest<{ user: UserProfile }>('/api/user/me', { signal: AbortSignal.timeout(8000) })
       .then((res) => {
         if (getStoredToken() !== token) return;
         authenticatedToken.current = token;
         openNotificationLink(res.user.id);
-        setUser(res.user);
-        setLayout(res.user.preferences.layout);
-        setTheme(res.user.preferences.theme);
-        setUnreadOnly(res.user.preferences.unreadOnly);
-        setDesktopLibraryTab(res.user.preferences.unreadOnly ? 'unread' : 'all');
-        setMarkReadOnScroll(res.user.preferences.markReadOnScroll);
-        setAutoRefreshMinutes(res.user.preferences.autoRefreshMinutes);
+        rememberProfile(res.user); applyUser(res.user);
       })
-      .catch(() => {
-        if (getStoredToken() === token) setStoredToken(null);
+      .catch((error) => {
+        if (getStoredToken() !== token) return;
+        if (error instanceof ApiError && error.status === 401) { setStoredToken(null); activeCache.current?.close(); setUser(null); }
+        else { const profile = rememberedProfile(token); if (profile) { authenticatedToken.current = token; applyUser(profile); } }
       })
       .finally(() => {
         setAuthChecking(false);
@@ -287,7 +313,7 @@ export const App: React.FC = () => {
     return qs;
   }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, committedSearch, articleSort]);
 
-  const retainReadRows = isMobile && unreadOnly && !savedOnly && activeScope !== 'saved';
+  const retainReadRows = unreadOnly && !savedOnly && activeScope !== 'saved';
   const unreadSessions = useMemo(() => new Map<string, UnreadSession>(), [readerCache, isMobile]);
   const unreadSession = useMemo(() => {
     if (!retainReadRows) return new UnreadSession();
@@ -332,12 +358,12 @@ export const App: React.FC = () => {
       const res = await readerSync.page(qs, current, () => Promise.allSettled([...stateWrites.current.values()]));
       if (res && current()) {
         displayedArticleQuery.current = qs.toString();
-        setArticles(retainReadRows ? unreadSession.merge(res.articles) : res.articles);
+        setArticles(retainReadRows ? unreadSession.merge(res.articles, articleSort) : res.articles);
         setHasMoreArticles(Boolean(res.hasMore));
       }
     } catch { /* cached screens remain usable while offline */ }
     finally { if (current()) setLoadingArticles(false); }
-  }, [readerCache, readerSync, buildArticleQuery, retainReadRows, unreadSession, fetchBootstrap]);
+  }, [readerCache, readerSync, buildArticleQuery, retainReadRows, unreadSession, fetchBootstrap, articleSort]);
   publishSyncedPage.current = fetchArticles;
 
   useEffect(() => {
@@ -371,34 +397,48 @@ export const App: React.FC = () => {
     pendingScroll.current = null;
   }, [articles, loadingArticles, mobileSidebarOpen, selectedArticleId, buildArticleQuery]);
 
+  const selectedBody = selectedArticleId ? articleCache.current.get(selectedArticleId) : undefined;
   useEffect(() => {
     const known = selectedArticleId ? articleCache.current.get(selectedArticleId) : undefined;
-    if (!user || !readerCache || !selectedArticleId || (known && (!known.body_deferred || known.body_load_error))) return;
+    if (!user || !readerCache || !articleResources || !selectedArticleId || known?.body_load_error) return;
     let active = true;
-    const cache = readerCache, revision = cache.revision;
-    cache.request(`body:${selectedArticleId}`, async () => {
-      await Promise.allSettled([...stateWrites.current.values()]);
-      if (!cache.active || activeCache.current !== cache) throw new Error('Session changed');
-      return apiRequest<ArticlePage>(`/api/articles?articleId=${encodeURIComponent(selectedArticleId)}`);
-    })
-      .then(({ articles: found }) => {
-        if (!active || !cache.active || revision !== cache.revision) return;
-        if (!found[0]) { setSelectedArticleId(null); return; }
-        const latest = articleCache.current.get(selectedArticleId);
-        const article = { ...found[0], is_read: latest?.is_read ?? found[0].is_read, is_saved: latest?.is_saved ?? found[0].is_saved, body_deferred: false, body_load_error: false };
-        cache.updateFields(article.id, article);
-        unreadSessions.forEach((session) => session.patch(article.id, article));
-        articleCache.current.set(article.id, article); setRestoredArticle(article);
-        setArticles((rows) => rows.map((row) => row.id === article.id ? article : row));
-      }).catch(() => {
-        if (!active || !cache.active) return;
-        if (!known) { setSelectedArticleId(null); return; }
-        const article = { ...known, body_load_error: true };
-        articleCache.current.set(article.id, article); setRestoredArticle(article);
-        setArticles((rows) => rows.map((row) => row.id === article.id ? article : row));
-      });
+    const cache = readerCache;
+    const load = async () => {
+      if (known) {
+        const local = await articleResources.hydrate(known);
+        if (!local.body_deferred) return local;
+      }
+      const result = await cache.request(`body:${selectedArticleId}`, () => apiRequest<ArticlePage>(`/api/articles?articleId=${encodeURIComponent(selectedArticleId)}`));
+      return result.articles[0];
+    };
+    void load().then((body) => {
+      if (!active || !cache.active || activeCache.current !== cache) return;
+      if (!body) { setSelectedArticleId(null); return; }
+      const latest = articleCache.current.get(selectedArticleId);
+      const article = { ...body, full_content_html: body.full_content_html || latest?.full_content_html || null, is_read: latest?.is_read ?? body.is_read, is_saved: latest?.is_saved ?? body.is_saved, body_deferred: false, body_load_error: false };
+      cache.updateFields(article.id, article);
+      unreadSessions.forEach((session) => session.patch(article.id, article));
+      articleCache.current.set(article.id, article); setRestoredArticle(article);
+      setArticles((rows) => rows.map((row) => row.id === article.id ? article : row));
+    }).catch(() => {
+      if (!active || !cache.active || !known) return;
+      const article = { ...known, body_load_error: true };
+      articleCache.current.set(article.id, article); setRestoredArticle(article);
+      setArticles((rows) => rows.map((row) => row.id === article.id ? article : row));
+    });
     return () => { active = false; };
-  }, [user?.id, selectedArticleId, articles, readerCache, unreadSessions]);
+  }, [user?.id, selectedArticleId, selectedBody?.body_deferred, selectedBody?.body_load_error, readerCache, articleResources, unreadSessions]);
+
+  const preloadArticleIds = articles.slice(0, 5).map((article) => article.id).join(':');
+  useEffect(() => {
+    if (!articleResources || loadingArticles || loadingBootstrap || refreshingFeeds || mobileSidebarOpen || selectedArticleId) return;
+    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+    let active = true;
+    const current = () => active && document.visibilityState === 'visible';
+    const generation = readerCache?.revision;
+    const timer = setTimeout(() => void articleResources.preload(articles, () => current() && readerCache?.revision === generation), 800);
+    return () => { active = false; clearTimeout(timer); };
+  }, [articleResources, preloadArticleIds, loadingArticles, loadingBootstrap, refreshingFeeds, mobileSidebarOpen, selectedArticleId]);
 
   const loadMoreArticles = useCallback(async () => {
     const last = articles[articles.length - 1];
@@ -416,7 +456,7 @@ export const App: React.FC = () => {
       setArticles((prev) => {
         const seen = new Set(prev.map((a) => a.id));
         const next = [...prev, ...res.articles.filter((a) => !seen.has(a.id))];
-        return retainReadRows ? unreadSession.merge(next) : next;
+        return retainReadRows ? unreadSession.merge(next, articleSort) : next;
       });
       setHasMoreArticles(Boolean(res.hasMore));
     } catch {
@@ -424,7 +464,7 @@ export const App: React.FC = () => {
     } finally {
       setLoadingMoreArticles(false);
     }
-  }, [user, articles, hasMoreArticles, loadingMoreArticles, retainReadRows, unreadSession]);
+  }, [user, articles, hasMoreArticles, loadingMoreArticles, retainReadRows, unreadSession, articleSort]);
 
   useEffect(() => {
     if (user) {
@@ -445,16 +485,7 @@ export const App: React.FC = () => {
     markReadOnScroll: boolean;
     autoRefreshMinutes: number;
   }>) => {
-    const cache = readerCache, token = authenticatedToken.current;
-    const operation = preferenceWrites.current.catch(() => {}).then(async () => {
-      if (activeCache.current !== cache || getStoredToken() !== token) return;
-      await apiRequest('/api/user/preferences', {
-        method: 'PUT',
-        body: JSON.stringify(next),
-      });
-    });
-    preferenceWrites.current = operation.catch(() => {});
-    await preferenceWrites.current;
+    if (user) saveDevicePreferences(user.id, next, isMobile ? 'mobile' : 'desktop');
   };
 
   const handleChangeLayout = (nextLayout: LayoutMode) => {
@@ -498,6 +529,8 @@ export const App: React.FC = () => {
     handleSelectScope(tab === 'saved' ? 'saved' : 'all');
   };
   const handleSelectDesktopScope = (scope: ScopeType, folderId: string | null = null, feedId: string | null = null) => {
+    unreadSessions.forEach((session) => session.clear());
+    if (retainReadRows) setArticles((rows) => rows.filter((article) => !article.is_read));
     const unread = desktopLibraryTab === 'unread';
     setUnreadOnly(unread); setSavedOnly(desktopLibraryTab === 'saved' && (scope === 'folder' || scope === 'feed'));
     if (unread !== unreadOnly) void savePreferences({ unreadOnly: unread });
@@ -635,20 +668,11 @@ export const App: React.FC = () => {
     );
   };
 
-  // The body view is remembered per feed (and per account, on the server).
+  // Appearance and per-feed view choices stay on this device.
+  const [, setFeedPreferenceVersion] = useState(0);
   const handleChangeViewMode = (feedId: string, viewMode: ArticleViewMode) => {
-    readerCache?.updateBootstrap((data) => ({ ...data, subscriptions: data.subscriptions.map((sub) => sub.feed_id === feedId ? { ...sub, view_mode: viewMode } : sub) }));
-    setSubscriptions((prev) =>
-      prev.map((s) => (s.feed_id === feedId ? { ...s, view_mode: viewMode } : s))
-    );
-    const pending = apiRequest(`/api/feeds/${feedId}/view-mode`, {
-      method: 'PUT',
-      body: JSON.stringify({ viewMode }),
-    }).catch(() => {
-      // keeps the choice for this session; the next bootstrap shows what was saved
-    });
-    stateWrites.current.set(`view:${feedId}`, pending);
-    void pending.finally(() => { if (stateWrites.current.get(`view:${feedId}`) === pending) stateWrites.current.delete(`view:${feedId}`); });
+    if (user) saveFeedPreference(user.id, feedId, { view: viewMode });
+    setFeedPreferenceVersion((value) => value + 1);
   };
 
   const handleRefreshFeeds = useCallback(async () => {
@@ -763,7 +787,7 @@ export const App: React.FC = () => {
   const handleLogout = async () => {
     if (loggingOut.current) return;
     loggingOut.current = true;
-    await Promise.allSettled([...stateWrites.current.values(), preferenceWrites.current]);
+    await Promise.allSettled([...stateWrites.current.values()]);
     const flushed = readerCache?.close();
     activeCache.current = null;
     try {
@@ -808,7 +832,9 @@ export const App: React.FC = () => {
     }
   }, [selectedArticle, handleUpdateArticleState]);
   const selectedViewMode: ArticleViewMode =
-    subscriptions.find((s) => s.feed_id === selectedArticle?.feed_id)?.view_mode ?? 'feed';
+    (user && selectedArticle ? readFeedPreference(user.id, selectedArticle.feed_id).view : null)
+    // A choice saved on the server before settings moved to the device stays the default.
+    ?? subscriptions.find((s) => s.feed_id === selectedArticle?.feed_id)?.view_mode ?? 'feed';
 
   const selectedIndex = useMemo(
     () => articles.findIndex((a) => a.id === selectedArticleId),
@@ -933,13 +959,7 @@ export const App: React.FC = () => {
         onLoginSuccess={(loggedInUser) => {
           authenticatedToken.current = getStoredToken();
           openNotificationLink(loggedInUser.id);
-          setUser(loggedInUser);
-          setLayout(loggedInUser.preferences.layout);
-          setTheme(loggedInUser.preferences.theme);
-          setUnreadOnly(loggedInUser.preferences.unreadOnly);
-          setDesktopLibraryTab(loggedInUser.preferences.unreadOnly ? 'unread' : 'all');
-          setMarkReadOnScroll(loggedInUser.preferences.markReadOnScroll);
-          setAutoRefreshMinutes(loggedInUser.preferences.autoRefreshMinutes);
+          rememberProfile(loggedInUser); applyUser(loggedInUser);
         }}
       />
     );
@@ -1063,6 +1083,8 @@ export const App: React.FC = () => {
           <ArticleDrawer
             key={selectedArticle?.id || 'empty-reader'}
             article={selectedArticle}
+            resources={articleResources}
+            accountId={user.id}
             onClose={() => setSelectedArticleId(null)}
             onToggleRead={handleToggleRead}
             onToggleSaved={handleToggleSaved}

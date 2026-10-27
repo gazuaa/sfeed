@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Minus, Plus, Settings2, LayoutList, LayoutGrid, AlignJustify } from 'lucide-react';
 import type { LayoutMode } from '../client/api';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
+import { CacheSettings } from './CacheSettings';
 import { FONT_SCALES, useTextSize } from '../client/textSize';
 import { AUTO_REFRESH_OPTIONS } from '../shared/preferences';
 
@@ -53,6 +54,7 @@ export function DesktopReadingSettings({ autoRefreshMinutes, onChangeAutoRefresh
       <section className="sfeed-setting-section"><ScrollReadSetting {...props} /></section>
       <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
       {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}
+      {accountId && <section className="sfeed-setting-section"><CacheSettings accountId={accountId} /></section>}
     </div>
   </details>;
 }

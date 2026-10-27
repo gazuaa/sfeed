@@ -87,6 +87,7 @@ try {
   // Reader View must select datePublished, persist it, and return it for the
   // already-open drawer. Scraping a modified date alone must preserve the date.
   await db.prepare('UPDATE articles SET published_at = ?, content_html = NULL WHERE id = ?').bind(updated, row.id).run();
+  await db.prepare('INSERT INTO subscriptions(id,user_id,feed_id,created_at) VALUES(?,?,?,?)').bind('reader-sub', user.id, feedId, updated).run();
   globalThis.fetch = async () => new Response(`<html><head><meta property="article:published_time" content="2026-09-11T00:58:00+09:00"><meta property="article:modified_time" content="${updated}"></head><body><article><p>${'Real article content. '.repeat(30)}</p></article></body></html>`);
   const read = async (body = {}) => app.request(`/api/articles/${row.id}/reader-view`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }, env);
   const response = await read();
@@ -103,6 +104,8 @@ try {
   await db.prepare("UPDATE articles SET full_content_html = '<div class=\"reader-fallback-content\">x</div>' WHERE id = ?").bind(row.id).run();
   assert.equal((await read()).status, 502, 'an old made-up body is not served from cache');
   assert.equal((await db.prepare('SELECT full_content_html FROM articles WHERE id = ?').bind(row.id).first()).full_content_html, null);
+  await db.prepare('DELETE FROM subscriptions WHERE id = ?').bind('reader-sub').run();
+  assert.equal((await read()).status, 404, 'Reader View only extracts articles from subscribed feeds');
   // Every publisher is checked on article open, not only Hankyung and not only
   // when the user explicitly switches to Reader View.
   const other = { ...rss('', updated), xmlUrl: 'https://other.test/rss', articles: [{ ...rss('', updated).articles[0], guid: 'other-story', url: 'https://other.test/post', dateSource: 'updated' }] };

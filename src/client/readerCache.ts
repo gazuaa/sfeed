@@ -1,6 +1,9 @@
 import type { ArticleItem, BootstrapResponse } from './api';
 import type { ReaderSyncDelta } from '../shared/readerSync';
 import { patchPage } from './syncPages';
+import { openDeviceDatabase as openDatabase } from './deviceDatabase';
+import { retentionAge } from './cachePolicy';
+import { rememberArticles } from './deviceContent';
 
 export interface ArticlePage { articles: ArticleItem[]; hasMore?: boolean; syncSequence?: number; syncEpoch?: string; needsRefresh?: boolean }
 export interface Snapshot { account: string; key: string; data: BootstrapResponse | ArticlePage; savedAt: number; size: number }
@@ -10,33 +13,7 @@ export interface SnapshotStorage {
   remove(account: string): Promise<void>;
   keys?(account: string): Promise<string[]>;
 }
-export const CACHE_LIMITS = { entries: 12, bytes: 8 * 1024 * 1024, age: 24 * 60 * 60_000 };
-let database: Promise<IDBDatabase | null> | undefined;
-function openDatabase() {
-  return database ??= new Promise<IDBDatabase | null>((resolve) => {
-    let finished = false;
-    const finish = (db: IDBDatabase | null) => {
-      if (finished) { db?.close(); return; }
-      finished = true; clearTimeout(timer); resolve(db);
-    };
-    const timer = setTimeout(() => finish(null), 1500);
-    try {
-      if (typeof indexedDB === 'undefined') { finish(null); return; }
-      const request = indexedDB.open('sfeed-reader-cache', 1);
-      request.onupgradeneeded = () => {
-        const store = request.result.createObjectStore('snapshots', { keyPath: ['account', 'key'] });
-        store.createIndex('account', 'account');
-        // Key cursors can enforce the limit without cloning article bodies.
-        store.createIndex('age-size', ['savedAt', 'size']);
-      };
-      request.onerror = request.onblocked = () => finish(null);
-      request.onsuccess = () => {
-        request.result.onversionchange = () => request.result.close();
-        finish(request.result);
-      };
-    } catch { finish(null); }
-  });
-}
+export const CACHE_LIMITS = { entries: 24, bytes: 8 * 1024 * 1024, age: 30 * 86400_000 };
 export const deviceSnapshots: SnapshotStorage = {
   async keys(account) {
     const db = await openDatabase();
@@ -77,7 +54,7 @@ export const deviceSnapshots: SnapshotStorage = {
           if (item) { const [at, size] = item.key as number[]; rows.push({ key: item.primaryKey, size, at }); item.continue(); return; }
           let bytes = rows.reduce((sum, row) => sum + row.size, 0), count = rows.length;
           for (const row of rows) {
-            if (row.at + CACHE_LIMITS.age > Date.now() && count <= CACHE_LIMITS.entries && bytes <= CACHE_LIMITS.bytes) break;
+            if (row.at + retentionAge(String((row.key as string[])[0])) > Date.now() && count <= CACHE_LIMITS.entries && bytes <= CACHE_LIMITS.bytes) break;
             store.delete(row.key); count--; bytes -= row.size;
           }
         };
@@ -132,7 +109,7 @@ export class ReaderCache {
   get active() { return !this.closed; }
   touch() { if (this.active) this.revision++; }
   get epoch() { return (this.entries.get('bootstrap')?.data as BootstrapResponse | undefined)?.cacheEpoch; }
-  has(key: string) { const entry = this.entries.get(key); return this.active && Boolean(entry && entry.savedAt + CACHE_LIMITS.age > this.now()); }
+  has(key: string) { const entry = this.entries.get(key); return this.active && Boolean(entry && entry.savedAt + retentionAge(this.account) > this.now()); }
   request<T extends Snapshot['data']>(key: string, fetcher: () => Promise<T>): Promise<T> {
     const previous = this.requests.get(key);
     if (previous?.revision === this.revision) return previous.promise as Promise<T>;
@@ -158,7 +135,7 @@ export class ReaderCache {
     const loaded = memory ?? await this.storage.read(this.account, key).catch(() => undefined);
     // A faster network response may have populated memory while disk was read.
     const snapshot = this.entries.get(key) ?? loaded;
-    if (this.closed || revision !== this.revision || snapshot?.account !== this.account || snapshot.savedAt + CACHE_LIMITS.age <= this.now()) return;
+    if (this.closed || revision !== this.revision || snapshot?.account !== this.account || snapshot.savedAt + retentionAge(this.account) <= this.now()) return;
     if (key.startsWith('articles?') && this.overrides.size) snapshot.data = patchPage(snapshot.data as ArticlePage, key, [...this.overrides.values()], new Set(), new Set(), this.entries.get('bootstrap')?.data as BootstrapResponse | undefined);
     this.entries.delete(key); this.entries.set(key, snapshot);
     this.trim();
@@ -169,6 +146,7 @@ export class ReaderCache {
     let size = sizeOf(data);
     // Retain a useful first screen even if a feed includes very large bodies.
     if ('articles' in data) {
+      rememberArticles(this.account, data.articles);
       while (size > CACHE_LIMITS.bytes && data.articles.length > 1) {
         data = { ...data, articles: data.articles.slice(0, Math.ceil(data.articles.length / 2)), hasMore: true };
         size = sizeOf(data);

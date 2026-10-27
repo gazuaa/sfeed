@@ -124,8 +124,17 @@ export function setStoredToken(token: string | null): void {
     localStorage.setItem(SESSION_STORAGE_KEY, token);
   } else {
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem('sfeed_verified_profile');
   }
 }
+
+export function rememberProfile(user: UserProfile) {
+  try { localStorage.setItem('sfeed_verified_profile', JSON.stringify({ token: getStoredToken(), user })); } catch {}
+}
+export function rememberedProfile(token: string): UserProfile | null {
+  try { const saved = JSON.parse(localStorage.getItem('sfeed_verified_profile') || 'null'); return saved?.token === token && saved.user?.id ? saved.user : null; } catch { return null; }
+}
+export class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
 export async function apiRequest<T>(
   path: string,
@@ -153,7 +162,7 @@ export async function apiRequest<T>(
     } catch {
       // ignore
     }
-    throw new Error(errorMsg);
+    throw new ApiError(errorMsg, res.status);
   }
 
   return res.json() as Promise<T>;

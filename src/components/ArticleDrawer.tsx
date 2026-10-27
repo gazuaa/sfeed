@@ -27,6 +27,8 @@ import {
   type ArticleViewMode as ViewMode,
 } from '../client/api';
 import { useTextSize } from '../client/textSize';
+import type { ArticleResources } from '../client/articleResources';
+import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
 
 const VIEW_MODES = [
@@ -39,11 +41,11 @@ const VIEW_MODES = [
 // it is scaled from outside: laid out at (pane size ÷ zoom), then scale(zoom).
 // The right zoom depends on the screen, so it is remembered per device.
 const WEB_ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
-const WEB_ZOOM_KEY = 'sfeed_web_zoom';
 
-function loadWebZoom(): number {
+
+function loadWebZoom(account: string, feed: string): number {
   try {
-    const saved = Number(localStorage.getItem(WEB_ZOOM_KEY));
+    const saved = Number(readFeedPreference(account, feed).zoom);
     return WEB_ZOOM_STEPS.includes(saved) ? saved : 1;
   } catch {
     return 1;
@@ -51,6 +53,8 @@ function loadWebZoom(): number {
 }
 
 interface ArticleDrawerProps {
+  accountId?: string;
+  resources?: ArticleResources | null;
   article: ArticleItem | null;
   onClose: () => void;
   onToggleRead: (article: ArticleItem) => void;
@@ -70,6 +74,8 @@ interface ArticleDrawerProps {
 
 export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   article,
+  accountId = '',
+  resources,
   onClose,
   onToggleRead,
   onToggleSaved,
@@ -83,9 +89,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 }) => {
   const [readerFailedFor, setReaderFailedFor] = useState<string | null>(null);
   const [frame, setFrame] = useState<{ articleId: string; embeddable: boolean; url: string; reason?: string } | null>(null);
-  const [automaticReaderFor, setAutomaticReaderFor] = useState<string | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
-  const mode = viewMode === 'web' && automaticReaderFor === article?.id ? 'reader' : viewMode;
+  const mode = viewMode;
   const [checkingDate, setCheckingDate] = useState(false);
   const [scrapingReader, setScrapingReader] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -93,7 +98,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     null
   );
   const [fontScale] = useTextSize();
-  const [webZoom, setWebZoom] = useState(loadWebZoom);
+  const [webZoom, setWebZoom] = useState(() => loadWebZoom(accountId, article?.feed_id || ''));
   const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
   // Sites that refuse to be framed get a script-free copy fetched by the server.
   const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null } | null>(null);
@@ -109,7 +114,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         : WEB_ZOOM_STEPS[Math.min(WEB_ZOOM_STEPS.length - 1, Math.max(0, index + step))];
     setWebZoom(next);
     try {
-      localStorage.setItem(WEB_ZOOM_KEY, String(next));
+      if (article) saveFeedPreference(accountId, article.feed_id, { zoom: next });
     } catch {
       // the zoom still applies to this article
     }
@@ -117,13 +122,10 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
   // Reader view: extract the full article once; the server caches it.
   useEffect(() => {
-    if (!article || article.body_deferred || mode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
+    if (!article || mode !== 'reader' || article.full_content_html || readerFailedFor === article.id) return;
     let active = true;
     setScrapingReader(true);
-    apiRequest<{ fullContentHtml: string; publishedAt?: string }>(`/api/articles/${article.id}/reader-view`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
+    (resources ? resources.reader(article).then((body) => ({ fullContentHtml: body.full_content_html!, publishedAt: body.published_at })) : apiRequest<{ fullContentHtml: string; publishedAt?: string }>(`/api/articles/${article.id}/reader-view`, { method: 'POST', body: '{}' }))
       .then((res) => {
         if (!active) return;
         onUpdateArticleFields(article.id, {
@@ -136,23 +138,27 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     return () => { active = false; setScrapingReader(false); };
   }, [article?.id, article?.body_deferred, mode, readerRetry]);
 
-  // Web view: ask the server whether the site allows being framed.
+  // Show the site immediately; cached copies render without a server check.
   useEffect(() => {
-    if (!article || mode !== 'web' || frame?.articleId === article.id) return;
+    if (!article || mode !== 'web') return;
     let active = true;
-    apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`)
-      .then((res) => {
-        if (!active) return;
-        setFrame({ articleId: article.id, ...res });
-        if (res.embeddable) return;
-        if (res.reason === 'challenge') { setAutomaticReaderFor(article.id); return; }
-        apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`)
-          .then((copy) => { if (active) setWebCopy({ articleId: article.id, html: copy.html }); })
-          .catch(() => { if (active) { setWebCopy({ articleId: article.id, html: null }); setAutomaticReaderFor(article.id); } });
-      })
-      .catch(() => { if (active) setFrame({ articleId: article.id, embeddable: true, url: article.url }); });
+    setFrame({ articleId: article.id, embeddable: true, url: article.url.replace(/^http:/, 'https:') });
+    const load = async () => {
+      const cached = await resources?.cachedWeb(article);
+      if (!active) return;
+      if (cached) { setFrame({ articleId: article.id, embeddable: false, url: cached.url }); setWebCopy({ articleId: article.id, html: cached.html }); return; }
+      const result = await apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`);
+      if (!active) return;
+      setFrame({ articleId: article.id, ...result });
+      if (result.embeddable) return;
+      try {
+        const copy = await (resources ? resources.web(article) : apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`));
+        if (active) setWebCopy({ articleId: article.id, html: copy.html });
+      } catch { if (active) setWebCopy({ articleId: article.id, html: null }); }
+    };
+    void load().catch(() => {});
     return () => { active = false; };
-  }, [article?.id, mode]);
+  }, [article?.id, mode, resources]);
 
   useEffect(() => {
     if (!article || article.body_deferred || article.date_source === 'original') { setCheckingDate(false); return; }
@@ -171,8 +177,14 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     <p className="text-sm">왼쪽 목록에서 글을 누르면 여기에 표시됩니다.</p>
   </div>;
 
+  const showWebCopy = () => {
+    setFrame({ articleId: article.id, embeddable: false, url: article.url }); setWebCopy(null);
+    void (resources ? resources.web(article) : apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`))
+      .then((copy) => setWebCopy({ articleId: article.id, html: copy.html }))
+      .catch(() => setWebCopy({ articleId: article.id, html: null }));
+  };
+
   const chooseViewMode = (mode: ViewMode) => {
-    setAutomaticReaderFor(null);
     if (mode === 'reader') { setReaderFailedFor(null); setReaderRetry((value) => value + 1); }
     onChangeViewMode(mode);
   };
@@ -484,6 +496,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   }`}
                 >
                   <span className="truncate min-w-0">{frame.url}</span>
+                  <button type="button" onClick={showWebCopy} className="shrink-0 hover:underline">웹 사본으로 보기</button>
                   <a
                     href={frame.url}
                     target="_blank"
@@ -507,6 +520,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                       transformOrigin: '0 0',
                     }}
                     sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
+                    onError={showWebCopy}
                     referrerPolicy="strict-origin-when-cross-origin"
                   />
                 </div>
@@ -547,7 +561,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   />
                 </div>
               </>
-            ) : frame.reason !== 'challenge' && webCopy?.articleId !== article.id ? (
+            ) : webCopy?.articleId !== article.id ? (
               <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>사이트가 직접 표시를 막아 사본을 불러오는 중…</span>
@@ -559,6 +573,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   {frame.reason === 'challenge' ? '사이트의 보안 확인 때문에 웹 보기를 열 수 없어요.' : frame.reason === 'http' ? '사이트에서 페이지를 불러오지 못했어요.' : '이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.'}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button type="button" className="sfeed-cache-clear" onClick={showWebCopy}>웹 사본 다시 시도</button>
+                  <button type="button" className="sfeed-cache-clear" onClick={() => setFrame({ articleId: article.id, embeddable: true, url: article.url })}>원본 다시 표시</button>
                   <a
                     href={frame.url}
                     target="_blank"
@@ -587,7 +603,6 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         ) : (
         <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
           {article.body_deferred && <div role="status" className="flex items-center gap-2 text-sm text-slate-400">{article.body_load_error ? <><span>본문을 가져오지 못했습니다.</span><button className="text-emerald-500" onClick={() => onUpdateArticleFields(article.id, { body_load_error: false })}>다시 시도</button></> : <><Loader2 size={16} className="animate-spin" /><span>본문 불러오는 중…</span></>}</div>}
-          {automaticReaderFor === article.id && <p role="status" className={`rounded-xl border px-3 py-2 text-xs ${isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'}`}>웹 보기를 열 수 없어 리더로 전환했습니다.</p>}
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">
             <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-400 font-medium">

@@ -49,6 +49,12 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 .sfeed-desktop-settings summary { display: flex; align-items: center; padding: 9px; border: 1px solid var(--sfeed-border); border-radius: 12px; list-style: none; cursor: pointer; }
 .sfeed-desktop-settings summary::-webkit-details-marker { display: none; }
 .sfeed-desktop-settings-panel { position: absolute; right: 0; top: calc(100% + 12px); z-index: 80; width: 280px; padding: 16px; border: 1px solid var(--sfeed-border); border-radius: 18px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 12px 40px #0003; }
+.sfeed-cache-usage, .sfeed-cache-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 12px; }
+.sfeed-cache-clear, .sfeed-cache-actions button { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--sfeed-border); border-radius: 10px; font-size: 12px; cursor: pointer; }
+@media (min-width: 1024px) {
+  .sfeed-workspace-header { position: relative; z-index: 90; isolation: isolate; overflow: visible; }
+  .sfeed-content-panes { position: relative; z-index: 0; }
+}
 .sfeed-desktop-settings-panel > p { margin-bottom: 8px; font-size: 12px; color: var(--sfeed-muted); }
 .sfeed-auto-refresh-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--sfeed-border); font-size: 13px; }
 .sfeed-auto-refresh-setting select { max-width: 130px; padding: 7px 9px; border: 1px solid var(--sfeed-border); border-radius: 9px; background: var(--sfeed-panel); color: var(--sfeed-text); }
@@ -163,7 +169,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-settings { position: relative; }
   .sfeed-mobile-settings summary { list-style: none; }
   .sfeed-mobile-settings summary::-webkit-details-marker { display: none; }
-  .sfeed-mobile-settings-panel { position: absolute; right: -42px; top: 52px; z-index: 8; width: min(272px, calc(100vw - 36px)); padding: 16px; border-radius: 22px; border: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); box-shadow: 0 12px 40px #0003; }
+  .sfeed-mobile-settings-panel { max-height: calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); position: absolute; right: -42px; top: 52px; z-index: 8; width: min(272px, calc(100vw - 36px)); padding: 16px; border-radius: 22px; border: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); box-shadow: 0 12px 40px #0003; }
   .sfeed-mobile-eyebrow { color: var(--sfeed-mobile-muted); font-size: 11px; margin: 0 0 8px; }
   .sfeed-mobile-setting-options { display: flex; gap: 6px; margin-bottom: 16px; padding: 3px; border-radius: 14px; background: var(--sfeed-mobile-raised); }
   .sfeed-mobile-setting-options button { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 44px; border-radius: 11px; cursor: pointer; }
