@@ -27,6 +27,13 @@ export default {
           headers,
         });
       }
+      // Vite includes a content hash in these filenames. Keep them on the
+      // device across launches; fresh HTML selects the next deployed version.
+      if (/^\/assets\/[^/]+-[\w-]{8,}\.(?:js|css)$/.test(url.pathname) && assetResponse.ok && /javascript|^text\/css/i.test(assetResponse.headers.get('Content-Type') || '')) {
+        const headers = new Headers(assetResponse.headers);
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return new Response(assetResponse.body, { status: assetResponse.status, statusText: assetResponse.statusText, headers });
+      }
       return assetResponse;
     }
 

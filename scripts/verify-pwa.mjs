@@ -57,6 +57,14 @@ try {
     assert.equal(response.headers.get('cache-control'), 'no-store');
     if (path === '/sw.js') assert.equal(response.headers.get('service-worker-allowed'), '/');
   }
+  for (const path of ['/assets/index-Abc12345.js', '/assets/index-Abc12345.css']) {
+    const response = await worker.fetch(new Request('https://sfeed.test' + path), { ASSETS: { fetch: async () => new Response('asset', { headers: { 'Content-Type': path.endsWith('.css') ? 'text/css' : 'text/javascript' } }) } }, {});
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  }
+  const missing = await worker.fetch(new Request('https://sfeed.test/assets/index-Abc12345.js'), { ASSETS: { fetch: async () => new Response('missing', { status: 404 }) } }, {});
+  assert.equal(missing.headers.get('cache-control'), null, 'missing assets must not be cached for a year');
+  const fallback = await worker.fetch(new Request('https://sfeed.test/assets/missing-Abc12345.js'), { ASSETS: { fetch: async () => new Response('app shell', { headers: { 'Content-Type': 'text/html' } }) } }, {});
+  assert.equal(fallback.headers.get('cache-control'), null, 'a SPA fallback is not an immutable JavaScript asset');
   const fakeWindow = new EventTarget();
   fakeWindow.matchMedia = () => ({ matches: false, addEventListener() {} });
   globalThis.window = fakeWindow;

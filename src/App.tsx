@@ -30,10 +30,20 @@ import { useTextSize } from './client/textSize';
 import { useMobileNavigation } from './client/navigation';
 import { MobileHeader, MobileDock, type LibraryTab } from './components/MobileChrome';
 import { MobileLibrary } from './components/MobileLibrary';
+import { ReaderCache, articlePageKey, revalidate, updateCounts, updateSubscription, type ArticlePage } from './client/readerCache';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const authenticatedToken = useRef<string | null>(null);
+  const readerCache = useMemo(() => user ? new ReaderCache(user.id) : null, [user?.id]);
+  const activeCache = useRef(readerCache);
+  activeCache.current = readerCache;
+  const stateWrites = useRef(new Map<string, Promise<unknown>>());
+  const confirmedStates = useRef(new Map<string, ArticleItem>());
+  const bootstrapFlight = useRef<{ cache: ReaderCache; revision: number; promise: Promise<void> } | null>(null);
+  const bootstrapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (bootstrapTimer.current) clearTimeout(bootstrapTimer.current); bootstrapTimer.current = null; }, [readerCache]);
 
   // Bootstrap data
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -53,6 +63,12 @@ export const App: React.FC = () => {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [committedSearch, setCommittedSearch] = useState('');
+  useEffect(() => {
+    if (!searchQuery) { setCommittedSearch(''); return; }
+    const timer = setTimeout(() => setCommittedSearch(searchQuery), 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // User Preferences
   const [layout, setLayout] = useState<LayoutMode>('magazine');
@@ -150,33 +166,70 @@ export const App: React.FC = () => {
 
     apiRequest<{ user: UserProfile }>('/api/user/me')
       .then((res) => {
+        if (getStoredToken() !== token) return;
+        authenticatedToken.current = token;
         setUser(res.user);
         setLayout(res.user.preferences.layout);
         setTheme(res.user.preferences.theme);
         setUnreadOnly(res.user.preferences.unreadOnly);
       })
       .catch(() => {
-        setStoredToken(null);
+        if (getStoredToken() === token) setStoredToken(null);
       })
       .finally(() => {
         setAuthChecking(false);
       });
   }, []);
 
-  const fetchBootstrap = useCallback(async () => {
-    if (!user) return;
-    try {
-      const data = await apiRequest<BootstrapResponse>('/api/bootstrap');
+  const fetchBootstrap = useCallback((): Promise<void> => {
+    const cache = readerCache;
+    if (!cache?.active || activeCache.current !== cache) return Promise.resolve();
+    if (bootstrapFlight.current?.cache === cache) {
+      const flight = bootstrapFlight.current;
+      return flight.revision === cache.revision ? flight.promise : flight.promise.then(() => fetchBootstrap());
+    }
+    const token = getStoredToken();
+    const current = () => activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
+    const revision = cache.revision;
+    const promise = revalidate(cache, 'bootstrap', async () => {
+      await Promise.allSettled([...stateWrites.current.values()]);
+      return apiRequest<BootstrapResponse>('/api/bootstrap');
+    }, (data) => {
       setFolders(data.folders);
       setSubscriptions(data.subscriptions);
       setCounts(data.counts);
       setCuratedFeeds(data.curatedFeeds);
-    } catch {
-      // ignore
-    } finally {
       setLoadingBootstrap(false);
-    }
-  }, [user]);
+    }, current).then(() => {}, () => {}).finally(() => {
+      if (current()) setLoadingBootstrap(false);
+      if (bootstrapFlight.current?.promise === promise) bootstrapFlight.current = null;
+      // If a mutation invalidated an in-flight count, reconcile once the
+      // previous request completes instead of accepting its stale result.
+      if (current() && cache.revision !== revision) void fetchBootstrap();
+    });
+    bootstrapFlight.current = { cache, revision, promise };
+    return promise;
+  }, [readerCache]);
+
+  const scheduleBootstrap = useCallback(() => {
+    if (bootstrapTimer.current) return;
+    bootstrapTimer.current = setTimeout(() => { bootstrapTimer.current = null; void fetchBootstrap(); }, 10_000);
+  }, [fetchBootstrap]);
+
+  // Refresh another device's changes when returning to the app, without
+  // making every article click run the expensive full-library counts query.
+  useEffect(() => {
+    if (!readerCache) return;
+    const visible = () => { if (document.visibilityState === 'visible') void fetchBootstrap(); };
+    const sessionChanged = (event: StorageEvent) => {
+      if (event.key === 'sfeed_session_token' && event.newValue !== event.oldValue) {
+        void readerCache.clear(); window.location.reload();
+      }
+    };
+    document.addEventListener('visibilitychange', visible);
+    window.addEventListener('storage', sessionChanged);
+    return () => { document.removeEventListener('visibilitychange', visible); window.removeEventListener('storage', sessionChanged); };
+  }, [readerCache, fetchBootstrap]);
 
   const buildArticleQuery = useCallback(() => {
     const qs = new URLSearchParams({
@@ -192,31 +245,36 @@ export const App: React.FC = () => {
     if (savedOnly && activeScope !== 'saved') {
       qs.set('savedOnly', 'true');
     }
-    if (searchQuery.trim()) {
-      qs.set('search', searchQuery.trim());
+    if (committedSearch.trim()) {
+      qs.set('search', committedSearch.trim());
     }
     return qs;
-  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, searchQuery]);
+  }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, committedSearch]);
 
   const fetchArticles = useCallback(async () => {
-    if (!user) return;
+    const cache = readerCache;
+    if (!cache?.active || activeCache.current !== cache) return;
     const request = ++articleRequestRef.current;
+    const token = getStoredToken();
+    const current = () => request === articleRequestRef.current && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
     setLoadingArticles(true);
+    const qs = buildArticleQuery();
+    articleQueryRef.current = qs.toString();
     try {
-      const qs = buildArticleQuery();
-      articleQueryRef.current = qs.toString();
-      const res = await apiRequest<{ articles: ArticleItem[]; hasMore?: boolean }>(
-        `/api/articles?${qs.toString()}`
-      );
-      if (request !== articleRequestRef.current) return;
-      setArticles(res.articles);
-      setHasMoreArticles(Boolean(res.hasMore));
+      await revalidate<ArticlePage>(cache, articlePageKey(qs), async () => {
+        await Promise.allSettled([...stateWrites.current.values()]);
+        return apiRequest<ArticlePage>(`/api/articles?${qs}`);
+      }, (res) => {
+        setArticles(res.articles);
+        setHasMoreArticles(Boolean(res.hasMore));
+        setLoadingArticles(false);
+      }, current);
     } catch {
       // ignore
     } finally {
-      if (request === articleRequestRef.current) setLoadingArticles(false);
+      if (current()) setLoadingArticles(false);
     }
-  }, [user, buildArticleQuery]);
+  }, [readerCache, buildArticleQuery]);
 
   useEffect(() => {
     if (pendingScroll.current === null || loadingArticles || mobileSidebarOpen || selectedArticleId || articleQueryRef.current !== buildArticleQuery().toString()) return;
@@ -323,11 +381,18 @@ export const App: React.FC = () => {
       article: ArticleItem,
       changes: { isRead?: boolean; isSaved?: boolean }
     ) => {
+      const cache = readerCache;
+      if (!cache) return;
+      const token = authenticatedToken.current;
+      article = articleCache.current.get(article.id) ?? article;
       const nextRead =
         typeof changes.isRead === 'boolean' ? changes.isRead : article.is_read;
       const nextSaved =
         typeof changes.isSaved === 'boolean' ? changes.isSaved : article.is_saved;
       const nextArticle = { ...article, is_read: nextRead, is_saved: nextSaved };
+      cache.updateArticle(article, nextArticle);
+      setCounts((prev) => updateCounts(prev, article, nextArticle));
+      setSubscriptions((prev) => prev.map((sub) => updateSubscription(sub, article, nextArticle)));
       articleCache.current.set(article.id, nextArticle);
       setRestoredArticle((prev) => prev?.id === article.id ? nextArticle : prev);
 
@@ -340,20 +405,39 @@ export const App: React.FC = () => {
         )
       );
 
-      try {
-        await apiRequest(`/api/articles/${article.id}/state`, {
+      // Preserve the user's toggle order if several updates happen quickly.
+      const previous = stateWrites.current.get(article.id);
+      if (!previous) confirmedStates.current.set(article.id, article);
+      let precedingFailed = false;
+      const operation = (previous ?? Promise.resolve()).catch(() => { precedingFailed = true; }).then(() => {
+        if (activeCache.current !== cache || getStoredToken() !== token) return;
+        return apiRequest(`/api/articles/${article.id}/state`, {
           method: 'POST',
-          body: JSON.stringify(changes),
+          body: JSON.stringify(precedingFailed ? { isRead: nextRead, isSaved: nextSaved } : changes),
         });
-        fetchBootstrap();
+      });
+      stateWrites.current.set(article.id, operation);
+      try {
+        await operation;
+        if (activeCache.current === cache) { confirmedStates.current.set(article.id, nextArticle); scheduleBootstrap(); }
       } catch {
+        if (activeCache.current !== cache || stateWrites.current.get(article.id) !== operation) return;
         // Revert on failure
-        articleCache.current.set(article.id, article);
-        setRestoredArticle((prev) => prev?.id === article.id ? article : prev);
-        fetchArticles();
+        const confirmed = confirmedStates.current.get(article.id) ?? article;
+        const latest = articleCache.current.get(article.id) ?? nextArticle;
+        const rollback = { ...latest, is_read: confirmed.is_read, is_saved: confirmed.is_saved };
+        cache.updateArticle(latest, rollback);
+        setCounts((prev) => updateCounts(prev, latest, rollback));
+        setSubscriptions((prev) => prev.map((sub) => updateSubscription(sub, latest, rollback)));
+        articleCache.current.set(article.id, rollback);
+        setRestoredArticle((prev) => prev?.id === article.id ? rollback : prev);
+        void fetchArticles();
+        scheduleBootstrap();
+      } finally {
+        if (stateWrites.current.get(article.id) === operation) { stateWrites.current.delete(article.id); confirmedStates.current.delete(article.id); }
       }
     },
-    [fetchBootstrap, fetchArticles]
+    [readerCache, scheduleBootstrap, fetchArticles]
   );
 
   const handleSelectArticle = useCallback(
@@ -387,6 +471,8 @@ export const App: React.FC = () => {
     articleId: string,
     fields: Partial<ArticleItem>
   ) => {
+    readerCache?.updateFields(articleId, fields);
+    if (fields.published_at) scheduleBootstrap();
     const cached = articleCache.current.get(articleId);
     if (cached) articleCache.current.set(articleId, { ...cached, ...fields });
     setRestoredArticle((prev) => prev?.id === articleId ? { ...prev, ...fields } : prev);
@@ -397,18 +483,22 @@ export const App: React.FC = () => {
 
   // The body view is remembered per feed (and per account, on the server).
   const handleChangeViewMode = (feedId: string, viewMode: ArticleViewMode) => {
+    readerCache?.updateBootstrap((data) => ({ ...data, subscriptions: data.subscriptions.map((sub) => sub.feed_id === feedId ? { ...sub, view_mode: viewMode } : sub) }));
     setSubscriptions((prev) =>
       prev.map((s) => (s.feed_id === feedId ? { ...s, view_mode: viewMode } : s))
     );
-    apiRequest(`/api/feeds/${feedId}/view-mode`, {
+    const pending = apiRequest(`/api/feeds/${feedId}/view-mode`, {
       method: 'PUT',
       body: JSON.stringify({ viewMode }),
     }).catch(() => {
       // keeps the choice for this session; the next bootstrap shows what was saved
     });
+    stateWrites.current.set(`view:${feedId}`, pending);
+    void pending.finally(() => { if (stateWrites.current.get(`view:${feedId}`) === pending) stateWrites.current.delete(`view:${feedId}`); });
   };
 
   const handleRefreshFeeds = useCallback(async () => {
+    readerCache?.invalidate();
     setRefreshingFeeds(true);
     try {
       await apiRequest('/api/feeds/refresh', {
@@ -417,13 +507,14 @@ export const App: React.FC = () => {
           feedId: activeScope === 'feed' ? activeFeedId : undefined,
         }),
       });
+      readerCache?.invalidate();
       await Promise.all([fetchBootstrap(), fetchArticles()]);
     } catch {
       // ignore
     } finally {
       setRefreshingFeeds(false);
     }
-  }, [activeScope, activeFeedId, fetchBootstrap, fetchArticles]);
+  }, [readerCache, activeScope, activeFeedId, fetchBootstrap, fetchArticles]);
 
   const handleMarkAllRead = () => {
     setMarkReadError(null);
@@ -438,6 +529,7 @@ export const App: React.FC = () => {
     markingAllReadRef.current = true;
     setMarkingAllRead(true);
     setMarkReadError(null);
+    readerCache?.invalidate();
     try {
       await apiRequest('/api/articles/mark-all-read', {
         method: 'POST',
@@ -447,6 +539,7 @@ export const App: React.FC = () => {
           feedId: markReadTarget.feedId,
         }),
       });
+      readerCache?.invalidate();
       await Promise.all([fetchBootstrap(), fetchArticles()]);
       setMarkReadTarget(null);
     } catch {
@@ -458,10 +551,12 @@ export const App: React.FC = () => {
   };
 
   const handleCreateFolder = async (name: string) => {
+    readerCache?.invalidate();
     await apiRequest('/api/folders', {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
+    readerCache?.invalidate();
     await fetchBootstrap();
   };
 
@@ -484,14 +579,17 @@ export const App: React.FC = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     setDeleteError(null);
+    readerCache?.invalidate();
     try {
       if (deleteTarget.kind === 'folder') {
         await apiRequest(`/api/folders/${deleteTarget.id}`, { method: 'DELETE' });
+        readerCache?.invalidate();
         if (activeFolderId === deleteTarget.id) handleSelectScope('all', null, null);
         await fetchBootstrap();
       } else {
         const feedId = subscriptions.find((sub) => sub.id === deleteTarget.id)?.feed_id;
         await apiRequest(`/api/subscriptions/${deleteTarget.id}`, { method: 'DELETE' });
+        readerCache?.invalidate();
         if (activeScope === 'feed' && feedId && activeFeedId === feedId) handleSelectScope('all', null, null);
         await Promise.all([fetchBootstrap(), fetchArticles()]);
       }
@@ -504,13 +602,23 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    const cleared = readerCache?.clear();
+    activeCache.current = null;
     try {
       await apiRequest('/api/user/logout', { method: 'POST' });
     } catch {
       // ignore
     }
     setStoredToken(null);
+    authenticatedToken.current = null;
+    await cleared;
     setUser(null);
+    setArticles([]);
+    setFolders([]);
+    setSubscriptions([]);
+    setCounts({ totalUnread: 0, totalArticles: 0, savedCount: 0, todayCount: 0, todayTotal: 0 });
+    setActiveScope('all'); setActiveFeedId(null); setActiveFolderId(null); setSearchQuery(''); setSavedOnly(false);
+    setMobileSidebarOpen(isMobile);
     setLoadingBootstrap(true);
     setSelectedArticleId(null);
   };
@@ -643,6 +751,7 @@ export const App: React.FC = () => {
         theme={theme}
         onChangeTheme={handleChangeTheme}
         onLoginSuccess={(loggedInUser) => {
+          authenticatedToken.current = getStoredToken();
           setUser(loggedInUser);
           setLayout(loggedInUser.preferences.layout);
           setTheme(loggedInUser.preferences.theme);
@@ -839,6 +948,7 @@ export const App: React.FC = () => {
         folders={folders}
         subscriptions={subscriptions}
         onSubscribed={async () => {
+          readerCache?.invalidate();
           await Promise.all([fetchBootstrap(), fetchArticles()]);
         }}
         isDark={isDark}
