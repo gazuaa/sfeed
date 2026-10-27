@@ -31,12 +31,18 @@ import { useMobileNavigation } from './client/navigation';
 import { MobileHeader, MobileDock, type LibraryTab } from './components/MobileChrome';
 import { MobileLibrary } from './components/MobileLibrary';
 import { ReaderCache, articlePageKey, revalidate, updateCounts, updateSubscription, type ArticlePage } from './client/readerCache';
+import { feedCacheVersion, preloadArticleQueries, ReaderPreloader } from './client/readerPreload';
+import { usePullRefresh } from './client/pullRefresh';
+import { PullRefreshIndicator } from './components/PullRefreshIndicator';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const authenticatedToken = useRef<string | null>(null);
   const readerCache = useMemo(() => user ? new ReaderCache(user.id) : null, [user?.id]);
+  const readerPreloader = useMemo(() => readerCache ? new ReaderPreloader(readerCache) : null, [readerCache]);
+  const [preloadVersion, setPreloadVersion] = useState<{ cache: ReaderCache; version: string } | null>(null);
+  const previousFeedVersion = useRef<typeof preloadVersion>(null);
   const activeCache = useRef(readerCache);
   activeCache.current = readerCache;
   const stateWrites = useRef(new Map<string, Promise<unknown>>());
@@ -84,12 +90,14 @@ export const App: React.FC = () => {
   const [loadingMoreArticles, setLoadingMoreArticles] = useState(false);
   // Query of the list currently shown; an older page is dropped if the view changed meanwhile.
   const articleQueryRef = useRef('');
+  const displayedArticleQuery = useRef('');
   const articleRequestRef = useRef(0);
   const articleListRef = useRef<HTMLElement>(null);
   const pendingScroll = useRef<number | null>(null);
   const articleCache = useRef(new Map<string, ArticleItem>());
   const [restoredArticle, setRestoredArticle] = useState<ArticleItem | null>(null);
   const [refreshingFeeds, setRefreshingFeeds] = useState(false);
+  const refreshingFeedsRef = useRef(false);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
   // Modals & Mobile Sidebar
@@ -140,6 +148,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     articleCache.current.clear();
+    displayedArticleQuery.current = '';
     stateWrites.current.clear();
     confirmedStates.current.clear();
     setRestoredArticle(null);
@@ -195,13 +204,18 @@ export const App: React.FC = () => {
     const revision = cache.revision;
     const promise = revalidate(cache, 'bootstrap', async () => {
       await Promise.allSettled([...stateWrites.current.values()]);
+      if (!current() || !cache.active) throw new Error('Session changed');
       return apiRequest<BootstrapResponse>('/api/bootstrap');
-    }, (data) => {
+    }, (data, source) => {
       setFolders(data.folders);
       setSubscriptions(data.subscriptions);
       setCounts(data.counts);
       setCuratedFeeds(data.curatedFeeds);
       setLoadingBootstrap(false);
+      if (source === 'network') {
+        const version = feedCacheVersion(data);
+        setPreloadVersion((prev) => prev?.cache === cache && prev.version === version ? prev : { cache, version });
+      }
     }, current).then(() => {}, () => {}).finally(() => {
       if (current()) setLoadingBootstrap(false);
       if (bootstrapFlight.current?.promise === promise) bootstrapFlight.current = null;
@@ -259,14 +273,16 @@ export const App: React.FC = () => {
     const request = ++articleRequestRef.current;
     const token = getStoredToken();
     const current = () => request === articleRequestRef.current && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
-    setLoadingArticles(true);
     const qs = buildArticleQuery();
+    setLoadingArticles(displayedArticleQuery.current !== qs.toString());
     articleQueryRef.current = qs.toString();
     try {
       await revalidate<ArticlePage>(cache, articlePageKey(qs), async () => {
         await Promise.allSettled([...stateWrites.current.values()]);
+        if (!current() || !cache.active) throw new Error('Session changed');
         return apiRequest<ArticlePage>(`/api/articles?${qs}`);
       }, (res) => {
+        displayedArticleQuery.current = qs.toString();
         setArticles(res.articles);
         setHasMoreArticles(Boolean(res.hasMore));
         setLoadingArticles(false);
@@ -277,6 +293,39 @@ export const App: React.FC = () => {
       if (current()) setLoadingArticles(false);
     }
   }, [readerCache, buildArticleQuery]);
+
+  // A background/server refresh discovered on resume also refreshes the open list.
+  useEffect(() => {
+    if (!preloadVersion || preloadVersion.cache !== readerCache) return;
+    const previous = previousFeedVersion.current;
+    previousFeedVersion.current = preloadVersion;
+    if (previous?.cache === readerCache && previous.version !== preloadVersion.version && !refreshingFeeds) void fetchArticles();
+  }, [preloadVersion, readerCache, refreshingFeeds, fetchArticles]);
+
+  useEffect(() => {
+    const cache = readerCache;
+    if (!cache || !readerPreloader || preloadVersion?.cache !== cache || loadingBootstrap || loadingArticles || refreshingFeeds) return;
+    const queries = preloadArticleQueries(buildArticleQuery());
+    if (!queries.length) return;
+    const token = authenticatedToken.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const current = () => !cancelled && document.visibilityState === 'visible' && activeCache.current === cache && getStoredToken() === token && token === authenticatedToken.current;
+    const start = () => {
+      clearTimeout(timer);
+      if (!current()) return;
+      timer = setTimeout(() => {
+        void readerPreloader.run(queries, preloadVersion.version, async (query) => {
+          await Promise.allSettled([...stateWrites.current.values()]);
+          if (!current() || !cache.active) throw new Error('Session changed');
+          return apiRequest<ArticlePage>(`/api/articles?${query}`);
+        }, current);
+      }, 350);
+    };
+    start();
+    document.addEventListener('visibilitychange', start);
+    return () => { cancelled = true; clearTimeout(timer); document.removeEventListener('visibilitychange', start); };
+  }, [readerCache, readerPreloader, preloadVersion, buildArticleQuery, loadingBootstrap, loadingArticles, refreshingFeeds]);
 
   useEffect(() => {
     if (pendingScroll.current === null || loadingArticles || mobileSidebarOpen || selectedArticleId || articleQueryRef.current !== buildArticleQuery().toString()) return;
@@ -500,7 +549,8 @@ export const App: React.FC = () => {
   };
 
   const handleRefreshFeeds = useCallback(async () => {
-    readerCache?.invalidate();
+    if (refreshingFeedsRef.current || !readerCache?.active) return;
+    refreshingFeedsRef.current = true;
     setRefreshingFeeds(true);
     try {
       await apiRequest('/api/feeds/refresh', {
@@ -514,9 +564,12 @@ export const App: React.FC = () => {
     } catch {
       // ignore
     } finally {
+      refreshingFeedsRef.current = false;
       setRefreshingFeeds(false);
     }
   }, [readerCache, activeScope, activeFeedId, fetchBootstrap, fetchArticles]);
+
+  const pullDistance = usePullRefresh(isMobile && Boolean(user) && !selectedArticleId && !discoverOpen && !markReadTarget, refreshingFeeds, handleRefreshFeeds);
 
   const handleMarkAllRead = () => {
     setMarkReadError(null);
@@ -907,6 +960,7 @@ export const App: React.FC = () => {
       </ResizableWorkspace>
 
       {isMobile && <div className="sfeed-mobile-library-host" data-open={mobileSidebarOpen || undefined}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {isMobile && !selectedArticle && <PullRefreshIndicator distance={pullDistance} refreshing={refreshingFeeds} />}
       {!mobileSidebarOpen && !selectedArticle && <MobileDock hidden={chromeHidden} active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
       {markReadTarget && (

@@ -23,6 +23,7 @@
     "test:navigation": "node scripts/verify-navigation.mjs",
     "test:mobile": "node scripts/verify-mobile-ui.mjs",
     "test:cache": "node scripts/verify-reader-cache.mjs",
+    "test:pull-refresh": "node scripts/verify-pull-refresh.mjs",
     "test:discovery": "node scripts/verify-discovery.mjs",
     "test:panels": "node scripts/verify-panel-widths.mjs",
     "test:builder": "node scripts/verify-rss-builder.mjs",

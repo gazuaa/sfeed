@@ -109,10 +109,22 @@ export const articlePageKey = (query: URLSearchParams) => { const sorted = new U
 export class ReaderCache {
   private entries = new Map<string, Snapshot>();
   private writes: Promise<unknown> = Promise.resolve();
+  private requests = new Map<string, { revision: number; promise: Promise<Snapshot['data']> }>();
   private closed = false;
   revision = 0;
   constructor(readonly account: string, private storage: SnapshotStorage = deviceSnapshots, private now = Date.now) {}
   get active() { return !this.closed; }
+  has(key: string) { const entry = this.entries.get(key); return this.active && Boolean(entry && entry.savedAt + CACHE_LIMITS.age > this.now()); }
+  request<T extends Snapshot['data']>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const previous = this.requests.get(key);
+    if (previous?.revision === this.revision) return previous.promise as Promise<T>;
+    const promise = Promise.resolve().then(() => {
+      if (!this.active) throw new Error('Reader cache closed');
+      return fetcher();
+    }).finally(() => { if (this.requests.get(key)?.promise === promise) this.requests.delete(key); });
+    this.requests.set(key, { revision: this.revision, promise });
+    return promise;
+  }
   private queue(operation: () => Promise<unknown>) { this.writes = this.writes.then(operation).catch(() => {}); return this.writes; }
   private trim() {
     let bytes = [...this.entries.values()].reduce((sum, entry) => sum + entry.size, 0);
@@ -179,21 +191,23 @@ export class ReaderCache {
     if (entry) this.put('bootstrap', update(entry.data as BootstrapResponse));
   }
   invalidate() { if (this.closed) return; this.revision++; this.entries.clear(); void this.queue(() => this.storage.remove(this.account)); }
-  close() { this.closed = true; this.revision++; this.entries.clear(); return this.writes; }
+  close() { this.closed = true; this.revision++; this.entries.clear(); this.requests.clear(); return this.writes; }
   clear() { this.close(); return this.queue(() => this.storage.remove(this.account)); }
   flushed() { return this.writes; }
 }
 
 // Cached data can paint while the request runs. A late disk read or an old
 // response must not overwrite fresh data, navigation or optimistic mutations.
-export async function revalidate<T extends Snapshot['data']>(cache: ReaderCache, key: string, fetcher: () => Promise<T>, apply: (data: T) => void, current: () => boolean) {
+export async function revalidate<T extends Snapshot['data']>(cache: ReaderCache, key: string, fetcher: () => Promise<T>, apply: (data: T, source: 'cache' | 'network') => void, current: () => boolean) {
   if (!cache.active || !current()) return false;
   const revision = cache.revision;
   let fresh = false, cached = false;
-  const disk = cache.get<T>(key).then((data) => { if (data && !fresh && cache.active && current() && revision === cache.revision) { cached = true; apply(data); } });
+  const disk = cache.get<T>(key).then((data) => { if (data && !fresh && cache.active && current() && revision === cache.revision) { cached = true; apply(data, 'cache'); } });
   try {
-    const data = await fetcher(); fresh = true;
-    if (cache.active && current() && revision === cache.revision) { cache.put(key, data); apply(data); }
+    const data = await cache.request(key, fetcher); fresh = true;
+    if (cache.active && current() && revision === cache.revision) { cache.put(key, data); apply(data, 'network'); }
+  } catch (error) {
+    if (cache.active && current() && revision === cache.revision) throw error;
   } finally { await disk; }
   return cached;
 }

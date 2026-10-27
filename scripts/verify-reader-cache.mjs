@@ -32,8 +32,9 @@ try {
   assert.deepEqual(shown, ['Cached article', 'Fresh article']);
 
   const disk = deferred(), slowDisk = new ReaderCache('alice', { ...storage, read: () => disk.promise }, () => now);
-  const latest = [], racing = revalidate(slowDisk, allKey, async () => ({ articles: [{ ...article, title: 'New' }] }), (data) => latest.push(data.articles[0].title), () => true);
-  await Promise.resolve(); await Promise.resolve();
+  const freshPainted = deferred();
+  const latest = [], racing = revalidate(slowDisk, allKey, async () => ({ articles: [{ ...article, title: 'New' }] }), (data) => { latest.push(data.articles[0].title); freshPainted.resolve(); }, () => true);
+  await freshPainted.promise;
   disk.resolve({ account: 'alice', key: allKey, savedAt: now, size: 100, data: { articles: [article] } }); await racing;
   assert.deepEqual(latest, ['New'], 'a late disk read never replaces a fresh response');
   assert.equal((await slowDisk.get(allKey)).articles[0].title, 'New', 'the in-memory cache also retains the newer network value');
@@ -93,5 +94,71 @@ try {
   const bounded = await large.get(allKey);
   assert.ok(bounded.articles.length < 32); assert.equal(bounded.hasMore, true);
   assert.ok([...rows.values()].filter((row) => row.account === 'large').every((row) => row.size <= CACHE_LIMITS.bytes));
-  console.log('PASS: instant cached paint then fresh data, reload, logout retention and queued writes, account isolation, explicit deletion, stale response protection, read/save counts and filters, age/size limits and storage-failure fallback.');
+
+  const { ReaderPreloader, preloadArticleQueries, feedCacheVersion } = await vite.ssrLoadModule('/src/client/readerPreload.ts');
+  const allQuery = new URLSearchParams('scope=all&unreadOnly=false');
+  const plan = preloadArticleQueries(allQuery);
+  assert.deepEqual(plan.map((query) => query.get('scope')), ['all', 'saved']);
+  const folderPlan = preloadArticleQueries(new URLSearchParams('scope=folder&folderId=folder-one&unreadOnly=true'));
+  assert.equal(folderPlan.length, 5, 'only library tabs and the selected folder are warmed');
+  assert.equal(folderPlan.filter((query) => query.get('folderId') === 'folder-one').length, 2);
+  assert.equal(preloadArticleQueries(new URLSearchParams('scope=all&search=bitcoin')).length, 0, 'search does not trigger speculative downloads');
+  assert.equal(feedCacheVersion(bootstrap), feedCacheVersion({ ...bootstrap, subscriptions: [{ ...sub, unread_count: 0, saved_count: 1 }] }), 'read/save counts do not refetch the library');
+  const updated = { ...bootstrap, subscriptions: [{ ...sub, total_count: 6, last_fetched_at: 'updated' }] };
+  assert.notEqual(feedCacheVersion(bootstrap), feedCacheVersion(updated), 'a new feed update invalidates the preload version');
+
+  const warm = new ReaderCache('warm', storage), preloader = new ReaderPreloader(warm);
+  const started = deferred(), firstPage = deferred();
+  let requests = 0, concurrent = 0, maxConcurrent = 0, foregroundRequests = 0;
+  const fetchPage = async (query) => {
+    assert.equal(query.get('limit'), '20', 'speculation only downloads the first screen');
+    requests++; concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent);
+    try {
+      if (requests === 1) { started.resolve(); return await firstPage.promise; }
+      return { articles: [{ ...article, title: 'Preloaded' }] };
+    } finally { concurrent--; }
+  };
+  const warming = preloader.run(plan, 'v1', fetchPage, () => true);
+  await started.promise;
+  const foreground = [];
+  const opening = revalidate(warm, articlePageKey(plan[0]), async () => { foregroundRequests++; return { articles: [] }; }, (data) => foreground.push(data), () => true);
+  firstPage.resolve({ articles: [{ ...article, title: 'Shared request' }] });
+  await Promise.all([warming, opening]);
+  assert.equal(foregroundRequests, 0, 'opening a warming list shares the in-flight network request');
+  assert.equal(foreground.at(-1).articles[0].title, 'Shared request');
+  assert.equal(requests, 2); assert.equal(maxConcurrent, 1, 'background downloads run serially');
+  await preloader.run(plan, 'v1', fetchPage, () => true);
+  assert.equal(requests, 2, 'unchanged feeds do not download warmed lists again');
+  await preloader.run(plan, 'v2', fetchPage, () => true);
+  assert.equal(requests, 4, 'updated feeds refresh warmed lists');
+  warm.invalidate();
+  await preloader.run(plan, 'v2', fetchPage, () => true);
+  assert.equal(requests, 6, 'explicit invalidation is refilled even when the feed version is unchanged');
+  await warm.flushed();
+  assert.equal((await new ReaderCache('warm', storage).get(articlePageKey(plan[1]))).articles[0].title, 'Preloaded', 'preloaded pages persist for the next launch');
+
+  const cancelled = new ReaderCache('cancelled-preload', storage), cancelledLoader = new ReaderPreloader(cancelled);
+  const waiting = deferred(), inFlight = deferred(); let cancelledRequests = 0;
+  const cancellation = cancelledLoader.run(plan, 'v1', async () => { cancelledRequests++; inFlight.resolve(); return waiting.promise; }, () => true);
+  await inFlight.promise; await cancelled.close();
+  waiting.resolve({ articles: [article] }); await cancellation;
+  assert.equal(cancelledRequests, 1, 'logout stops the rest of the preload queue');
+  assert.equal(await new ReaderCache('cancelled-preload', storage).get(articlePageKey(plan[0])), undefined, 'a late preload cannot write after logout');
+
+  const mutated = new ReaderCache('mutated-preload', storage), mutationLoader = new ReaderPreloader(mutated);
+  const stalePage = deferred(), fetching = deferred();
+  const mutationLoad = mutationLoader.run(plan, 'v1', async () => { fetching.resolve(); return stalePage.promise; }, () => true);
+  await fetching.promise;
+  mutated.put(articlePageKey(plan[0]), { articles: [article] });
+  mutated.updateArticle(article, readSaved);
+  stalePage.resolve({ articles: [article] }); await mutationLoad;
+  assert.equal((await mutated.get(articlePageKey(plan[0]))).articles.length, 0, 'an in-flight preload cannot restore an optimistically read article to unread');
+
+  const resilient = new ReaderCache('resilient-preload', storage), resilientLoader = new ReaderPreloader(resilient);
+  let failedRequests = 0;
+  await resilientLoader.run(plan, 'v1', async () => { if (++failedRequests === 1) throw Error('offline'); return { articles: [article] }; }, () => true);
+  assert.ok(await resilient.get(articlePageKey(plan[1])), 'one failed preload does not block another list');
+  await resilientLoader.run(plan, 'v1', async () => { failedRequests++; return { articles: [article] }; }, () => true);
+  assert.equal(failedRequests, 3, 'a failed preload can be retried');
+  console.log('PASS: cached paint/reload, logout retention, account isolation, stale response protection, optimistic state, cache limits, bounded serial preloading, shared foreground requests, feed-update refresh, cancellation and retry.');
 } finally { await vite.close(); }
