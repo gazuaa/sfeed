@@ -140,6 +140,8 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     articleCache.current.clear();
+    stateWrites.current.clear();
+    confirmedStates.current.clear();
     setRestoredArticle(null);
     return () => { articleRequestRef.current++; articleQueryRef.current = ''; };
   }, [user?.id]);
