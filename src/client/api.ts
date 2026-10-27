@@ -6,6 +6,8 @@ export interface UserPreferences {
   layout: LayoutMode;
   theme: ThemeMode;
   unreadOnly: boolean;
+  markReadOnScroll: boolean;
+  autoRefreshMinutes: number;
 }
 
 export interface UserProfile {

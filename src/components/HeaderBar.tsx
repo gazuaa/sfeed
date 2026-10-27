@@ -12,8 +12,9 @@ import {
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
 import { ThemeSwitch } from './ThemeSwitch';
+import { DesktopReadingSettings, type DesktopSettingsProps } from './ReadingSettings';
 
-interface HeaderBarProps {
+interface HeaderBarProps extends DesktopSettingsProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   layout: LayoutMode;
@@ -37,6 +38,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   refreshing,
   onMarkAllRead,
   onOpenMobileSidebar,
+  markReadOnScroll,
+  onChangeMarkReadOnScroll,
+  autoRefreshMinutes,
+  onChangeAutoRefreshMinutes,
 }) => {
   const isDark = theme === 'dark';
 
@@ -165,6 +170,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         </div>
           <div aria-hidden="true" className="sfeed-header-divider" />
           <div className="sfeed-global-controls flex shrink-0 items-center justify-end gap-2 px-4">
+            <DesktopReadingSettings markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} />
             <InstallAppButton />
             {/* Refresh Feeds */}
             <button

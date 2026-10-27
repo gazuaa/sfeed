@@ -34,6 +34,10 @@ import { ReaderCache, articlePageKey, revalidate, updateCounts, updateSubscripti
 import { feedCacheVersion, preloadArticleQueries, ReaderPreloader } from './client/readerPreload';
 import { usePullRefresh } from './client/pullRefresh';
 import { PullRefreshIndicator } from './components/PullRefreshIndicator';
+import { useScrollRead } from './client/scrollRead';
+import { UnreadSession } from './client/unreadSession';
+import { useAutoRefresh } from './client/autoRefresh';
+import { DEFAULT_AUTO_REFRESH_MINUTES } from './shared/preferences';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -47,6 +51,7 @@ export const App: React.FC = () => {
   activeCache.current = readerCache;
   const stateWrites = useRef(new Map<string, Promise<unknown>>());
   const confirmedStates = useRef(new Map<string, ArticleItem>());
+  const preferenceWrites = useRef<Promise<unknown>>(Promise.resolve());
   const bootstrapFlight = useRef<{ cache: ReaderCache; revision: number; promise: Promise<void> } | null>(null);
   const bootstrapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (bootstrapTimer.current) clearTimeout(bootstrapTimer.current); bootstrapTimer.current = null; }, [readerCache]);
@@ -80,6 +85,8 @@ export const App: React.FC = () => {
   const [layout, setLayout] = useState<LayoutMode>('magazine');
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [markReadOnScroll, setMarkReadOnScroll] = useState(false);
+  const [autoRefreshMinutes, setAutoRefreshMinutes] = useState(DEFAULT_AUTO_REFRESH_MINUTES);
   // Phones only: the 저장 tab inside a folder or feed list keeps that list.
   const [savedOnly, setSavedOnly] = useState(false);
 
@@ -183,6 +190,8 @@ export const App: React.FC = () => {
         setLayout(res.user.preferences.layout);
         setTheme(res.user.preferences.theme);
         setUnreadOnly(res.user.preferences.unreadOnly);
+        setMarkReadOnScroll(res.user.preferences.markReadOnScroll);
+        setAutoRefreshMinutes(res.user.preferences.autoRefreshMinutes);
       })
       .catch(() => {
         if (getStoredToken() === token) setStoredToken(null);
@@ -267,6 +276,23 @@ export const App: React.FC = () => {
     return qs;
   }, [activeScope, activeFolderId, activeFeedId, unreadOnly, savedOnly, committedSearch]);
 
+  const retainReadRows = isMobile && unreadOnly && !savedOnly && activeScope !== 'saved';
+  const unreadSessions = useMemo(() => new Map<string, UnreadSession>(), [readerCache, isMobile]);
+  const unreadSession = useMemo(() => {
+    if (!retainReadRows) return new UnreadSession();
+    const key = articlePageKey(buildArticleQuery());
+    let session = unreadSessions.get(key);
+    if (!session) { session = new UnreadSession(); unreadSessions.set(key, session); }
+    if (unreadSessions.size > 12) unreadSessions.delete(unreadSessions.keys().next().value!);
+    return session;
+  }, [unreadSessions, buildArticleQuery, retainReadRows]);
+  useLayoutEffect(() => {
+    if (isMobile && mobileSidebarOpen) {
+      unreadSessions.forEach((session) => session.clear());
+      if (retainReadRows) setArticles((prev) => prev.filter((article) => !article.is_read));
+    }
+  }, [isMobile, mobileSidebarOpen, unreadSessions, unreadSession, retainReadRows]);
+
   const fetchArticles = useCallback(async () => {
     const cache = readerCache;
     if (!cache?.active || activeCache.current !== cache) return;
@@ -283,7 +309,7 @@ export const App: React.FC = () => {
         return apiRequest<ArticlePage>(`/api/articles?${qs}`);
       }, (res) => {
         displayedArticleQuery.current = qs.toString();
-        setArticles(res.articles);
+        setArticles(retainReadRows ? unreadSession.merge(res.articles) : res.articles);
         setHasMoreArticles(Boolean(res.hasMore));
         setLoadingArticles(false);
       }, current);
@@ -292,7 +318,7 @@ export const App: React.FC = () => {
     } finally {
       if (current()) setLoadingArticles(false);
     }
-  }, [readerCache, buildArticleQuery]);
+  }, [readerCache, buildArticleQuery, retainReadRows, unreadSession]);
 
   // A background/server refresh discovered on resume also refreshes the open list.
   useEffect(() => {
@@ -362,7 +388,8 @@ export const App: React.FC = () => {
       if (articleQueryRef.current !== query) return;
       setArticles((prev) => {
         const seen = new Set(prev.map((a) => a.id));
-        return [...prev, ...res.articles.filter((a) => !seen.has(a.id))];
+        const next = [...prev, ...res.articles.filter((a) => !seen.has(a.id))];
+        return retainReadRows ? unreadSession.merge(next) : next;
       });
       setHasMoreArticles(Boolean(res.hasMore));
     } catch {
@@ -370,7 +397,7 @@ export const App: React.FC = () => {
     } finally {
       setLoadingMoreArticles(false);
     }
-  }, [user, articles, hasMoreArticles, loadingMoreArticles]);
+  }, [user, articles, hasMoreArticles, loadingMoreArticles, retainReadRows, unreadSession]);
 
   useEffect(() => {
     if (user) {
@@ -388,15 +415,19 @@ export const App: React.FC = () => {
     layout: LayoutMode;
     theme: ThemeMode;
     unreadOnly: boolean;
+    markReadOnScroll: boolean;
+    autoRefreshMinutes: number;
   }>) => {
-    try {
+    const cache = readerCache, token = authenticatedToken.current;
+    const operation = preferenceWrites.current.catch(() => {}).then(async () => {
+      if (activeCache.current !== cache || getStoredToken() !== token) return;
       await apiRequest('/api/user/preferences', {
         method: 'PUT',
         body: JSON.stringify(next),
       });
-    } catch {
-      // ignore
-    }
+    });
+    preferenceWrites.current = operation.catch(() => {});
+    await preferenceWrites.current;
   };
 
   const handleChangeLayout = (nextLayout: LayoutMode) => {
@@ -408,6 +439,20 @@ export const App: React.FC = () => {
     setTheme(nextTheme);
     savePreferences({ theme: nextTheme });
   };
+
+  const handleChangeMarkReadOnScroll = (enabled: boolean) => {
+    setMarkReadOnScroll(enabled);
+    void savePreferences({ markReadOnScroll: enabled });
+  };
+  const handleChangeAutoRefreshMinutes = (minutes: number) => {
+    setAutoRefreshMinutes(minutes);
+    void savePreferences({ autoRefreshMinutes: minutes });
+  };
+  useAutoRefresh(Boolean(user) && !isMobile, autoRefreshMinutes, async () => {
+    if (refreshingFeedsRef.current || !readerCache?.active) return;
+    await fetchBootstrap();
+    await fetchArticles();
+  });
 
   const handleSelectScope = (
     scope: ScopeType,
@@ -430,7 +475,8 @@ export const App: React.FC = () => {
   const handleUpdateArticleState = useCallback(
     async (
       article: ArticleItem,
-      changes: { isRead?: boolean; isSaved?: boolean }
+      changes: { isRead?: boolean; isSaved?: boolean },
+      persist?: () => Promise<unknown>
     ) => {
       const cache = readerCache;
       if (!cache) return;
@@ -441,6 +487,8 @@ export const App: React.FC = () => {
       const nextSaved =
         typeof changes.isSaved === 'boolean' ? changes.isSaved : article.is_saved;
       const nextArticle = { ...article, is_read: nextRead, is_saved: nextSaved };
+      unreadSessions.forEach((session) => session.patch(article.id, { is_read: nextRead, is_saved: nextSaved }));
+      if (retainReadRows) unreadSession.update(nextArticle);
       cache.updateArticle(article, nextArticle);
       setCounts((prev) => updateCounts(prev, article, nextArticle));
       setSubscriptions((prev) => prev.map((sub) => updateSubscription(sub, article, nextArticle)));
@@ -462,6 +510,7 @@ export const App: React.FC = () => {
       let precedingFailed = false;
       const operation = (previous ?? Promise.resolve()).catch(() => { precedingFailed = true; }).then(() => {
         if (activeCache.current !== cache || getStoredToken() !== token) return;
+        if (persist && !precedingFailed) return persist();
         return apiRequest(`/api/articles/${article.id}/state`, {
           method: 'POST',
           body: JSON.stringify(precedingFailed ? { isRead: nextRead, isSaved: nextSaved } : changes),
@@ -477,6 +526,7 @@ export const App: React.FC = () => {
         const confirmed = confirmedStates.current.get(article.id) ?? article;
         const latest = articleCache.current.get(article.id) ?? nextArticle;
         const rollback = { ...latest, is_read: confirmed.is_read, is_saved: confirmed.is_saved };
+        unreadSessions.forEach((session) => session.patch(article.id, rollback));
         cache.updateArticle(latest, rollback);
         setCounts((prev) => updateCounts(prev, latest, rollback));
         setSubscriptions((prev) => prev.map((sub) => updateSubscription(sub, latest, rollback)));
@@ -488,8 +538,24 @@ export const App: React.FC = () => {
         if (stateWrites.current.get(article.id) === operation) { stateWrites.current.delete(article.id); confirmedStates.current.delete(article.id); }
       }
     },
-    [readerCache, scheduleBootstrap, fetchArticles]
+    [readerCache, scheduleBootstrap, fetchArticles, retainReadRows, unreadSession, unreadSessions]
   );
+
+  const handleScrollRead = (ids: string[]) => {
+    const cache = readerCache, token = authenticatedToken.current;
+    if (!cache?.active || !markReadOnScroll) return;
+    const passed = ids.map((id) => articleCache.current.get(id)).filter((article): article is ArticleItem => Boolean(article && !article.is_read));
+    if (!passed.length) return;
+    const preceding = passed.map((article) => stateWrites.current.get(article.id)).filter(Boolean);
+    let batch: Promise<unknown> | undefined;
+    const persist = () => batch ??= Promise.allSettled(preceding).then(() => {
+      if (activeCache.current !== cache || getStoredToken() !== token) return;
+      return apiRequest('/api/articles/mark-read', { method: 'POST', body: JSON.stringify({ articleIds: passed.map((article) => article.id) }) });
+    });
+    for (const article of passed) void handleUpdateArticleState(article, { isRead: true }, persist);
+  };
+  useScrollRead(articleListRef, markReadOnScroll && Boolean(user) && !loadingArticles && !loadingBootstrap && !refreshingFeeds && !(isMobile && (mobileSidebarOpen || selectedArticleId)) && !discoverOpen && !markReadTarget,
+    `${user?.id}:${activeScope}:${activeFolderId}:${activeFeedId}:${unreadOnly}:${savedOnly}:${committedSearch}:${layout}`, handleScrollRead);
 
   const handleSelectArticle = useCallback(
     (article: ArticleItem) => {
@@ -523,6 +589,7 @@ export const App: React.FC = () => {
     fields: Partial<ArticleItem>
   ) => {
     readerCache?.updateFields(articleId, fields);
+    unreadSessions.forEach((session) => session.patch(articleId, fields));
     if (fields.published_at) scheduleBootstrap();
     const cached = articleCache.current.get(articleId);
     if (cached) articleCache.current.set(articleId, { ...cached, ...fields });
@@ -551,6 +618,7 @@ export const App: React.FC = () => {
   const handleRefreshFeeds = useCallback(async () => {
     if (refreshingFeedsRef.current || !readerCache?.active) return;
     refreshingFeedsRef.current = true;
+    unreadSessions.forEach((session) => session.clear());
     setRefreshingFeeds(true);
     try {
       await apiRequest('/api/feeds/refresh', {
@@ -567,7 +635,7 @@ export const App: React.FC = () => {
       refreshingFeedsRef.current = false;
       setRefreshingFeeds(false);
     }
-  }, [readerCache, activeScope, activeFeedId, fetchBootstrap, fetchArticles]);
+  }, [readerCache, activeScope, activeFeedId, fetchBootstrap, fetchArticles, unreadSessions]);
 
   const pullDistance = usePullRefresh(isMobile && Boolean(user) && !selectedArticleId && !discoverOpen && !markReadTarget, refreshingFeeds, handleRefreshFeeds);
 
@@ -811,6 +879,8 @@ export const App: React.FC = () => {
           setLayout(loggedInUser.preferences.layout);
           setTheme(loggedInUser.preferences.theme);
           setUnreadOnly(loggedInUser.preferences.unreadOnly);
+          setMarkReadOnScroll(loggedInUser.preferences.markReadOnScroll);
+          setAutoRefreshMinutes(loggedInUser.preferences.autoRefreshMinutes);
         }}
       />
     );
@@ -837,7 +907,7 @@ export const App: React.FC = () => {
     if (activeScope === 'folder' || activeScope === 'feed') applyMobileFilter(tab);
     else selectMobileTab(tab);
   };
-  const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml') };
+  const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml'), markReadOnScroll, onChangeMarkReadOnScroll: handleChangeMarkReadOnScroll };
 
   return (
     <>
@@ -887,6 +957,10 @@ export const App: React.FC = () => {
             refreshing={refreshingFeeds}
             onMarkAllRead={handleMarkAllRead}
             onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+            markReadOnScroll={markReadOnScroll}
+            onChangeMarkReadOnScroll={handleChangeMarkReadOnScroll}
+            autoRefreshMinutes={autoRefreshMinutes}
+            onChangeAutoRefreshMinutes={handleChangeAutoRefreshMinutes}
           /></div>
           </>
         }
@@ -949,6 +1023,7 @@ export const App: React.FC = () => {
           isDark={isDark}
           loading={loadingArticles || loadingBootstrap}
           hasSubscriptions={subscriptions.length > 0}
+          retainReadRows={retainReadRows}
         />
         {hasMoreArticles && articles.length > 0 && !loadingArticles && !loadingBootstrap && (
           <LoadMoreArticles

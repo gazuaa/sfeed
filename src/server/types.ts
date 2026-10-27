@@ -50,6 +50,8 @@ export interface UserPreferences {
   layout: 'magazine' | 'cards' | 'list';
   theme: 'dark' | 'light';
   unreadOnly: boolean;
+  markReadOnScroll: boolean;
+  autoRefreshMinutes: number;
 }
 
 export interface UserRecord {

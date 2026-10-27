@@ -24,6 +24,8 @@
     "test:mobile": "node scripts/verify-mobile-ui.mjs",
     "test:cache": "node scripts/verify-reader-cache.mjs",
     "test:pull-refresh": "node scripts/verify-pull-refresh.mjs",
+    "test:scroll-read": "node scripts/verify-scroll-read.mjs",
+    "test:desktop-settings": "node scripts/verify-desktop-settings.mjs",
     "test:discovery": "node scripts/verify-discovery.mjs",
     "test:panels": "node scripts/verify-panel-widths.mjs",
     "test:builder": "node scripts/verify-rss-builder.mjs",

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { collapsedFoldersKey, readCollapsedFolders, writeCollapsedFolders } from '../client/folderState';
 import {
   Rss,
   Archive,
@@ -68,16 +69,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   onCloseMobile,
 }) => {
-  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>(() => readCollapsedFolders(user.id));
+  useEffect(() => {
+    setCollapsedFolders(readCollapsedFolders(user.id));
+    const changed = (event: StorageEvent) => { if (event.key === collapsedFoldersKey(user.id) || event.key === null) setCollapsedFolders(readCollapsedFolders(user.id)); };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, [user.id]);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
   const toggleFolderCollapse = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setCollapsedFolders((prev) => ({
-      ...prev,
-      [folderId]: !prev[folderId],
-    }));
+    const next = { ...collapsedFolders, [folderId]: !collapsedFolders[folderId] };
+    setCollapsedFolders(next);
+    writeCollapsedFolders(user.id, next);
   };
 
   const handleCreateFolderSubmit = async (e: React.FormEvent) => {
@@ -246,6 +252,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <button
                           type="button"
                           onClick={(e) => toggleFolderCollapse(folder.id, e)}
+                          aria-label={`${folder.name} ${isCollapsed ? '펼치기' : '접기'}`}
+                          aria-expanded={!isCollapsed}
                           className="p-0.5 rounded hover:bg-slate-700/40 text-slate-400 cursor-pointer"
                         >
                           {isCollapsed ? (

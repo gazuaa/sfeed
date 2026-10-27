@@ -84,6 +84,7 @@ interface ArticleListProps {
   isDark: boolean;
   loading: boolean;
   hasSubscriptions: boolean;
+  retainReadRows?: boolean;
 }
 
 export const ArticleList: React.FC<ArticleListProps> = ({
@@ -97,6 +98,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   isDark,
   loading,
   hasSubscriptions,
+  retainReadRows = false,
 }) => {
   if (loading) {
     return (
@@ -154,7 +156,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   // 1. COMPACT LIST VIEW (Feedly Title-Only View)
   if (layout === 'list') {
     return (
-      <div className="sfeed-list-items p-4 lg:p-8 max-w-6xl mx-auto">
+      <div className="sfeed-list-items p-4 lg:p-8 max-w-6xl mx-auto" data-retain-read={retainReadRows || undefined}>
         <div
           className={`rounded-2xl border overflow-hidden divide-y ${
             isDark
@@ -167,6 +169,8 @@ export const ArticleList: React.FC<ArticleListProps> = ({
             return (
               <div
                 key={article.id}
+                data-article-id={article.id}
+                data-article-read={article.is_read}
                 onClick={() => onSelectArticle(article)}
                 className={`sfeed-compact-row group flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition cursor-pointer ${
                   isSelected
@@ -282,12 +286,14 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   // 2. CARDS VIEW (Grid Layout)
   if (layout === 'cards') {
     return (
-      <div className="sfeed-list-items sfeed-article-cards p-4 lg:p-8 max-w-7xl mx-auto grid grid-cols-1 gap-5">
+      <div className="sfeed-list-items sfeed-article-cards p-4 lg:p-8 max-w-7xl mx-auto grid grid-cols-1 gap-5" data-retain-read={retainReadRows || undefined}>
         {articles.map((article) => {
           const isSelected = selectedArticleId === article.id;
           return (
             <article
               key={article.id}
+              data-article-id={article.id}
+              data-article-read={article.is_read}
               onClick={() => onSelectArticle(article)}
               className={`group rounded-2xl border overflow-hidden flex flex-col justify-between transition duration-200 cursor-pointer ${
                 isSelected
@@ -417,12 +423,14 @@ export const ArticleList: React.FC<ArticleListProps> = ({
 
   // 3. MAGAZINE VIEW (Default Feedly Classic Layout)
   return (
-    <div className="sfeed-list-items p-3 lg:p-4 max-w-5xl mx-auto space-y-2">
+    <div className="sfeed-list-items p-3 lg:p-4 max-w-5xl mx-auto space-y-2" data-retain-read={retainReadRows || undefined}>
       {articles.map((article) => {
         const isSelected = selectedArticleId === article.id;
         return (
           <article
             key={article.id}
+            data-article-id={article.id}
+            data-article-read={article.is_read}
             onClick={() => onSelectArticle(article)}
             role="button"
             tabIndex={0}

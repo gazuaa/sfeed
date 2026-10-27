@@ -21,7 +21,7 @@ try {
 
   const { MobileLibrary } = await vite.ssrLoadModule('/src/components/MobileLibrary.tsx');
   const { MobileSettings } = await vite.ssrLoadModule('/src/components/MobileChrome.tsx');
-  const settings = { theme: 'dark', layout: 'magazine', onChangeTheme() {}, onChangeLayout() {}, onOpenOpml() {} };
+  const settings = { theme: 'dark', layout: 'magazine', markReadOnScroll: false, onChangeMarkReadOnScroll() {}, onChangeTheme() {}, onChangeLayout() {}, onOpenOpml() {} };
   const props = { ...settings, user: { id: 'test', name: 'Test', email: 'mobile@example.test' }, folders: [], subscriptions: [], counts: { totalArticles: 123, totalUnread: 24, savedCount: 7 }, onChangeCountTab() {}, onSelectTab() {}, onSelectFolder() {}, onSelectFeed() {}, onAdd() {}, onRefresh() {}, refreshing: false, onCreateFolder() {}, onDeleteFolder() {}, onUnsubscribe() {}, onLogout() {} };
   for (const [countTab, count] of [['all', 123], ['unread', 24], ['saved', 7]]) {
     const html = renderToStaticMarkup(React.createElement(MobileLibrary, { ...props, countTab }));
@@ -32,7 +32,8 @@ try {
   }
   const library = renderToStaticMarkup(React.createElement(MobileSettings, { ...settings, library: true }));
   assert.ok(!library.includes('매거진 뷰') && !library.includes('목록 보기'));
-  assert.match(library, /type="range"/); assert.match(library, /글자 크기/);
+  assert.ok(!library.includes('type="range"') && !library.includes('%'));
+  assert.match(library, /글자 작게/); assert.match(library, /글자 크게/); assert.match(library, /스크롤 시 읽음 처리/);
   const list = renderToStaticMarkup(React.createElement(MobileSettings, settings));
   assert.match(list, /매거진 뷰/);
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');

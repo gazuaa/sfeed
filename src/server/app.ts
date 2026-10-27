@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { DEFAULT_AUTO_REFRESH_MINUTES, validAutoRefresh } from '../shared/preferences';
 import { cors } from 'hono/cors';
 import type {
   Env,
@@ -43,6 +44,8 @@ const DEFAULT_PREFS: UserPreferences = {
   layout: 'magazine',
   theme: 'dark',
   unreadOnly: false,
+  markReadOnScroll: false,
+  autoRefreshMinutes: DEFAULT_AUTO_REFRESH_MINUTES,
 };
 
 // Like Feedly, articles older than this count as read unless marked otherwise.
@@ -67,6 +70,8 @@ function parsePreferences(jsonStr: string | null | undefined): UserPreferences {
         : 'magazine',
       theme: parsed.theme === 'light' ? 'light' : 'dark',
       unreadOnly: Boolean(parsed.unreadOnly),
+      markReadOnScroll: parsed.markReadOnScroll === true,
+      autoRefreshMinutes: validAutoRefresh(parsed.autoRefreshMinutes) ? parsed.autoRefreshMinutes : DEFAULT_AUTO_REFRESH_MINUTES,
     };
   } catch {
     return { ...DEFAULT_PREFS };
@@ -296,6 +301,8 @@ app.put('/api/user/preferences', async (c) => {
     theme: body.theme === 'light' || body.theme === 'dark' ? body.theme : current.theme,
     unreadOnly:
       typeof body.unreadOnly === 'boolean' ? body.unreadOnly : current.unreadOnly,
+    markReadOnScroll: typeof body.markReadOnScroll === 'boolean' ? body.markReadOnScroll : current.markReadOnScroll,
+    autoRefreshMinutes: validAutoRefresh(body.autoRefreshMinutes) ? body.autoRefreshMinutes : current.autoRefreshMinutes,
   };
 
   await c.env.DB.prepare('UPDATE users SET preferences_json = ? WHERE id = ?')
@@ -849,6 +856,23 @@ app.get('/api/articles', async (c) => {
   }));
 
   return c.json({ articles, hasMore });
+});
+
+// Scroll reading updates only visible, passed articles and preserves bookmarks.
+app.post('/api/articles/mark-read', async (c) => {
+  const body = await c.req.json<{ articleIds?: unknown }>();
+  if (!Array.isArray(body.articleIds) || body.articleIds.length > 50 || !body.articleIds.length || body.articleIds.some((id) => typeof id !== 'string' || !id || id.length > 200)) {
+    return c.json({ error: '읽음 처리할 글을 1~50개 지정해 주세요.' }, 400);
+  }
+  const ids = [...new Set(body.articleIds as string[])];
+  const userId = c.get('user').id;
+  await c.env.DB.prepare(`INSERT INTO article_states (user_id, article_id, is_read, read_at)
+    SELECT ?, a.id, 1, ? FROM articles a
+    JOIN subscriptions s ON s.feed_id = a.feed_id
+    WHERE s.user_id = ? AND a.id IN (${ids.map(() => '?').join(',')})
+    ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at`)
+    .bind(userId, new Date().toISOString(), userId, ...ids).run();
+  return c.json({ success: true });
 });
 
 // Toggle read / saved state on an article

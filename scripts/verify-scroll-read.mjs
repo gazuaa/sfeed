@@ -1,0 +1,102 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'vite';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+const previousObserver = globalThis.IntersectionObserver;
+try {
+  let observer;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback; observer = this; }
+    observe() {} unobserve() {} disconnect() {}
+    emit(rows) { this.callback(rows); }
+  };
+  const { bindScrollRead } = await vite.ssrLoadModule('/src/client/scrollRead.ts');
+  const root = new EventTarget(), frames = new Map(), marked = [];
+  let frameId = 0, allowed = true, blocked = false;
+  const view = { requestAnimationFrame(callback) { frames.set(++frameId, callback); return frameId; }, cancelAnimationFrame(id) { frames.delete(id); } };
+  root.ownerDocument = { defaultView: view, visibilityState: 'visible', querySelector: () => blocked ? {} : null };
+  root.scrollTop = 0; root.closest = () => null;
+  root.getBoundingClientRect = () => ({ top: 100, bottom: 500, right: 400 });
+  const row = (id, top, read = false) => ({ dataset: { articleId: id, articleRead: String(read) }, isConnected: true, top, getBoundingClientRect() { return { top: this.top, bottom: this.top + 100 }; } });
+  const a = row('a', 110), b = row('b', 220), read = row('read', 330, true), skipped = row('skipped', 900);
+  root.querySelectorAll = () => [a, b, read, skipped];
+  const cleanup = bindScrollRead(root, { canRead: () => allowed, onRead: (ids) => marked.push(ids) });
+  const visible = (...rows) => observer.emit(rows.map((target) => ({ target, isIntersecting: true })));
+  const scroll = (top) => { root.scrollTop = top; root.dispatchEvent(new Event('scroll')); for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
+  visible(a, b, read);
+  a.top = -10; scroll(120);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.deepEqual(marked, [], 'restoring a scroll position without user input never marks articles');
+  a.top = 110; scroll(0); visible(a, b, read);
+  root.dispatchEvent(new Event('wheel'));
+  a.top = -10; scroll(120);
+  b.top = -20; read.top = -30; skipped.top = -50; scroll(900);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.deepEqual(marked, [['a', 'b']], 'only seen unread rows crossing the top are batched; skipped rows and duplicates are excluded');
+  visible(a); root.dispatchEvent(new Event('wheel')); scroll(800);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal(marked.length, 1, 'scrolling up does not mark rows');
+  a.top = 120; visible(a); root.dispatchEvent(new Event('touchmove')); a.top = -10; scroll(950); allowed = false;
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal(marked.length, 1, 'turning the option off cancels a pending write');
+  allowed = true; blocked = true; a.top = 110; visible(a); root.dispatchEvent(new Event('wheel')); a.top = -10; scroll(1100);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal(marked.length, 1, 'settings/dialogs do not trigger automatic reading');
+  cleanup(); root.dispatchEvent(new Event('wheel')); scroll(1300);
+  assert.equal(frames.size, 0);
+
+  const { UnreadSession } = await vite.ssrLoadModule('/src/client/unreadSession.ts');
+  const article = (id, is_read = false) => ({ id, published_at: `2026-10-27T0${id === 'a' ? 2 : 1}:00:00Z`, is_read, is_saved: false, title: id });
+  const session = new UnreadSession();
+  session.merge([article('a'), article('b')]); session.update(article('a', true));
+  let retained = session.merge([article('b')]);
+  assert.deepEqual(retained.map((item) => [item.id, item.is_read]), [['a', true], ['b', false]], 'read rows remain after a server refresh in the mobile session');
+  session.patch('a', { full_content_html: 'body' });
+  assert.equal(session.merge([])[0].full_content_html, 'body');
+  session.update(article('a'));
+  assert.equal(session.merge([])[0].is_read, false, 'manual unread and failed writes can roll back');
+  session.clear();
+  assert.deepEqual(session.merge([article('b')]).map((item) => item.id), ['b'], 'returning to the library or refreshing releases read rows');
+  assert.deepEqual(new UnreadSession().merge([]), [], 'restarting the app never restores the temporary rows');
+  const { TextSizeControl, ScrollReadSetting } = await vite.ssrLoadModule('/src/components/ReadingSettings.tsx');
+  const controls = renderToStaticMarkup(React.createElement(TextSizeControl));
+  assert.ok(!controls.includes('%') && !controls.includes('type="range"'));
+  assert.match(controls, /글자 작게/); assert.match(controls, /글자 크게/);
+  assert.ok(!renderToStaticMarkup(React.createElement(ScrollReadSetting, { markReadOnScroll: false, onChangeMarkReadOnScroll() {} })).includes('checked=""'));
+
+  const { app } = await vite.ssrLoadModule('/src/server/app.ts');
+  const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');
+  const db = new LocalD1Database(':memory:', 'migrations/0001_schema.sql'), env = { DB: db, ALLOW_QUICK_LOGIN: 'true' };
+  const login = async (email) => (await app.request('/api/auth/google/quick', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }, env)).json();
+  const owner = await login('scroll@example.test'), other = await login('other-scroll@example.test');
+  const request = (path, token = owner.token, body, method = 'POST') => app.request(path, { method: body === undefined ? 'GET' : method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, env);
+  const preferences = async (token = owner.token) => (await (await request('/api/user/me', token)).json()).user.preferences;
+  assert.equal((await preferences()).markReadOnScroll, false, 'existing accounts default to off');
+  await request('/api/user/preferences', owner.token, { markReadOnScroll: true }, 'PUT');
+  await request('/api/user/preferences', owner.token, { layout: 'list' }, 'PUT');
+  assert.equal((await preferences()).markReadOnScroll, true, 'the setting survives other preference changes and new sessions');
+  assert.equal((await preferences(other.token)).markReadOnScroll, false, 'preferences are account scoped');
+  await request('/api/user/preferences', owner.token, { markReadOnScroll: 'false' }, 'PUT');
+  assert.equal((await preferences()).markReadOnScroll, true, 'invalid values cannot change the setting');
+  const now = new Date().toISOString();
+  for (const [id, user] of [['own', owner], ['outside', other]]) {
+    await db.prepare('INSERT INTO feeds(id,xml_url,title,created_at) VALUES(?,?,?,?)').bind(id, `https://example.test/${id}`, id, now).run();
+    await db.prepare('INSERT INTO subscriptions(id,user_id,feed_id,created_at) VALUES(?,?,?,?)').bind(`sub-${id}`, user.user.id, id, now).run();
+    for (const suffix of ['a', 'b']) await db.prepare('INSERT INTO articles(id,feed_id,guid,title,url,published_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(`${id}-${suffix}`, id, suffix, suffix, `https://example.test/${id}/${suffix}`, now, now).run();
+  }
+  await db.prepare('INSERT INTO article_states(user_id,article_id,is_saved,saved_at) VALUES(?,?,1,?)').bind(owner.user.id, 'own-a', now).run();
+  const result = await request('/api/articles/mark-read', owner.token, { articleIds: ['own-a', 'own-a', 'own-b', 'outside-a', 'missing'] });
+  assert.equal(result.status, 200);
+  const states = (await db.prepare('SELECT article_id,is_read,is_saved,saved_at FROM article_states WHERE user_id=? ORDER BY article_id').bind(owner.user.id).all()).results;
+  assert.deepEqual(states.map((state) => [state.article_id, state.is_read, state.is_saved]), [['own-a', 1, 1], ['own-b', 1, 0]], 'batch reading preserves bookmarks and cannot modify another account or unknown articles');
+  assert.equal(states[0].saved_at, now);
+  for (const articleIds of [[], Array(51).fill('own-a'), [null]]) assert.equal((await request('/api/articles/mark-read', owner.token, { articleIds })).status, 400);
+  await request('/api/user/preferences', owner.token, { markReadOnScroll: false }, 'PUT');
+  assert.equal((await preferences()).markReadOnScroll, false);
+  console.log('PASS: user-driven downward scroll, batching, skipped/read-row exclusion, restore/upward/dialog guards, cleanup, mobile retained-read sessions, +/- font controls, account settings and authorized bookmark-preserving batch writes.');
+} finally {
+  if (previousObserver === undefined) delete globalThis.IntersectionObserver; else globalThis.IntersectionObserver = previousObserver;
+  await vite.close();
+}

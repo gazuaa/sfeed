@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react';
 import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, RefreshCw, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
-import { FONT_SCALES, useTextSize } from '../client/textSize';
+import { ScrollReadSetting, TextSizeControl, type ScrollReadSettingsProps } from './ReadingSettings';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
-export interface MobileSettingsProps {
+export interface MobileSettingsProps extends ScrollReadSettingsProps {
   theme: ThemeMode;
   onChangeTheme: (theme: ThemeMode) => void;
   layout: LayoutMode;
@@ -13,23 +13,22 @@ export interface MobileSettingsProps {
   onOpenOpml: () => void;
 }
 
-export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, onOpenOpml, library }: MobileSettingsProps & { library?: boolean }) {
+export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll }: MobileSettingsProps & { library?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
-  const [textSize, setTextSize] = useTextSize();
-  const sizeIndex = FONT_SCALES.indexOf(textSize);
   const close = () => { if (ref.current) ref.current.open = false; };
   useEffect(() => {
     const outside = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) close(); };
     document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
+    window.addEventListener('resize', close);
+    return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', close); };
   }, []);
   return <details ref={ref} className="sfeed-mobile-settings" onKeyDown={(event) => { if (event.key === 'Escape') { close(); ref.current?.querySelector('summary')?.focus(); } }}>
     <summary aria-label="보기 설정" className="sfeed-mobile-icon"><Settings2 size={21} /></summary>
     <div className="sfeed-mobile-settings-panel">
       <p className="sfeed-mobile-eyebrow">화면</p>
       <div className="sfeed-mobile-setting-options">{(['light', 'dark'] as const).map((value) => { const Icon = value === 'light' ? Sun : Moon; return <button key={value} aria-label={value === 'light' ? '낮 모드' : '밤 모드'} aria-pressed={theme === value} onClick={() => onChangeTheme(value)}><Icon size={20} /></button>; })}</div>
-      <div className="sfeed-mobile-text-heading"><label className="sfeed-mobile-eyebrow" htmlFor={library ? 'library-text-size' : 'list-text-size'}>글자 크기</label><button type="button" aria-label="글자 크기 기본값으로" onClick={() => setTextSize(1)}>{Math.round(textSize * 100)}%</button></div>
-      <div className="sfeed-mobile-text-size"><span aria-hidden="true">가</span><input id={library ? 'library-text-size' : 'list-text-size'} type="range" min={0} max={FONT_SCALES.length - 1} step={1} value={sizeIndex} aria-valuetext={`${Math.round(textSize * 100)}%`} onChange={(event) => setTextSize(FONT_SCALES[Number(event.target.value)])} /><span aria-hidden="true">가</span></div>
+      <p className="sfeed-mobile-eyebrow">글자 크기</p><TextSizeControl />
+      <ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} />
       {!library && <><p className="sfeed-mobile-eyebrow">목록 보기</p>
       <div className="sfeed-mobile-setting-options">{([{ id: 'magazine', label: '매거진 뷰', Icon: LayoutList }, { id: 'cards', label: '카드 뷰', Icon: LayoutGrid }, { id: 'list', label: '리스트 뷰', Icon: AlignJustify }] as const).map(({ id, label, Icon }) => <button key={id} aria-label={label} aria-pressed={layout === id} onClick={() => { onChangeLayout(id); close(); }}><Icon size={20} /></button>)}</div></>}
       <button className="sfeed-mobile-settings-row" onClick={() => { close(); onOpenOpml(); }}><FileCode2 size={18} />OPML 가져오기 / 내보내기</button>

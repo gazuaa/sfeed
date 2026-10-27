@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  AArrowDown,
-  AArrowUp,
   ArrowLeft,
   Bookmark,
   CheckCircle2,
@@ -28,7 +26,8 @@ import {
   type ArticleItem,
   type ArticleViewMode as ViewMode,
 } from '../client/api';
-import { FONT_SCALES, useTextSize } from '../client/textSize';
+import { useTextSize } from '../client/textSize';
+import { TextSizeControl } from './ReadingSettings';
 
 const VIEW_MODES = [
   { id: 'feed', label: '피드', title: '피드 본문 — RSS에 담긴 내용', Icon: Rss },
@@ -93,20 +92,13 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [aiMeta, setAiMeta] = useState<{ provider?: string; model?: string } | null>(
     null
   );
-  const [fontScale, setFontScale] = useTextSize();
+  const [fontScale] = useTextSize();
   const [webZoom, setWebZoom] = useState(loadWebZoom);
   const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
   // Sites that refuse to be framed get a script-free copy fetched by the server.
   const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null } | null>(null);
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
-
-  // -1 makes the text smaller, +1 larger, 0 resets to 100%.
-  const changeFontScale = (step: -1 | 0 | 1) => {
-    const index = FONT_SCALES.indexOf(fontScale);
-    const next = step === 0 ? 1 : FONT_SCALES[Math.min(FONT_SCALES.length - 1, Math.max(0, index + step))];
-    setFontScale(next);
-  };
 
   // -1 zooms out, +1 zooms in, 0 resets to 100%.
   const changeWebZoom = (step: -1 | 0 | 1) => {
@@ -220,11 +212,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         <button type="button" aria-label={`현재 ${Math.round(webZoom * 100)}%, 100%로 되돌리기`} onClick={() => changeWebZoom(0)}>{Math.round(webZoom * 100)}%</button>
         <button type="button" aria-label="사이트 확대" disabled={webZoom === WEB_ZOOM_STEPS[WEB_ZOOM_STEPS.length - 1]} onClick={() => changeWebZoom(1)}><ZoomIn size={18} /></button>
       </div>
-    : <div role="group" aria-label="글자 크기" className={className}>
-        <button type="button" aria-label="글자 작게" disabled={fontScale === FONT_SCALES[0]} onClick={() => changeFontScale(-1)}><AArrowDown size={18} /></button>
-        <button type="button" aria-label={`글자 크기 ${Math.round(fontScale * 100)}%, 기본 크기로 되돌리기`} onClick={() => changeFontScale(0)}>{Math.round(fontScale * 100)}%</button>
-        <button type="button" aria-label="글자 크게" disabled={fontScale === FONT_SCALES[FONT_SCALES.length - 1]} onClick={() => changeFontScale(1)}><AArrowUp size={18} /></button>
-      </div>;
+    : <TextSizeControl className={className} />;
 
   const activeHtml =
     showingReader && article.full_content_html
@@ -371,53 +359,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             </button>
 
             {/* Text size (feed and reader views) */}
-            {mode !== 'web' && (
-              <div
-                role="group"
-                aria-label="글자 크기"
-                className={`flex items-center rounded-xl border ${
-                  isDark
-                    ? 'bg-slate-900 border-slate-800 text-slate-300'
-                    : 'bg-white border-slate-200 text-slate-700'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => changeFontScale(-1)}
-                  disabled={fontScale === FONT_SCALES[0]}
-                  title="글자 작게"
-                  aria-label="글자 작게"
-                  className={`p-2 rounded-l-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
-                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                  }`}
-                >
-                  <AArrowDown className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeFontScale(0)}
-                  title="기본 크기로 되돌리기"
-                  aria-label={`글자 크기 ${Math.round(fontScale * 100)}%, 기본 크기로 되돌리기`}
-                  className={`min-w-[3rem] py-2 text-xs font-medium tabular-nums transition cursor-pointer ${
-                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                  }`}
-                >
-                  {Math.round(fontScale * 100)}%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeFontScale(1)}
-                  disabled={fontScale === FONT_SCALES[FONT_SCALES.length - 1]}
-                  title="글자 크게"
-                  aria-label="글자 크게"
-                  className={`p-2 rounded-r-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-default ${
-                    isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                  }`}
-                >
-                  <AArrowUp className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            {mode !== 'web' && <TextSizeControl />}
 
             {/* Web view zoom */}
             {mode === 'web' && (
