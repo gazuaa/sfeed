@@ -5,7 +5,7 @@ export function LocalNotificationSetting({ accountId }: { accountId?: string }) 
   const enabled = useLocalNotifications(accountId ?? '');
   const [pending, setPending] = useState(false), [message, setMessage] = useState('');
   if (!accountId) return null;
-  return <><label className="sfeed-scroll-read-setting"><span>새 글 제목 알림<small>기기가 새 글을 감지해 알림 표시</small></span><input type="checkbox" role="switch" aria-label="새 글 제목 알림" checked={enabled} disabled={pending} onChange={async (event) => {
+  return <><label className="sfeed-scroll-read-setting"><span>새 글 제목 알림<small>피드명과 글 제목을 알림으로 표시</small></span><input type="checkbox" role="switch" aria-label="새 글 제목 알림" checked={enabled} disabled={pending} onChange={async (event) => {
     if (!event.target.checked) { setLocalNotifications(accountId, false); setMessage(''); return; }
     setPending(true);
     try { setMessage(await enableLocalNotifications(accountId)); } catch { setMessage('알림 권한을 확인해 주세요.'); }

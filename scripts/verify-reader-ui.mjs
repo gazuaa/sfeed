@@ -13,13 +13,15 @@ try {
   const { setLocalNotifications, notifyNewArticles, localNotificationsEnabled } = await vite.ssrLoadModule('/src/client/localNotifications.ts');
   setLocalNotifications('owner', true);
   assert.equal(localNotificationsEnabled('owner'), true); assert.equal(localNotificationsEnabled('other'), false);
-  const news = [{ id: 'a', title: '새 글 제목' }];
+  const news = [{ id: 'a', feed_title: 'GeekNews (긱뉴스)', title: '새 글 제목' }];
   await notifyNewArticles('owner', [...news, ...news]); await notifyNewArticles('owner', news);
   assert.equal(notifications.length, 1, 'local device history and notification tags prevent duplicates');
-  assert.equal(notifications[0].title, '새 글 제목'); assert.ok(!('body' in notifications[0].options), 'notifications contain the article title only');
+  assert.equal(notifications[0].title, 'GeekNews (긱뉴스)'); assert.equal(notifications[0].options.body, '새 글 제목', 'feed name and article title appear on separate notification lines');
   assert.equal(notifications[0].options.data.account, 'owner');
-  setLocalNotifications('owner', false); await notifyNewArticles('owner', [{ id: 'b', title: 'Muted' }]); assert.equal(notifications.length, 1);
-  setLocalNotifications('owner', true); await notifyNewArticles('owner', [{ id: 'c', title: 'Old session' }], undefined, () => false); assert.equal(notifications.length, 1, 'logout cancels late notifications');
+  await notifyNewArticles('owner', [{ id: 'no-feed-name', feed_title: '  ', title: '피드명이 없는 글' }]);
+  assert.equal(notifications[1].title, 'SFeed'); assert.equal(notifications[1].options.body, '피드명이 없는 글');
+  setLocalNotifications('owner', false); await notifyNewArticles('owner', [{ id: 'b', title: 'Muted' }]); assert.equal(notifications.length, 2);
+  setLocalNotifications('owner', true); await notifyNewArticles('owner', [{ id: 'c', title: 'Old session' }], undefined, () => false); assert.equal(notifications.length, 2, 'logout cancels late notifications');
 
   const { bindLongPress } = await vite.ssrLoadModule('/src/client/longPress.ts');
   const doc = new EventTarget(); let opened = 0;
@@ -57,7 +59,7 @@ try {
   const { patchPage } = await vite.ssrLoadModule('/src/client/syncPages.ts');
   const page = { articles: [{ ...article, id: 'new', published_at: '2026-10-27' }, { ...article, id: 'old', published_at: '2026-01-01' }], hasMore: false };
   assert.deepEqual(patchPage(page, 'articles?scope=all&sort=oldest', [], new Set(), new Set()).articles.map((item) => item.id), ['old', 'new']);
-  console.log('PASS: local title-only notification permission/dedup/account boundaries; mobile long-press/scroll/ghost-click guards; zero-unread folders/feeds hidden; logo fallback; oldest-first local ordering.');
+  console.log('PASS: local feed-name/article-title notifications, fallback, permission/dedup/account boundaries; mobile long-press/scroll/ghost-click guards; zero-unread folders/feeds hidden; logo fallback; oldest-first local ordering.');
 } finally {
   for (const [key, descriptor] of Object.entries(originals)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   await vite.close();

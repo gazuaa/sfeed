@@ -45,7 +45,7 @@ export async function notifyNewArticles(account: string, articles: ArticleItem[]
       if (seen.has(article.id)) continue;
       seen.add(article.id);
       try { localStorage.setItem(seenKey(account), JSON.stringify([...seen].slice(-1000))); } catch { /* notification tags also deduplicate */ }
-      await display(article.title, { tag: `sfeed-${account}-${article.id}`, icon: '/icons/icon-192.png', data: { account, articleId: article.id } });
+      await display(article.feed_title?.trim() || 'SFeed', { body: article.title, tag: `sfeed-${account}-${article.id}`, icon: '/icons/icon-192.png', data: { account, articleId: article.id } });
     }
   };
   if (navigator.locks) await navigator.locks.request(`sfeed-notifications:${account}`, { ifAvailable: true }, (lock) => lock ? deliver() : undefined);
