@@ -145,7 +145,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
 }
 
 @media (max-width: 1023px) {
-  :root { --sfeed-mobile-header-height: calc(133px + env(safe-area-inset-top)); }
+  :root { --sfeed-mobile-header-height: calc(105px + env(safe-area-inset-top)); }
   .sfeed-workspace-main { position: relative; }
   /* Fill the actual fixed viewport. Combining inset: 0 with a separate
      100dvh height can truncate the app above the iOS home-indicator area. */
@@ -157,18 +157,18 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-pull-refresh > svg { flex-shrink: 0; color: #10b981; }
   .sfeed-sidebar { display: none; }
   .sfeed-feed-list [data-article-id], .sfeed-mobile-library [data-feed-id], .sfeed-mobile-library [data-folder-id] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-  .sfeed-mobile-header { position: relative; z-index: 3; flex-shrink: 0; padding: calc(12px + env(safe-area-inset-top)) 18px 16px; background: var(--sfeed-mobile-surface); border-bottom: 1px solid var(--sfeed-mobile-line); transition: transform .2s ease, opacity .2s ease, visibility .2s; }
+  .sfeed-mobile-header { position: relative; z-index: 3; flex-shrink: 0; padding: calc(6px + env(safe-area-inset-top)) 18px 10px; background: var(--sfeed-mobile-surface); border-bottom: 1px solid var(--sfeed-mobile-line); transition: transform .2s ease, opacity .2s ease, visibility .2s; }
   .sfeed-mobile-header[data-scroll-hidden] { transform: translateY(-100%); opacity: 0; visibility: hidden; pointer-events: none; }
-  .sfeed-mobile-heading { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 14px; }
+  .sfeed-mobile-heading { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 6px; }
   .sfeed-mobile-heading h1 { min-width: 0; flex: 1; margin: 0; font-size: 23px; font-weight: 750; line-height: 1.25; letter-spacing: -.7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .sfeed-mobile-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 2px; }
   .sfeed-mobile-icon { width: 44px; height: 44px; display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 50%; cursor: pointer; }
   .sfeed-mobile-icon:hover, .sfeed-mobile-icon:focus-visible { background: var(--sfeed-mobile-raised); }
   .sfeed-mobile-brand-icon { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: #022c22; border-radius: 11px; background: #10b981; }
-  .sfeed-mobile-search { display: flex; align-items: center; gap: 10px; width: 100%; height: 46px; border-radius: 16px; padding-inline: 14px 6px; color: var(--sfeed-mobile-muted); background: var(--sfeed-mobile-raised); }
+  .sfeed-mobile-search { display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; border-radius: 13px; padding-inline: 12px 4px; color: var(--sfeed-mobile-muted); background: var(--sfeed-mobile-raised); }
   .sfeed-mobile-search input { width: 0; flex: 1; min-width: 0; font-size: 16px; border: 0; outline: none; background: transparent; color: var(--sfeed-text); }
   .sfeed-mobile-search input::-webkit-search-cancel-button { display: none; }
-  .sfeed-mobile-search > button { display: flex; align-items: center; justify-content: center; width: 40px; height: 44px; }
+  .sfeed-mobile-search > button { display: flex; align-items: center; justify-content: center; width: 40px; height: 38px; }
   .sfeed-mobile-settings { position: relative; }
   .sfeed-mobile-settings summary { list-style: none; }
   .sfeed-mobile-settings summary::-webkit-details-marker { display: none; }
@@ -272,6 +272,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-share-notice { position: fixed; z-index: 61; bottom: calc(92px + env(safe-area-inset-bottom)); left: 20px; right: 20px; padding: 12px; border-radius: 14px; background: var(--sfeed-mobile-raised); text-align: center; font-size: 12px; }
   .sfeed-web-view { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
   .sfeed-web-view[data-scroll-hidden] { padding-bottom: env(safe-area-inset-bottom); }
+  .sfeed-web-swipe { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 24px; }
   .sfeed-install-banner { bottom: calc(98px + env(safe-area-inset-bottom)); }
   .sfeed-install-banner button, .sfeed-mobile-settings-panel > button { min-height: 44px; }
   .sfeed-install-banner button[aria-label] { min-width: 44px; flex-shrink: 0; }

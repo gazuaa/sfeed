@@ -54,7 +54,7 @@ export function MobileHeader({ title, library, hidden, search, onSearch, onBack,
       <h1>{title}</h1>
       <div className="sfeed-mobile-header-actions"><MobileSettings library={library} {...settings} /><button className="sfeed-mobile-icon" onClick={onAdd} aria-label="피드 추가"><Plus size={23} /></button></div>
     </div>
-    <label className="sfeed-mobile-search"><Search size={20} aria-hidden="true" /><input type="search" aria-label={library ? '폴더 및 피드 검색' : '글 검색'} placeholder={library ? '폴더 또는 피드 검색' : '글 검색'} value={search} onChange={(event) => onSearch(event.target.value)} autoComplete="off" />{search && <button aria-label="검색어 지우기" onClick={() => onSearch('')}><X size={18} /></button>}</label>
+    <label className="sfeed-mobile-search"><Search size={18} aria-hidden="true" /><input type="search" aria-label={library ? '폴더 및 피드 검색' : '글 검색'} placeholder={library ? '폴더 또는 피드 검색' : '글 검색'} value={search} onChange={(event) => onSearch(event.target.value)} autoComplete="off" />{search && <button aria-label="검색어 지우기" onClick={() => onSearch('')}><X size={18} /></button>}</label>
   </header>;
 }
 
