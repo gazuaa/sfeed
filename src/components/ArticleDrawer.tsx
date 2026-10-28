@@ -18,6 +18,7 @@ import {
   Type,
   ChevronDown,
   MoreHorizontal,
+  ChevronUp,
   Share2,
 } from 'lucide-react';
 import {
@@ -44,6 +45,8 @@ const VIEW_MODES = [
 // it is scaled from outside: laid out at (pane size ÷ zoom), then scale(zoom).
 // The right zoom depends on the screen, so it is remembered per device.
 const WEB_ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+/** How long bars brought out over a framed site stay before folding again. */
+const PEEK_MS = 4000;
 
 
 function loadWebZoom(account: string, feed: string): number {
@@ -120,6 +123,18 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   // A framed site scrolls out of reach, so only the feed, reader and web copy hide the bars.
   const showingCopy = mode === 'web' && frame?.articleId === article?.id && frame?.embeddable === false && webCopy?.articleId === article?.id && Boolean(webCopy?.html);
   const chromeHidden = useScrollChrome(bodyRef, isMobile && Boolean(article) && !mobileToolsOpen && !sizeToolsOpen, `${article?.id}:${mode}:${showingCopy}`, copyRef);
+  // A framed site's own scrolling cannot be followed, so once it loads its bars stay folded
+  // and come out on request, folding again after a few idle seconds.
+  const [loadedFrame, setLoadedFrame] = useState<string | null>(null);
+  const framed = isMobile && mode === 'web' && frame?.articleId === article?.id && frame?.embeddable === true && loadedFrame === article?.id;
+  const [peek, setPeek] = useState(0);
+  useEffect(() => {
+    if (!peek || mobileToolsOpen || sizeToolsOpen) return;
+    const timer = setTimeout(() => setPeek(0), PEEK_MS);
+    return () => clearTimeout(timer);
+  }, [peek, mobileToolsOpen, sizeToolsOpen]);
+  const keepPeeking = () => { if (peek) setPeek((value) => value + 1); };
+  const barsHidden = chromeHidden || (framed && !peek && !mobileToolsOpen && !sizeToolsOpen);
   const hasArticle = Boolean(article);
   // The folded top bar moves up by its own height, which depends on the safe area and text size.
   useLayoutEffect(() => {
@@ -282,7 +297,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
-        <div ref={topRef} className="sfeed-mobile-reader-top lg:hidden" data-scroll-hidden={chromeHidden || undefined} inert={chromeHidden || undefined} aria-hidden={chromeHidden || undefined}>
+        <div ref={topRef} className="sfeed-mobile-reader-top lg:hidden" data-scroll-hidden={barsHidden || undefined} inert={barsHidden || undefined} aria-hidden={barsHidden || undefined} onPointerDown={keepPeeking}>
           <button className="sfeed-mobile-icon" onClick={onClose} aria-label="목록으로 돌아가기"><ChevronDown size={24} /></button>
           <div role="radiogroup" aria-label="본문 보기 방식" className="sfeed-mobile-body-modes">{VIEW_MODES.map(({ id, label, Icon }) => <button key={id} role="radio" aria-label={label} aria-checked={mode === id} onClick={() => chooseViewMode(id)}>{id === 'reader' && scrapingReader ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}<span>{label}</span></button>)}</div>
           <button className="sfeed-mobile-icon" aria-label="본문 도구" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((value) => !value)}><MoreHorizontal size={22} /></button>
@@ -508,7 +523,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         </div>
 
         {mode === 'web' ? (
-          <div className="sfeed-web-view relative flex-1 min-h-0 flex flex-col" data-scroll-hidden={chromeHidden || undefined}>
+          <div className="sfeed-web-view relative flex-1 min-h-0 flex flex-col" data-scroll-hidden={barsHidden || undefined} data-framed={framed || undefined}>
             {/* Touches on a framed site never reach the app, so the left edge is kept for swiping back. */}
             {isMobile && homeScreen && <div className="sfeed-web-swipe" aria-hidden="true" />}
             {!frame || frame.articleId !== article.id ? (
@@ -519,7 +534,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             ) : frame.embeddable ? (
               <>
                 <div
-                  className={`px-4 py-1.5 border-b text-[11px] flex items-center justify-between gap-2 shrink-0 ${
+                  className={`px-4 py-1.5 border-b text-[11px] flex items-center justify-between gap-2 shrink-0 ${framed && barsHidden ? 'hidden' : ''} ${
                     isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
                   }`}
                 >
@@ -549,6 +564,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     }}
                     sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
                     onError={showWebCopy}
+                    onLoad={() => setLoadedFrame(article.id)}
                     referrerPolicy="strict-origin-when-cross-origin"
                   />
                 </div>
@@ -843,7 +859,8 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         </div>
         )}
         {shareNotice && <p role="status" className="sfeed-mobile-share-notice lg:hidden">{shareNotice}</p>}
-        <nav aria-label="본문 조작" className="sfeed-mobile-dock sfeed-mobile-reader-dock lg:hidden" data-scroll-hidden={chromeHidden || undefined} inert={chromeHidden || undefined} aria-hidden={chromeHidden || undefined}>
+        {framed && barsHidden && <button type="button" className="sfeed-web-peek lg:hidden" aria-label="메뉴 보이기" onClick={() => setPeek(1)}><ChevronUp size={22} /></button>}
+        <nav aria-label="본문 조작" className="sfeed-mobile-dock sfeed-mobile-reader-dock lg:hidden" data-scroll-hidden={barsHidden || undefined} inert={barsHidden || undefined} aria-hidden={barsHidden || undefined} onPointerDown={keepPeeking}>
           <button aria-label={article.is_read ? '안 읽음으로 표시' : '읽음으로 표시'} aria-pressed={article.is_read} onClick={() => onToggleRead(article)}>{article.is_read ? <CheckCircle2 size={22} /> : <Circle size={22} />}</button>
           <button aria-label={article.is_saved ? '저장 취소' : '나중에 읽기'} aria-pressed={article.is_saved} onClick={() => onToggleSaved(article)}><Bookmark size={22} fill={article.is_saved ? 'currentColor' : 'none'} /></button>
           <button aria-label="이전 아티클" disabled={!hasPrev} onClick={() => onNavigateRelative('prev')}><ChevronLeft size={24} /></button>
