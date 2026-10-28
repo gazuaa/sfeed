@@ -28,12 +28,12 @@ const cache = { addAll: async (paths) => { for (const path of paths) { assert.ok
 let offline = false, skipped = 0, claimed = 0;
 vm.runInNewContext(readFileSync('public/sw.js', 'utf8'), {
   self: { location: { origin: 'https://sfeed.test' }, addEventListener: (key, handler) => { handlers[key] = handler; }, skipWaiting: async () => { skipped++; }, clients: { claim: async () => { claimed++; }, matchAll: async () => clientWindows, openWindow: async (url) => opened.push(url) } },
-  caches: { open: async () => cache, keys: async () => ['sfeed-public-v1', 'sfeed-public-v2', 'sfeed-public-v3', 'another-app-cache'], delete: async (key) => { deleted.push(key); } },
+  caches: { open: async () => cache, keys: async () => ['sfeed-public-v1', 'sfeed-public-v2', 'sfeed-public-v3', 'sfeed-public-v4', 'another-app-cache'], delete: async (key) => { deleted.push(key); } },
   fetch: async (request) => { fetched.push(request.url); if (offline) throw new Error('offline'); return new Response('fresh network page'); },
   URL, Response,
 });
 for (const name of ['install', 'activate']) { let work; handlers[name]({ waitUntil: (promise) => { work = promise; } }); await work; }
-assert.equal(skipped, 1); assert.equal(claimed, 1); assert.deepEqual(deleted, ['sfeed-public-v1', 'sfeed-public-v2']);
+assert.equal(skipped, 1); assert.equal(claimed, 1); assert.deepEqual(deleted, ['sfeed-public-v1', 'sfeed-public-v2', 'sfeed-public-v3']);
 assert.ok(!storage.has('/'), 'the authenticated app shell must not be cached');
 const runFetch = (path, mode = 'navigate', method = 'GET') => {
   let result;

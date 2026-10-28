@@ -1,7 +1,7 @@
 // Like Slap, cache only public install/offline assets. Account data and the app
 // HTML always come from the network, so switching accounts cannot expose a
 // previous user's feed and a deployment cannot leave an old app shell behind.
-const CACHE = 'sfeed-public-v3';
+const CACHE = 'sfeed-public-v4';
 const OFFLINE = '/offline.html';
 const PUBLIC_ASSETS = [OFFLINE, '/offline.js', '/favicon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 
