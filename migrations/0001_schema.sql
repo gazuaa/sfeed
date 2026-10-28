@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   folder_id TEXT,
   custom_title TEXT,
   created_at TEXT NOT NULL,
+  -- New articles stored after this time stay hidden (0004_subscription_pause.sql).
+  paused_at TEXT,
   UNIQUE(user_id, feed_id),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,

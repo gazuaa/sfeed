@@ -1,4 +1,5 @@
 import type { D1DatabaseLike } from './types';
+import { pausedAtColumn, pauseSupported, shownToSubscriber } from './feedPause';
 import type { ArticleItem, FolderItem } from '../client/api';
 import type { ReaderSyncCursor, ReaderSyncDelta, SubscriptionCounts, SubscriptionMetadata } from '../shared/readerSync';
 
@@ -70,6 +71,8 @@ export async function readerDelta(db: D1DatabaseLike, userId: string, input: unk
   }
   const delta = emptyDelta(nextCursor);
   delta.changed = changes.length > 0 || affected.size > 0;
+  // Articles a paused feed hides are not found below, so devices drop them.
+  const paused = await pauseSupported(db), shown = shownToSubscriber(paused);
   const ids = [...articleIds].filter((id) => !removed.has(id));
   for (let at = 0; at < ids.length; at += 40) {
     const chunk = ids.slice(at, at + 40);
@@ -80,7 +83,7 @@ export async function readerDelta(db: D1DatabaseLike, userId: string, input: unk
       COALESCE(st.is_read,CASE WHEN a.published_at<? THEN 1 ELSE 0 END) AS is_read,COALESCE(st.is_saved,0) AS is_saved
       FROM articles a JOIN subscriptions s ON s.feed_id=a.feed_id AND s.user_id=? JOIN feeds f ON f.id=a.feed_id
       LEFT JOIN folders fl ON fl.id=s.folder_id LEFT JOIN article_states st ON st.article_id=a.id AND st.user_id=s.user_id
-      LEFT JOIN article_date_checks dc ON dc.article_id=a.id WHERE a.id IN (${chunk.map(() => '?').join(',')})`)
+      LEFT JOIN article_date_checks dc ON dc.article_id=a.id WHERE ${shown} AND a.id IN (${chunk.map(() => '?').join(',')})`)
       .bind(new Date(now - 30 * DAY).toISOString(), userId, ...chunk).all<Record<string, unknown>>();
     const found = new Set(rows.results.map((row) => String(row.id)));
     delta.newArticleIds ??= [];
@@ -96,8 +99,8 @@ export async function readerDelta(db: D1DatabaseLike, userId: string, input: unk
   for (let at = 0; at < feeds.length; at += 40) {
     const chunk = feeds.slice(at, at + 40);
     const counts = await db.prepare(`SELECT s.feed_id,
-      (SELECT COUNT(*) FROM articles a WHERE a.feed_id=s.feed_id) AS total_count,
-      (SELECT COUNT(*) FROM articles a LEFT JOIN article_states st ON st.article_id=a.id AND st.user_id=s.user_id WHERE a.feed_id=s.feed_id AND a.published_at>=? AND COALESCE(st.is_read,0)=0) AS unread_count,
+      (SELECT COUNT(*) FROM articles a WHERE a.feed_id=s.feed_id AND ${shown}) AS total_count,
+      (SELECT COUNT(*) FROM articles a LEFT JOIN article_states st ON st.article_id=a.id AND st.user_id=s.user_id WHERE a.feed_id=s.feed_id AND a.published_at>=? AND COALESCE(st.is_read,0)=0 AND ${shown}) AS unread_count,
       (SELECT COUNT(*) FROM article_states st JOIN articles a ON a.id=st.article_id WHERE st.user_id=s.user_id AND st.is_saved=1 AND a.feed_id=s.feed_id) AS saved_count
       FROM subscriptions s WHERE s.user_id=? AND s.feed_id IN (${chunk.map(() => '?').join(',')})`)
       .bind(new Date(now - 30 * DAY).toISOString(), userId, ...chunk).all<SubscriptionCounts>();
@@ -105,7 +108,7 @@ export async function readerDelta(db: D1DatabaseLike, userId: string, input: unk
   }
   if (metadata) {
     delta.folders = (await db.prepare('SELECT * FROM folders WHERE user_id=? ORDER BY sort_order,name').bind(userId).all<FolderItem>()).results;
-    delta.subscriptions = (await db.prepare(`SELECT s.id,s.feed_id,s.folder_id,s.custom_title,f.xml_url,f.html_url,
+    delta.subscriptions = (await db.prepare(`SELECT s.id,s.feed_id,s.folder_id,s.custom_title,${pausedAtColumn(paused)} AS paused_at,f.xml_url,f.html_url,
       COALESCE(s.custom_title,f.title) AS title,f.description,f.favicon_url,f.last_fetched_at,f.last_error,v.view_mode
       FROM subscriptions s JOIN feeds f ON f.id=s.feed_id LEFT JOIN feed_view_modes v ON v.feed_id=s.feed_id AND v.user_id=s.user_id
       WHERE s.user_id=? ORDER BY title`).bind(userId).all<SubscriptionMetadata>()).results;
@@ -113,7 +116,7 @@ export async function readerDelta(db: D1DatabaseLike, userId: string, input: unk
   if (affected.size || membership) {
     const today = await db.prepare(`SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN COALESCE(st.is_read,0)=0 THEN 1 ELSE 0 END),0) AS unread
       FROM articles a JOIN subscriptions s ON s.feed_id=a.feed_id LEFT JOIN article_states st ON st.article_id=a.id AND st.user_id=s.user_id
-      WHERE s.user_id=? AND a.published_at>=?`).bind(userId, new Date(now - DAY).toISOString()).first<{ total: number; unread: number }>();
+      WHERE s.user_id=? AND a.published_at>=? AND ${shown}`).bind(userId, new Date(now - DAY).toISOString()).first<{ total: number; unread: number }>();
     delta.today = { todayTotal: Number(today?.total || 0), todayCount: Number(today?.unread || 0) };
   }
   if (articleChanged.size || membership || now >= cursor.nextBoundary) nextCursor.nextBoundary = await nextBoundary(db, userId, now);

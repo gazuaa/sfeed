@@ -1,18 +1,18 @@
 import { useRef, useState } from 'react';
-import { Archive, ChevronDown, ChevronRight, Folder, FolderPlus, LogOut, Rss, Trash2 } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, Folder, FolderPlus, LogOut, Pause, Play, Rss, Trash2 } from 'lucide-react';
 import type { BootstrapResponse, FolderItem, SubscriptionItem, UserProfile } from '../client/api';
 import { MobileHeader, MobileDock, type LibraryTab, type MobileSettingsProps } from './MobileChrome';
 import { InstallCard } from './PwaInstall';
 import { useScrollChrome } from '../client/mobile';
 
-export function MobileLibrary({ user, folders, subscriptions, counts, countTab, visible = true, onChangeCountTab, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, syncing, onCreateFolder, onDeleteFolder, onUnsubscribe, onLogout, ...settings }: MobileSettingsProps & {
+export function MobileLibrary({ user, folders, subscriptions, counts, countTab, visible = true, onChangeCountTab, onSelectTab, onSelectFolder, onSelectFeed, onAdd, onRefresh, refreshing, syncing, onCreateFolder, onDeleteFolder, onUnsubscribe, onToggleUpdates, onLogout, ...settings }: MobileSettingsProps & {
   user: UserProfile; folders: FolderItem[]; subscriptions: SubscriptionItem[]; counts: BootstrapResponse['counts'];
   /** Which count each folder and feed shows; the dock tabs switch it in place. */
   countTab: LibraryTab; onChangeCountTab: (tab: LibraryTab) => void;
   visible?: boolean;
   onSelectTab: (tab: LibraryTab) => void; onSelectFolder: (id: string) => void; onSelectFeed: (id: string) => void; onAdd: () => void; onRefresh: () => void; refreshing: boolean; syncing?: boolean; onCreateFolder: (name: string) => Promise<void>;
   /** Both ask for confirmation before anything is removed. */
-  onDeleteFolder: (id: string) => void; onUnsubscribe: (subscriptionId: string, title: string) => void; onLogout: () => void;
+  onDeleteFolder: (id: string) => void; onUnsubscribe: (subscriptionId: string, title: string) => void; onToggleUpdates: (feed: SubscriptionItem) => void; onLogout: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -29,7 +29,9 @@ export function MobileLibrary({ user, folders, subscriptions, counts, countTab, 
   const visibleSubscriptions = countTab === 'unread' ? subscriptions.filter((feed) => feed.unread_count > 0) : subscriptions;
   const visibleFolders = countTab === 'unread' ? folders.filter((folder) => visibleSubscriptions.some((feed) => feed.folder_id === folder.id)) : folders;
   const deleteButton = (label: string, onDelete: () => void) => <button type="button" className="sfeed-mobile-delete" aria-label={label} onClick={onDelete}><Trash2 size={17} /></button>;
-  const feedRow = (feed: SubscriptionItem) => <div className="sfeed-mobile-row-wrap" key={feed.id} data-feed-id={feed.feed_id}><button className="sfeed-mobile-library-row sfeed-mobile-feed-row" onClick={() => onSelectFeed(feed.feed_id)}>{feed.favicon_url ? <img src={feed.favicon_url} alt="" /> : <Rss size={20} />}<span>{feed.title}</span><span className="sfeed-mobile-count">{count(feed).toLocaleString()}</span>{!editing && <ChevronRight size={17} />}</button>{editing && deleteButton(`${feed.title} 구독 취소`, () => onUnsubscribe(feed.id, feed.title))}</div>;
+  // Edit mode also stops or resumes a feed's new articles without unsubscribing.
+  const updatesButton = (feed: SubscriptionItem) => <button type="button" className="sfeed-mobile-updates" aria-label={`${feed.title} ${feed.paused_at ? '업데이트 다시 받기' : '업데이트 중지'}`} onClick={() => onToggleUpdates(feed)}>{feed.paused_at ? <Play size={17} /> : <Pause size={17} />}</button>;
+  const feedRow = (feed: SubscriptionItem) => <div className="sfeed-mobile-row-wrap" key={feed.id} data-feed-id={feed.feed_id}><button className="sfeed-mobile-library-row sfeed-mobile-feed-row" data-paused={feed.paused_at ? true : undefined} onClick={() => onSelectFeed(feed.feed_id)}>{feed.favicon_url ? <img src={feed.favicon_url} alt="" /> : <Rss size={20} />}<span>{feed.title}</span>{feed.paused_at && <Pause size={14} role="img" aria-label="업데이트 중지됨" className="sfeed-mobile-paused" />}<span className="sfeed-mobile-count">{count(feed).toLocaleString()}</span>{!editing && <ChevronRight size={17} />}</button>{editing && updatesButton(feed)}{editing && deleteButton(`${feed.title} 구독 취소`, () => onUnsubscribe(feed.id, feed.title))}</div>;
   const ungrouped = visibleSubscriptions.filter((feed) => !feed.folder_id || !folders.some((folder) => folder.id === feed.folder_id));
   return <section className="sfeed-mobile-library lg:hidden" aria-label="내 피드">
     <MobileHeader library hidden={chromeHidden} title="SFeed" search={query} onSearch={setQuery} onAdd={onAdd} {...settings} />

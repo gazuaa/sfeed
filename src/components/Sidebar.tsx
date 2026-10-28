@@ -10,6 +10,8 @@ import {
   ChevronRight,
   ChevronDown,
   Trash2,
+  Pause,
+  Play,
   FolderPlus,
   FileCode2,
   LogOut,
@@ -44,6 +46,8 @@ interface SidebarProps {
   onCreateFolder: (name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
   onUnsubscribe: (subscriptionId: string, title: string) => Promise<void>;
+  /** Stops or resumes the feed's new articles without unsubscribing. */
+  onToggleUpdates: (feed: SubscriptionItem) => void;
   onLogout: () => void;
   isDark: boolean;
   mobileOpen: boolean;
@@ -66,6 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateFolder,
   onDeleteFolder,
   onUnsubscribe,
+  onToggleUpdates,
   onLogout,
   isDark,
   mobileOpen,
@@ -345,7 +350,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   ) : (
                                     <Rss className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                                   )}
-                                  <span className="truncate">{sub.title}</span>
+                                  <span className={`truncate ${sub.paused_at ? 'opacity-60' : ''}`}>{sub.title}</span>
+                                  {sub.paused_at && <Pause role="img" aria-label="업데이트 중지됨" className="w-3 h-3 shrink-0 text-slate-500" />}
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   {getFeedCount(sub) > 0 && (
@@ -353,6 +359,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                       {getFeedCount(sub)}
                                     </span>
                                   )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleUpdates(sub);
+                                    }}
+                                    title={sub.paused_at ? '업데이트 다시 받기' : '업데이트 중지'}
+                                    className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-emerald-400 transition cursor-pointer"
+                                  >
+                                    {sub.paused_at ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -410,7 +427,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           ) : (
                             <Rss className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           )}
-                          <span className="truncate">{sub.title}</span>
+                          <span className={`truncate ${sub.paused_at ? 'opacity-60' : ''}`}>{sub.title}</span>
+                          {sub.paused_at && <Pause role="img" aria-label="업데이트 중지됨" className="w-3 h-3 shrink-0 text-slate-500" />}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {getFeedCount(sub) > 0 && (
@@ -418,6 +436,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               {getFeedCount(sub)}
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleUpdates(sub);
+                            }}
+                            title={sub.paused_at ? '업데이트 다시 받기' : '업데이트 중지'}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-emerald-400 transition cursor-pointer"
+                          >
+                            {sub.paused_at ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {

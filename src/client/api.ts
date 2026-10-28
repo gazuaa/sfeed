@@ -44,6 +44,8 @@ export interface SubscriptionItem {
   total_count: number;
   saved_count: number;
   view_mode?: ArticleViewMode | null;
+  /** Set while the feed's new articles are not received; missing before 0004 is applied. */
+  paused_at?: string | null;
 }
 
 // Body views RSS readers offer: the feed's content, the full article

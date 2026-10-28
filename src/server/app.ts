@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { initialSyncCursor, readerDelta, syncHead } from './readerSync';
+import { pausedAtColumn, pauseSupported, shownToSubscriber } from './feedPause';
 import { DEFAULT_AUTO_REFRESH_MINUTES, validAutoRefresh } from '../shared/preferences';
 import { cors } from 'hono/cors';
 import type {
@@ -334,6 +335,7 @@ app.post('/api/user/logout', async (c) => {
 app.get('/api/bootstrap', async (c) => {
   const user = c.get('user');
   const syncCursor = await initialSyncCursor(c.env.DB, user.id);
+  const paused = await pauseSupported(c.env.DB);
 
   const foldersRes = await c.env.DB.prepare(
     `SELECT * FROM folders WHERE user_id = ? ORDER BY sort_order ASC, name ASC`
@@ -347,6 +349,7 @@ app.get('/api/bootstrap', async (c) => {
        s.feed_id,
        s.folder_id,
        s.custom_title,
+       ${pausedAtColumn(paused)} AS paused_at,
        f.xml_url,
        f.html_url,
        COALESCE(s.custom_title, f.title) as title,
@@ -358,9 +361,9 @@ app.get('/api/bootstrap', async (c) => {
          SELECT COUNT(*)
          FROM articles a
          LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
-         WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0
+         WHERE a.feed_id = f.id AND a.published_at >= ? AND COALESCE(st.is_read, 0) = 0 AND ${shownToSubscriber(paused)}
        ) as unread_count,
-       (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id) as total_count,
+       (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id AND ${shownToSubscriber(paused)}) as total_count,
        (
          SELECT COUNT(*)
          FROM article_states st
@@ -403,7 +406,7 @@ app.get('/api/bootstrap', async (c) => {
      FROM articles a
      JOIN subscriptions s ON s.feed_id = a.feed_id
      LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
-     WHERE s.user_id = ? AND a.published_at >= ?`
+     WHERE s.user_id = ? AND a.published_at >= ? AND ${shownToSubscriber(paused)}`
   )
     .bind(user.id, twentyFourHoursAgo)
     .first<{ cnt: number; unread: number }>();
@@ -701,6 +704,41 @@ app.delete('/api/subscriptions/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// Stop or resume a feed's new articles without unsubscribing. Articles that
+// arrive while paused stay hidden; resuming marks them read, so they appear
+// in their place instead of returning as a sudden unread backlog.
+app.post('/api/subscriptions/:id/updates', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ paused?: unknown }>().catch(() => ({ paused: undefined }));
+  if (typeof body.paused !== 'boolean') return c.json({ error: '업데이트를 멈출지 다시 받을지 지정해 주세요.' }, 400);
+  if (!(await pauseSupported(c.env.DB))) return c.json({ error: '서버 업데이트가 끝나면 사용할 수 있습니다.' }, 503);
+  const sub = await c.env.DB.prepare('SELECT id, feed_id, paused_at FROM subscriptions WHERE id = ? AND user_id = ?')
+    .bind(c.req.param('id'), user.id)
+    .first<{ id: string; feed_id: string; paused_at: string | null }>();
+  if (!sub) return c.json({ error: '구독을 찾을 수 없습니다.' }, 404);
+  if (body.paused === Boolean(sub.paused_at)) return c.json({ pausedAt: sub.paused_at });
+  const now = new Date().toISOString();
+  const statements = body.paused
+    ? [c.env.DB.prepare('UPDATE subscriptions SET paused_at = ? WHERE id = ?').bind(now, sub.id)]
+    : [
+        // Older articles already count as read, so only the unread window needs marking.
+        c.env.DB.prepare(`INSERT INTO article_states (user_id, article_id, is_read, read_at)
+          SELECT ?, a.id, 1, ? FROM articles a
+          WHERE a.feed_id = ? AND a.created_at > ? AND a.published_at >= ?
+          ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at`)
+          .bind(user.id, now, sub.feed_id, sub.paused_at, unreadCutoff()),
+        c.env.DB.prepare('UPDATE subscriptions SET paused_at = NULL WHERE id = ?').bind(sub.id),
+      ];
+  // The subscription trigger only records folder and title changes, so other
+  // devices learn of the pause from an explicit change entry.
+  statements.push(
+    c.env.DB.prepare("DELETE FROM reader_sync_changes WHERE kind = 'subscription' AND owner_id = ? AND entity_id = ?").bind(user.id, sub.id),
+    c.env.DB.prepare("INSERT INTO reader_sync_changes(kind, owner_id, entity_id, feed_id, operation) VALUES('subscription', ?, ?, ?, 'upsert')").bind(user.id, sub.id, sub.feed_id),
+  );
+  await c.env.DB.batch(statements);
+  return c.json({ pausedAt: body.paused ? now : null });
+});
+
 // Refresh feeds
 app.post('/api/feeds/refresh', async (c) => {
   const user = c.get('user');
@@ -765,7 +803,8 @@ app.get('/api/articles', async (c) => {
   const beforeId = c.req.query('beforeId') || '';
   const cutoff = unreadCutoff();
 
-  const conditions: string[] = ['s.user_id = ?'];
+  // A paused feed keeps the articles stored before the pause and shows no newer ones.
+  const conditions: string[] = ['s.user_id = ?', shownToSubscriber(await pauseSupported(c.env.DB))];
   // The first placeholder sits in the SELECT list: the default read state by age.
   const params: unknown[] = [cutoff, user.id];
 
@@ -959,7 +998,7 @@ app.post('/api/articles/mark-all-read', async (c) => {
   }>();
 
   const scope = body.scope || 'all';
-  const conditions: string[] = ['s.user_id = ?'];
+  const conditions: string[] = ['s.user_id = ?', shownToSubscriber(await pauseSupported(c.env.DB))];
   const params: unknown[] = [user.id];
 
   if (scope === 'folder' && body.folderId) {

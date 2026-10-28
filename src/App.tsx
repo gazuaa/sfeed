@@ -75,6 +75,7 @@ export const App: React.FC = () => {
   // Bootstrap data
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const [counts, setCounts] = useState({
     totalUnread: 0,
     totalArticles: 0,
@@ -773,6 +774,28 @@ export const App: React.FC = () => {
     setDeleteTarget({ kind: 'folder', id: folderId, name: folders.find((folder) => folder.id === folderId)?.name || '이 폴더' });
   };
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // Stops or resumes a feed's new articles while the subscription, its
+  // articles and their read/saved states stay.
+  const handleToggleFeedUpdates = async (feed: SubscriptionItem) => {
+    const paused = !feed.paused_at;
+    try {
+      const { pausedAt } = await apiRequest<{ pausedAt: string | null }>(`/api/subscriptions/${feed.id}/updates`, { method: 'POST', body: JSON.stringify({ paused }) });
+      const mark = <T extends SubscriptionItem>(sub: T): T => sub.id === feed.id ? { ...sub, paused_at: pausedAt } : sub;
+      setSubscriptions((prev) => prev.map(mark));
+      readerCache?.updateBootstrap((data) => ({ ...data, subscriptions: data.subscriptions.map(mark) }));
+      setNotice(paused ? `${feed.title}: 새 글을 그만 받아요. 받은 글은 그대로 남아요.` : `${feed.title}: 새 글을 다시 받아요.`);
+      await fetchBootstrap();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '바꾸지 못했습니다. 다시 시도해 주세요.');
+    }
+  };
+
   const handleUnsubscribe = async (subscriptionId: string, title: string) => {
     setDeleteError(null);
     setDeleteTarget({ kind: 'feed', id: subscriptionId, name: title });
@@ -1025,7 +1048,8 @@ export const App: React.FC = () => {
     } else if (feed) {
       items.push({ id: 'open-feed', label: '피드 글 보기', run: () => openScope('feed', null, feed.feed_id) },
         { id: 'mark-feed', label: '피드 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'feed', feedId: feed.feed_id, folderId: null, name: feed.title, searching: false }); } },
-        { id: 'unsubscribe', label: '구독 취소…', danger: true, separator: true, run: () => handleUnsubscribe(feed.id, feed.title) });
+        { id: 'updates', label: feed.paused_at ? '업데이트 다시 받기' : '업데이트 중지', separator: true, run: () => handleToggleFeedUpdates(feed) },
+        { id: 'unsubscribe', label: '구독 취소…', danger: true, run: () => handleUnsubscribe(feed.id, feed.title) });
     } else if (folder) {
       items.push({ id: 'open-folder', label: '폴더 글 보기', run: () => openScope('folder', folder.id) },
         { id: 'mark-folder', label: '폴더 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'folder', folderId: folder.id, feedId: null, name: folder.name, searching: false }); } },
@@ -1069,6 +1093,7 @@ export const App: React.FC = () => {
             onCreateFolder={handleCreateFolder}
             onDeleteFolder={handleDeleteFolder}
             onUnsubscribe={handleUnsubscribe}
+            onToggleUpdates={handleToggleFeedUpdates}
             onLogout={handleLogout}
             isDark={isDark}
             mobileOpen={false}
@@ -1172,7 +1197,7 @@ export const App: React.FC = () => {
         )}
       </ResizableWorkspace>
 
-      {isMobile && <div className="sfeed-mobile-library-host" data-open={mobileSidebarOpen || undefined}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} syncing={backgroundSyncs > 0} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onLogout={handleLogout} {...mobileSettings} /></div>}
+      {isMobile && <div className="sfeed-mobile-library-host" data-open={mobileSidebarOpen || undefined}><MobileLibrary visible={mobileSidebarOpen} user={user} folders={folders} subscriptions={subscriptions} counts={counts} countTab={mobileTab} onChangeCountTab={applyMobileFilter} onSelectTab={selectMobileTab} onSelectFolder={(id) => { setSearchQuery(''); handleSelectScope('folder', id); setMobileSidebarOpen(false); }} onSelectFeed={(id) => { setSearchQuery(''); handleSelectScope('feed', null, id); setMobileSidebarOpen(false); }} onAdd={() => openMobileDiscover()} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} syncing={backgroundSyncs > 0} onCreateFolder={handleCreateFolder} onDeleteFolder={handleDeleteFolder} onUnsubscribe={handleUnsubscribe} onToggleUpdates={handleToggleFeedUpdates} onLogout={handleLogout} {...mobileSettings} /></div>}
       {isMobile && !selectedArticle && <PullRefreshIndicator distance={pullDistance} refreshing={refreshingFeeds} />}
       {!mobileSidebarOpen && !selectedArticle && <MobileDock hidden={chromeHidden} active={mobileTab} onSelect={filterMobileList} onRefresh={handleRefreshFeeds} refreshing={refreshingFeeds} syncing={backgroundSyncs > 0} onMarkAllRead={handleMarkAllRead} onAdd={() => openMobileDiscover()} />}
 
@@ -1207,6 +1232,8 @@ export const App: React.FC = () => {
           )}
         </ConfirmDialog>
       )}
+
+      {notice && <div className="sfeed-notice" role="status" aria-live="polite">{notice}</div>}
 
       {/* Discover / Add Feed / OPML Modal */}
       <DiscoverModal

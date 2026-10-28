@@ -14,6 +14,9 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 .sfeed-channel-list:focus-visible, .sfeed-feed-list:focus-visible { outline: 2px solid #10b981; outline-offset: -2px; }
 .sfeed-feed-list { padding-bottom: env(safe-area-inset-bottom); }
 .sfeed-pull-refresh { display: none; }
+/* A short confirmation, above the mobile dock. */
+.sfeed-notice { position: fixed; z-index: 120; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: min(420px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 14px; background: #0f172aeb; color: #f8fafc; box-shadow: 0 8px 24px #0004; font-size: 13px; line-height: 1.45; text-align: center; pointer-events: none; }
+@media (min-width: 1024px) { .sfeed-notice { bottom: 24px; } }
 .sfeed-context-menu { position: fixed; z-index: 200; min-width: 210px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--sfeed-border); border-radius: 13px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 12px 38px #0003; }
 .sfeed-context-menu > button { display: block; width: 100%; min-height: 34px; padding: 7px 11px; border-radius: 8px; text-align: left; font-size: 13px; cursor: pointer; outline: none; }
 .sfeed-context-menu > button:hover, .sfeed-context-menu > button:focus-visible { background: var(--sfeed-background); color: #10b981; }
@@ -202,6 +205,10 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-row-wrap > .sfeed-mobile-library-row { min-width: 0; flex: 1; }
   .sfeed-mobile-delete { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; margin-right: 6px; border-radius: 12px; color: #f43f5e; cursor: pointer; }
   .sfeed-mobile-delete:hover, .sfeed-mobile-delete:focus-visible { background: #f43f5e1a; }
+  .sfeed-mobile-updates { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; border-radius: 12px; color: var(--sfeed-mobile-muted); cursor: pointer; }
+  .sfeed-mobile-updates:hover, .sfeed-mobile-updates:focus-visible { background: var(--sfeed-mobile-raised); }
+  .sfeed-mobile-feed-row[data-paused] > span:not(.sfeed-mobile-count), .sfeed-mobile-feed-row[data-paused] > img { opacity: .55; }
+  .sfeed-mobile-paused { flex-shrink: 0; color: var(--sfeed-mobile-muted); }
   .sfeed-mobile-section-actions { display: flex; align-items: center; }
   .sfeed-mobile-section-title .sfeed-mobile-edit { padding: 0 10px; font-size: 14px; font-weight: 600; }
   /* The floating banner would cover the lists; the library shows a card instead. */

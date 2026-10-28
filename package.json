@@ -32,7 +32,8 @@
     "test:discovery": "node scripts/verify-discovery.mjs",
     "test:panels": "node scripts/verify-panel-widths.mjs",
     "test:builder": "node scripts/verify-rss-builder.mjs",
-    "test:reader": "node scripts/verify-reader.mjs"
+    "test:reader": "node scripts/verify-reader.mjs",
+    "test:feed-pause": "node scripts/verify-feed-pause.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.4.0",
