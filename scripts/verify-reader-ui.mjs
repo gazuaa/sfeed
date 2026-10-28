@@ -20,8 +20,18 @@ try {
   assert.equal(notifications[0].options.data.account, 'owner');
   await notifyNewArticles('owner', [{ id: 'no-feed-name', feed_title: '  ', title: '피드명이 없는 글' }]);
   assert.equal(notifications[1].title, 'SFeed'); assert.equal(notifications[1].options.body, '피드명이 없는 글');
-  setLocalNotifications('owner', false); await notifyNewArticles('owner', [{ id: 'b', title: 'Muted' }]); assert.equal(notifications.length, 2);
-  setLocalNotifications('owner', true); await notifyNewArticles('owner', [{ id: 'c', title: 'Old session' }], undefined, () => false); assert.equal(notifications.length, 2, 'logout cancels late notifications');
+  navigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/156.0.0.0 Safari/537.36'; navigator.maxTouchPoints = 0;
+  await notifyNewArticles('owner', [{ id: 'mac', feed_title: 'Decrypt', title: 'Bithumb Says Hackers Accessed Internal System' }]);
+  assert.equal(notifications[2].title, 'Decrypt · Bithumb Says Hackers Accessed Internal System');
+  assert.ok(!('body' in notifications[2].options), 'macOS origin attribution follows all article content instead of splitting feed and headline');
+  navigator.maxTouchPoints = 5;
+  await notifyNewArticles('owner', [{ id: 'ipad-desktop', feed_title: 'Decrypt', title: 'iPad article' }]);
+  assert.equal(notifications[3].title, 'Decrypt'); assert.equal(notifications[3].options.body, 'iPad article', 'iPad desktop mode retains mobile notification formatting');
+  navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15'; navigator.maxTouchPoints = 1;
+  await notifyNewArticles('owner', [{ id: 'iphone', feed_title: 'Decrypt', title: 'iPhone article' }]);
+  assert.equal(notifications[4].title, 'Decrypt'); assert.equal(notifications[4].options.body, 'iPhone article');
+  setLocalNotifications('owner', false); await notifyNewArticles('owner', [{ id: 'b', title: 'Muted' }]); assert.equal(notifications.length, 5);
+  setLocalNotifications('owner', true); await notifyNewArticles('owner', [{ id: 'c', title: 'Old session' }], undefined, () => false); assert.equal(notifications.length, 5, 'logout cancels late notifications');
 
   const { bindLongPress } = await vite.ssrLoadModule('/src/client/longPress.ts');
   const doc = new EventTarget(); let opened = 0;
