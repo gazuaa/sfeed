@@ -103,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
   const getFeedCount = (sub: SubscriptionItem) => libraryTab === 'saved' ? sub.saved_count : libraryTab === 'unread' ? sub.unread_count : sub.total_count;
   const libraryCount = libraryTab === 'saved' ? counts.savedCount : libraryTab === 'unread' ? counts.totalUnread : counts.totalArticles;
+  const isAllArticlesActive = activeScope === 'all' || activeScope === 'saved';
 
   return (
     <>
@@ -182,7 +183,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         <div className="mx-3 mb-4">
-          <button type="button" onClick={() => { onSelectScope('all', null, null); onCloseMobile(); }} className={`sfeed-desktop-all-articles flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${isDark ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-200 hover:bg-white'}`}><Archive size={17} className="text-emerald-500" /><span>전체 글</span><span className="ml-auto text-xs text-slate-400">{libraryCount.toLocaleString('ko-KR')}</span><ChevronRight size={15} /></button>
+          <button
+            type="button"
+            aria-current={isAllArticlesActive ? 'page' : undefined}
+            onClick={() => { onSelectScope('all', null, null); onCloseMobile(); }}
+            className={`sfeed-desktop-all-articles flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition cursor-pointer ${isAllArticlesActive ? 'border-transparent bg-emerald-500/15 text-emerald-400 font-semibold' : isDark ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-200 hover:bg-white'}`}
+          ><Archive size={17} className={isAllArticlesActive ? 'text-emerald-400' : 'text-emerald-500'} /><span>전체 글</span><span className="ml-auto text-xs text-slate-400">{libraryCount.toLocaleString('ko-KR')}</span><ChevronRight size={15} /></button>
         </div>
 
         {/* Scrollable Navigation Tree */}
