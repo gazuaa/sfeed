@@ -18,6 +18,9 @@ try {
   assert.equal(position.hidden, true, 'bottom rubber-banding must not reveal chrome');
   assert.equal(scrollChrome(position, 420, 400, true).hidden, false, 'settings and input focus keep controls visible');
   assert.equal(scrollChrome(position, -30, 400).hidden, false);
+  const { withScrollReporter } = await vite.ssrLoadModule('/src/client/mobile.ts');
+  assert.match(withScrollReporter('<!doctype html><html lang="ko"><head><base href="https://site.example.test/"></head><body></body></html>'), /^<!doctype html><html lang="ko"><meta http-equiv="Content-Security-Policy" content="script-src 'nonce-sfeed-scroll'"><script nonce="sfeed-scroll">/, 'the web copy policy comes first, so only the reporter can run');
+  assert.ok(withScrollReporter('<p>bare</p>').startsWith('<meta http-equiv="Content-Security-Policy"'));
 
   const { MobileLibrary } = await vite.ssrLoadModule('/src/components/MobileLibrary.tsx');
   const { MobileSettings } = await vite.ssrLoadModule('/src/components/MobileChrome.tsx');

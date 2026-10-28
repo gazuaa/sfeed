@@ -246,7 +246,11 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   html.dark .sfeed-magazine-copy > div > span.font-medium, html.dark .sfeed-mobile-body-modes button[aria-checked=true] { color: #34d399; }
   .sfeed-reader { max-width: none; padding-bottom: 0; border: 0; }
   .sfeed-reader-toolbar { display: none; }
-  .sfeed-mobile-reader-top { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; position: relative; z-index: 4; gap: 6px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); }
+  .sfeed-mobile-reader-top { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; position: relative; z-index: 4; gap: 6px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); transition: margin-top .2s ease; }
+  .sfeed-mobile-reader-top > * { transition: opacity .15s ease; }
+  /* Folding up leaves only the safe-area strip, so text never scrolls under the status bar. */
+  .sfeed-mobile-reader-top[data-scroll-hidden] { margin-top: min(0px, calc(env(safe-area-inset-top) - var(--sfeed-reader-top-height, 0px))); }
+  .sfeed-mobile-reader-top[data-scroll-hidden] > * { opacity: 0; }
   .sfeed-mobile-body-modes { display: flex; padding: 3px; border-radius: 24px; background: var(--sfeed-mobile-raised); }
   .sfeed-mobile-body-modes button { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 56px; height: 44px; padding: 0 8px; border-radius: 21px; color: var(--sfeed-mobile-muted); font-size: 11px; }
   .sfeed-mobile-body-modes button[aria-checked=true] { color: #059669; background: var(--sfeed-mobile-surface); box-shadow: 0 1px 5px #0001; }
@@ -267,13 +271,14 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-reader-dock > button { flex: 1; }
   .sfeed-mobile-share-notice { position: fixed; z-index: 61; bottom: calc(92px + env(safe-area-inset-bottom)); left: 20px; right: 20px; padding: 12px; border-radius: 14px; background: var(--sfeed-mobile-raised); text-align: center; font-size: 12px; }
   .sfeed-web-view { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .sfeed-web-view[data-scroll-hidden] { padding-bottom: env(safe-area-inset-bottom); }
   .sfeed-install-banner { bottom: calc(98px + env(safe-area-inset-bottom)); }
   .sfeed-install-banner button, .sfeed-mobile-settings-panel > button { min-height: 44px; }
   .sfeed-install-banner button[aria-label] { min-width: 44px; flex-shrink: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sfeed-mobile-header, .sfeed-mobile-dock { transition: none; }
+  .sfeed-mobile-header, .sfeed-mobile-dock, .sfeed-mobile-reader-top, .sfeed-mobile-reader-top > * { transition: none; }
 }
 
 @layer base {

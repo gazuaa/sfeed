@@ -27,6 +27,7 @@ import {
   type ArticleViewMode as ViewMode,
 } from '../client/api';
 import { useTextSize } from '../client/textSize';
+import { useMobileViewport, useScrollChrome, withScrollReporter } from '../client/mobile';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
@@ -112,6 +113,21 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null } | null>(null);
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const isMobile = useMobileViewport();
+  const topRef = useRef<HTMLDivElement>(null), bodyRef = useRef<HTMLDivElement>(null), copyRef = useRef<HTMLIFrameElement>(null);
+  // A framed site scrolls out of reach, so only the feed, reader and web copy hide the bars.
+  const showingCopy = mode === 'web' && frame?.articleId === article?.id && frame?.embeddable === false && webCopy?.articleId === article?.id && Boolean(webCopy?.html);
+  const chromeHidden = useScrollChrome(bodyRef, isMobile && Boolean(article) && !mobileToolsOpen && !sizeToolsOpen, `${article?.id}:${mode}:${showingCopy}`, copyRef);
+  const hasArticle = Boolean(article);
+  // The folded top bar moves up by its own height, which depends on the safe area and text size.
+  useLayoutEffect(() => {
+    const top = topRef.current;
+    if (!top) return;
+    const measure = () => top.style.setProperty('--sfeed-reader-top-height', `${top.offsetHeight}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(top); measure();
+    return () => observer.disconnect();
+  }, [hasArticle]);
 
   // -1 zooms out, +1 zooms in, 0 resets to 100%.
   const changeWebZoom = (step: -1 | 0 | 1) => {
@@ -264,7 +280,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
-        <div className="sfeed-mobile-reader-top lg:hidden">
+        <div ref={topRef} className="sfeed-mobile-reader-top lg:hidden" data-scroll-hidden={chromeHidden || undefined} inert={chromeHidden || undefined} aria-hidden={chromeHidden || undefined}>
           <button className="sfeed-mobile-icon" onClick={onClose} aria-label="목록으로 돌아가기"><ChevronDown size={24} /></button>
           <div role="radiogroup" aria-label="본문 보기 방식" className="sfeed-mobile-body-modes">{VIEW_MODES.map(({ id, label, Icon }) => <button key={id} role="radio" aria-label={label} aria-checked={mode === id} onClick={() => chooseViewMode(id)}>{id === 'reader' && scrapingReader ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}<span>{label}</span></button>)}</div>
           <button className="sfeed-mobile-icon" aria-label="본문 도구" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((value) => !value)}><MoreHorizontal size={22} /></button>
@@ -490,7 +506,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         </div>
 
         {mode === 'web' ? (
-          <div className="sfeed-web-view flex-1 min-h-0 flex flex-col">
+          <div className="sfeed-web-view flex-1 min-h-0 flex flex-col" data-scroll-hidden={chromeHidden || undefined}>
             {!frame || frame.articleId !== article.id ? (
               <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -552,10 +568,12 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   </a>
                 </div>
                 <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
-                  {/* No allow-scripts: the copy is static, and links open in new tabs. */}
+                  {/* Scripts run only for the scroll reporter: the copy is stripped and its policy
+                      blocks anything else. Without allow-same-origin it cannot reach the app; links open in new tabs. */}
                   <iframe
+                    ref={copyRef}
                     key={`copy-${article.id}`}
-                    srcDoc={webCopy.html}
+                    srcDoc={withScrollReporter(webCopy.html)}
                     title={article.title}
                     className="absolute left-0 top-0 border-0 bg-white"
                     style={{
@@ -564,7 +582,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                       transform: `scale(${webZoom})`,
                       transformOrigin: '0 0',
                     }}
-                    sandbox="allow-popups allow-popups-to-escape-sandbox"
+                    sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
                     referrerPolicy="no-referrer"
                   />
                 </div>
@@ -609,7 +627,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             )}
           </div>
         ) : (
-        <div tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
+        <div ref={bodyRef} tabIndex={0} aria-label="본문 내용" className="sfeed-reader-content flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-6 space-y-6">
           {article.body_deferred && <div role="status" className="flex items-center gap-2 text-sm text-slate-400">{article.body_load_error ? <><span>본문을 가져오지 못했습니다.</span><button className="text-emerald-500" onClick={() => onUpdateArticleFields(article.id, { body_load_error: false })}>다시 시도</button></> : <><Loader2 size={16} className="animate-spin" /><span>본문 불러오는 중…</span></>}</div>}
           {/* Article Metadata Header */}
           <div className="space-y-3 border-b pb-6 border-slate-800/60">
@@ -821,7 +839,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
         </div>
         )}
         {shareNotice && <p role="status" className="sfeed-mobile-share-notice lg:hidden">{shareNotice}</p>}
-        <nav aria-label="본문 조작" className="sfeed-mobile-dock sfeed-mobile-reader-dock lg:hidden">
+        <nav aria-label="본문 조작" className="sfeed-mobile-dock sfeed-mobile-reader-dock lg:hidden" data-scroll-hidden={chromeHidden || undefined} inert={chromeHidden || undefined} aria-hidden={chromeHidden || undefined}>
           <button aria-label={article.is_read ? '안 읽음으로 표시' : '읽음으로 표시'} aria-pressed={article.is_read} onClick={() => onToggleRead(article)}>{article.is_read ? <CheckCircle2 size={22} /> : <Circle size={22} />}</button>
           <button aria-label={article.is_saved ? '저장 취소' : '나중에 읽기'} aria-pressed={article.is_saved} onClick={() => onToggleSaved(article)}><Bookmark size={22} fill={article.is_saved ? 'currentColor' : 'none'} /></button>
           <button aria-label="이전 아티클" disabled={!hasPrev} onClick={() => onNavigateRelative('prev')}><ChevronLeft size={24} /></button>
