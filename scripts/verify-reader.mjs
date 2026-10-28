@@ -47,6 +47,23 @@ try {
   assert.equal(bodyShowsImage('<img src="https://cdn.example.test/uploads/harbor-sunrise-1024x683.jpg">', 'https://cdn.example.test/uploads/harbor-sunrise.jpg'), true);
   assert.equal(bodyShowsImage('<img src="https://cdn.example.test/uploads/harbor-sunset.jpg">', 'https://cdn.example.test/uploads/harbor-sunrise.jpg'), false);
   assert.equal(bodyShowsImage('<img src="https://cdn.example.test/a/img_1.jpg">', 'https://cdn.example.test/b/img_2.jpg'), false, 'short generic names are never treated as the same picture');
+
+  // Feeds that lead with the photo and repeat it in a captioned figure (보안뉴스) show it once.
+  const { dropRepeatedImages } = await vite.ssrLoadModule('/src/client/articleImages.ts');
+  const { parseHTML } = await import('linkedom');
+  const photo = 'https://cdn.example.test/news/photo/202610/146842_129483_520.jpg';
+  const { document: repeated } = parseHTML(`<div id="body"><img src="${photo}" class="type:primaryImage"><p>Lead paragraph.</p><div style="text-align:center"><figure><img src="${photo}"><figcaption>Caption</figcaption></figure></div><p><img src="https://cdn.example.test/news/photo/202610/146842_129484_100.jpg"></p><p><a href="/x"><img src="https://cdn.example.test/news/photo/202610/146842_129484_100.jpg"></a></p></div>`);
+  dropRepeatedImages(repeated.getElementById('body'));
+  const kept = repeated.getElementById('body').innerHTML;
+  assert.equal((kept.match(/129483_520/g) || []).length, 1, 'the repeated lead photo shows once');
+  assert.match(kept, /<figure><img[^>]+129483_520[^>]*><figcaption>Caption/, 'the captioned copy is the one kept');
+  assert.equal((kept.match(/129484_100/g) || []).length, 1);
+  assert.ok(!kept.includes('<a href="/x"></a>') && !kept.includes('<p></p>'), 'emptied wrappers go with the duplicate');
+
+  // Ad slots reserve height for scripts the copy no longer runs (Decrypt).
+  const slots = webCopy(`<html><head><title>Article</title></head><body><article><p>${'Paragraph text. '.repeat(10)}</p><div class="my-8 flex"><div style="min-width:300px;min-height:250px"></div></div><p>Next paragraph.</p><div style="height:280px"><img src="/chart.png"></div><div aria-hidden="true" style="background-image:radial-gradient(#fff 1px, transparent 0);height:1440px"></div><div style="position:fixed;top:16px;bottom:16px"></div><div style="min-height:20px"></div></article></body></html>`, url);
+  assert.ok(!slots.includes('min-height:250px') && !slots.includes('class="my-8 flex"'), 'an empty ad slot and its emptied wrapper go');
+  assert.ok(slots.includes('/chart.png') && slots.includes('radial-gradient') && slots.includes('position:fixed') && slots.includes('min-height:20px'), 'slots with content, painted or positioned boxes and small spacers stay');
   globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
   assert.equal((await checkEmbeddable(url, 'https://sfeed.example.test')).reason, 'challenge');
   assert.equal((await scrapeFullArticle(url, '<p>Short feed preview</p>', 'Title')).fullContentHtml, null);

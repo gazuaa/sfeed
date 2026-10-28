@@ -2,6 +2,7 @@ import { parseHTML } from 'linkedom';
 import type { BuilderAnalysis, BuilderArticle, BuilderGroup, BuilderSite } from '../shared/rssBuilder';
 import { normalizeFeedUrl } from '../shared/feedDiscovery';
 import { revealLazyImages } from '../shared/lazyImages';
+import { dropEmptySlots } from '../shared/emptySlots';
 import { PICK_SELECTOR, decodePick, extractPicked, type PickSelection } from '../shared/rssPicker';
 import { parsePublicationDate } from './publicationDate';
 import { decodeHtmlEntities } from './rssParser';
@@ -71,6 +72,7 @@ function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget }: {
   stripActiveContent(document);
   if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
   revealLazyImages(document);
+  dropEmptySlots(document);
   const head = document.head || document.documentElement;
   const base = document.createElement('base');
   base.setAttribute('href', pageUrl);
