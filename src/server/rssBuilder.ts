@@ -1,6 +1,7 @@
 import { parseHTML } from 'linkedom';
 import type { BuilderAnalysis, BuilderArticle, BuilderGroup, BuilderSite } from '../shared/rssBuilder';
 import { normalizeFeedUrl } from '../shared/feedDiscovery';
+import { revealLazyImages } from '../shared/lazyImages';
 import { PICK_SELECTOR, decodePick, extractPicked, type PickSelection } from '../shared/rssPicker';
 import { parsePublicationDate } from './publicationDate';
 import { decodeHtmlEntities } from './rssParser';
@@ -69,12 +70,7 @@ function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget }: {
   const { document } = parseHTML(html);
   stripActiveContent(document);
   if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
-  for (const img of document.querySelectorAll('img')) {
-    const lazy = img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original');
-    if (lazy && (!img.getAttribute('src') || img.getAttribute('src')!.startsWith('data:'))) img.setAttribute('src', lazy);
-    const lazySet = img.getAttribute('data-srcset');
-    if (lazySet && !img.getAttribute('srcset')) img.setAttribute('srcset', lazySet);
-  }
+  revealLazyImages(document);
   const head = document.head || document.documentElement;
   const base = document.createElement('base');
   base.setAttribute('href', pageUrl);

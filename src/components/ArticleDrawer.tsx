@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bookmark,
@@ -30,6 +30,7 @@ import { useTextSize } from '../client/textSize';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
+import { bindArticleImages, bodyShowsImage } from '../client/articleImages';
 
 const VIEW_MODES = [
   { id: 'feed', label: '피드', title: '피드 본문 — RSS에 담긴 내용', Icon: Rss },
@@ -50,6 +51,13 @@ function loadWebZoom(account: string, feed: string): number {
   } catch {
     return 1;
   }
+}
+
+// The body is set as HTML, so its images are repaired in place after each change.
+function ArticleBody({ html, base, className, style }: { html: string; base: string; className: string; style: React.CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => ref.current ? bindArticleImages(ref.current, base) : undefined, [html, base]);
+  return <div ref={ref} style={style} className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 interface ArticleDrawerProps {
@@ -714,7 +722,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
           {/* Lead Thumbnail Image (if not already embedded in contentHtml) */}
           {article.thumbnail_url &&
-            !activeHtml.includes(article.thumbnail_url) && (
+            !bodyShowsImage(activeHtml, article.thumbnail_url) && (
               <div className="rounded-2xl overflow-hidden border border-slate-800/60">
                 <img
                   src={article.thumbnail_url}
@@ -779,12 +787,13 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               </div>
             )
           ) : (
-            <div
+            <ArticleBody
+              html={activeHtml}
+              base={article.url}
               style={{ fontSize: `calc(var(--sfeed-article-font) * ${fontScale})` }}
               className={`sfeed-article-content ${
                 isDark ? 'text-slate-200' : 'text-slate-800'
               }`}
-              dangerouslySetInnerHTML={{ __html: activeHtml }}
             />
           )}
 

@@ -1,6 +1,7 @@
 import { apiRequest, type ArticleItem } from './api';
 import { cachedArticle, readContent, writeContent } from './deviceContent';
 import { cacheGeneration } from './cachePolicy';
+import { revealCopyImages } from './articleImages';
 
 type ReaderResult = { fullContentHtml: string; publishedAt?: string };
 type WebResult = { html: string; url: string };
@@ -11,7 +12,7 @@ export class ArticleResources {
   hydrate(article: ArticleItem) { return cachedArticle(this.account, article); }
   async cachedWeb(article: ArticleItem): Promise<WebResult | undefined> {
     const stored = await readContent(this.account, `web:${article.id}`);
-    return stored && 'html' in stored.data ? stored.data : undefined;
+    return stored && 'html' in stored.data ? { ...stored.data, html: revealCopyImages(stored.data.html) } : undefined;
   }
   private async once<T>(key: string, load: () => Promise<T>): Promise<T> {
     const running = this.requests.get(key); if (running) return running as Promise<T>;

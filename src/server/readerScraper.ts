@@ -3,6 +3,7 @@ import { sanitizeContentHtml } from './rssParser';
 import { extractOriginalPublishedAt } from './publicationDate';
 import { extractPreviewImage } from './previewImage';
 import { publicPageUrl, renderPage } from './rssBuilder';
+import { revealLazyImages } from '../shared/lazyImages';
 import type { Env } from './types';
 
 export const READER_FALLBACK_MARK = 'reader-fallback-content';
@@ -23,6 +24,7 @@ export function extractReaderContent(html: string, url: string, fallbackHtml: st
   const leadImageUrl = extractPreviewImage(html, url);
   const originalPublishedAt = extractOriginalPublishedAt(html, url) || extractOriginalPublishedAt(fallbackHtml, url);
   document.querySelectorAll('script,style,noscript,template,nav,header,footer,aside,form,iframe,object,embed,svg,math,link,meta,base,[hidden],[aria-hidden="true"]').forEach((node) => node.remove());
+  revealLazyImages(document, url);
   const readable = (node: { textContent: string | null }) => (node.textContent || '').replace(/\s+/g, ' ').trim().length > 120;
   const candidates = [...document.querySelectorAll('[itemprop="articleBody"],article,.entry-content,.article-content,.prose')].filter(readable).sort((a, b) => (b.textContent?.length || 0) - (a.textContent?.length || 0));
   const content = candidates[0] || document.querySelector('main');

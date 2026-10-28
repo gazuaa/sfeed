@@ -22,6 +22,27 @@ try {
   assert.equal(extractReaderContent('<title>Sign in</title><main>' + body + '</main>', url, null), null);
   assert.equal(extractReaderContent('<title>Premium</title><script type="application/ld+json">{"isAccessibleForFree":false}</script><article>' + body + '</article>', url, null), null);
   assert.equal(extractReaderContent('<html><body><div id="app"></div></body></html>', url, null), null);
+
+  // Decenter-style lazy images: a 1×1 stand-in sized to the photo, the real one in data-src.
+  const lazyPage = `<html><head><title>Lazy</title></head><body><article>${body}<figure><img loading="lazy" data-src="/photo_P1.webp" src="https://static.example.test/img/1X1.png" width="649" height="392"></figure><img src="/spacer.gif" width="600" height="300"><img data-lazy-src="/wide.jpg" data-srcset="/wide-800.jpg 800w, /wide-1600.jpg 1600w" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><img src="/loading-dock.jpg"><img data-src="/lazy.png" src="/blank.gif"><p>${'More body text. '.repeat(10)}</p></article></body></html>`;
+  const lazy = extractReaderContent(lazyPage, url, null).fullContentHtml;
+  assert.match(lazy, /src="https:\/\/reader.example.test\/photo_P1.webp"/, 'the real photo replaces its stand-in, so no blank gap remains');
+  assert.doesNotMatch(lazy, /1X1\.png|spacer\.gif|data:image\/gif/, 'a bare stand-in with no real image is dropped');
+  assert.match(lazy, /src="https:\/\/reader.example.test\/wide.jpg"/);
+  assert.match(lazy, /srcset="https:\/\/reader.example.test\/wide-800.jpg 800w, https:\/\/reader.example.test\/wide-1600.jpg 1600w"/, 'lazy srcsets resolve against the article, not the app');
+  assert.match(lazy, /loading-dock\.jpg/, 'an ordinary photo whose name merely starts with a placeholder word stays');
+  assert.match(lazy, /src="https:\/\/reader.example.test\/lazy.png"/, 'the lazy loader\'s own address is the real image, whatever it is called');
+  const { webCopy } = await vite.ssrLoadModule('/src/server/rssBuilder.ts');
+  const lazyCopy = webCopy(lazyPage, url);
+  assert.match(lazyCopy, /src="\/photo_P1.webp"/, 'the web copy shows the real photo too');
+  assert.doesNotMatch(lazyCopy, /1X1\.png|spacer\.gif/);
+
+  const { bodyShowsImage } = await vite.ssrLoadModule('/src/client/articleImages.ts');
+  const lead = 'https://wimg.sedaily.com/news/cms/2026/10/28/news-p.v1.20261028.998e09ea2f92490cba5940754a0bad19_T1.jpg';
+  assert.equal(bodyShowsImage(`<img src="${lead.replace('_T1', '_P1')}">`, lead), true, 'the lead image is not shown again when the body has it in another size');
+  assert.equal(bodyShowsImage('<img src="https://cdn.example.test/uploads/harbor-sunrise-1024x683.jpg">', 'https://cdn.example.test/uploads/harbor-sunrise.jpg'), true);
+  assert.equal(bodyShowsImage('<img src="https://cdn.example.test/uploads/harbor-sunset.jpg">', 'https://cdn.example.test/uploads/harbor-sunrise.jpg'), false);
+  assert.equal(bodyShowsImage('<img src="https://cdn.example.test/a/img_1.jpg">', 'https://cdn.example.test/b/img_2.jpg'), false, 'short generic names are never treated as the same picture');
   globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
   assert.equal((await checkEmbeddable(url, 'https://sfeed.example.test')).reason, 'challenge');
   assert.equal((await scrapeFullArticle(url, '<p>Short feed preview</p>', 'Title')).fullContentHtml, null);
@@ -67,5 +88,5 @@ try {
   assert.equal((await copyRequest(stranger.token)).status, 404, 'only subscribers get a copy');
   globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
   assert.equal((await copyRequest()).status, 502);
-  console.log('PASS: public body extraction, relative assets, original date, safe markup, framing/challenge/HTTP distinction, no fake challenge or paywall body, authenticated reader cache/retry, preserved saved/read state and a script-free web copy for subscribers.');
+  console.log('PASS: public body extraction, relative assets, original date, safe markup, framing/challenge/HTTP distinction, no fake challenge or paywall body, authenticated reader cache/retry, preserved saved/read state and a script-free web copy for subscribers; lazy images revealed, blank stand-ins dropped and the lead image shown once.');
 } finally { globalThis.fetch = originalFetch; await vite.close(); }
