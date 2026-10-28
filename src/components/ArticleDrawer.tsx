@@ -28,8 +28,7 @@ import {
   type ArticleViewMode as ViewMode,
 } from '../client/api';
 import { useTextSize } from '../client/textSize';
-import { useMobileViewport, useScrollChrome, withScrollReporter } from '../client/mobile';
-import { homeScreenApp } from '../client/swipeBack';
+import { useMobileViewport, useScrollChrome, framedCopy } from '../client/mobile';
 import { dropSiteClasses } from '../shared/siteClasses';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
@@ -150,7 +149,6 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const isMobile = useMobileViewport();
-  const [homeScreen] = useState(() => typeof window !== 'undefined' && homeScreenApp(window));
   const topRef = useRef<HTMLDivElement>(null), bodyRef = useRef<HTMLDivElement>(null), copyRef = useRef<HTMLIFrameElement>(null);
   // A framed site scrolls out of reach, so only the feed, reader and web copy hide the bars.
   const showingCopy = mode === 'web' && frame?.articleId === article?.id && frame?.embeddable === false && webCopy?.articleId === article?.id && Boolean(webCopy?.html);
@@ -556,8 +554,6 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
 
         {mode === 'web' ? (
           <div className="sfeed-web-view relative flex-1 min-h-0 flex flex-col" data-scroll-hidden={barsHidden || undefined} data-framed={framed || undefined}>
-            {/* Touches on a framed site never reach the app, so the left edge is kept for swiping back. */}
-            {isMobile && homeScreen && <div className="sfeed-web-swipe" aria-hidden="true" />}
             {!frame || frame.articleId !== article.id ? (
               <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -628,7 +624,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                   <iframe
                     ref={copyRef}
                     key={`copy-${article.id}`}
-                    srcDoc={withScrollReporter(webCopy.html)}
+                    srcDoc={framedCopy(webCopy.html)}
                     title={article.title}
                     className="absolute left-0 top-0 border-0 bg-white"
                     style={{

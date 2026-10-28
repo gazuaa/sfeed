@@ -63,12 +63,8 @@ function present(document: Document, scene: SwipeScene) {
   return { width, place, clear };
 }
 
-/** A home-screen app has no system edge swipe, so nothing else claims the screen edges. */
-export const homeScreenApp = (view: Window) => Boolean(view.matchMedia?.('(display-mode: standalone)')?.matches || (view.navigator as (Navigator & { standalone?: boolean }) | undefined)?.standalone === true);
-
-// Ordinary rightward swipes use the same history as native Back. In Safari the
-// screen edges stay with iOS so one gesture cannot trigger both navigation paths;
-// a home-screen app has no such gesture, so a swipe from its left edge goes back too.
+// Ordinary rightward swipes use the same history as native Back. Leave the
+// screen edges to iOS so one gesture cannot trigger both navigation paths.
 export function bindSwipeBack(document: Document, navigation: SwipeNavigation) {
   const view = document.defaultView;
   if (!view) return () => {};
@@ -114,16 +110,14 @@ export function bindSwipeBack(document: Document, navigation: SwipeNavigation) {
     cancel();
     if (settling || event.touches.length !== 1 || !navigation.canGoBack() || (view.visualViewport?.scale ?? 1) > 1.05 || document.querySelector('dialog[open], [aria-modal="true"]') || document.getSelection()?.isCollapsed === false) return;
     const target = event.target as HTMLElement | null;
-    // A framed site keeps its own touches; the web view leaves an edge strip for this gesture.
-    const strip = Boolean(target?.closest('.sfeed-web-swipe'));
-    const container = strip ? target : target?.closest('.sfeed-feed-list, .sfeed-mobile-library-scroll, .sfeed-reader-content');
+    const container = target?.closest('.sfeed-feed-list, .sfeed-mobile-library-scroll, .sfeed-reader-content');
     if (!container || target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="slider"], video, audio, iframe, summary, button:not(.sfeed-mobile-library-row)')) return;
     // Preserve horizontal code blocks, tables and carousels.
     for (let node = target; node && node !== container; node = node.parentElement) {
       if (node.scrollWidth > node.clientWidth + 4 && /auto|scroll/.test(view.getComputedStyle(node).overflowX)) return;
     }
     const touch = event.touches[0];
-    if ((touch.clientX <= 24 && !homeScreenApp(view)) || touch.clientX >= view.innerWidth - 24) return;
+    if (touch.clientX <= 24 || touch.clientX >= view.innerWidth - 24) return;
     start = point(touch, event.timeStamp);
     last = start;
   };

@@ -11,7 +11,7 @@ export function scrollChrome(previous: { top: number; travel: number; hidden: bo
   const travel = Math.sign(delta) === Math.sign(previous.travel) ? previous.travel + delta : delta;
   return { top: next, travel, hidden: locked || next < 24 ? false : travel > 18 ? true : travel < -12 ? false : previous.hidden };
 }
-/** `frame` is a web copy that posts its scroll position (see withScrollReporter); it is used when `ref` is empty. */
+/** `frame` is a web copy that posts its scroll position (see framedCopy); it is used when `ref` is empty. */
 export function useScrollChrome(ref: RefObject<HTMLElement | null>, enabled: boolean, resetKey = '', frame?: RefObject<HTMLIFrameElement | null>) {
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
@@ -47,5 +47,7 @@ export function useScrollChrome(ref: RefObject<HTMLElement | null>, enabled: boo
 
 // A sandboxed copy cannot be read from the app, so it reports its own scroll.
 // The policy lets only this script run; the copy itself stays script-free.
-const SCROLL_REPORTER = `<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-sfeed-scroll'"><script nonce="sfeed-scroll">addEventListener('scroll',()=>{const d=document.scrollingElement||document.documentElement;parent.postMessage({sfeedScroll:[d.scrollTop,d.scrollHeight-innerHeight,innerHeight]},'*')},{passive:true})</script>`;
-export const withScrollReporter = (html: string) => html.replace(/^(\s*<!doctype[^>]*>)?(\s*<html[^>]*>)?/i, (start) => start + SCROLL_REPORTER);
+// Without its scripts a page can lay out a little wider than the frame; it never pans
+// sideways, so a sideways drag reaches the web view's swipe-back pager instead.
+const COPY_PREAMBLE = `<style>html,body{overflow-x:hidden!important}</style><meta http-equiv="Content-Security-Policy" content="script-src 'nonce-sfeed-scroll'"><script nonce="sfeed-scroll">addEventListener('scroll',()=>{const d=document.scrollingElement||document.documentElement;parent.postMessage({sfeedScroll:[d.scrollTop,d.scrollHeight-innerHeight,innerHeight]},'*')},{passive:true})</script>`;
+export const framedCopy = (html: string) => html.replace(/^(\s*<!doctype[^>]*>)?(\s*<html[^>]*>)?/i, (start) => start + COPY_PREAMBLE);

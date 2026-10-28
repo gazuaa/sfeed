@@ -91,18 +91,7 @@ try {
   allowed = false; swipe(95, 300, 240, 300); allowed = true;
   touch('touchstart', 95, 300, 0); view.dispatchEvent(new Event('popstate')); touch('touchend', 240, 300, 240);
   assert.equal(backs, 1, 'controls, horizontal content, zoom, root and a native history traversal are preserved');
-  // The web view's edge strip stands in for the framed site, which keeps its own touches.
-  target.closest = function (selector) { return selector === '.sfeed-web-swipe' ? this : null; };
-  swipe(10, 300, 200, 300);
-  assert.equal(backs, 1, 'in Safari the screen edge stays with the system back gesture');
-  view.matchMedia = (query) => ({ matches: query === '(display-mode: standalone)' });
-  swipe(10, 300, 200, 300);
-  assert.equal(backs, 2, 'a home-screen app goes back from the web view edge strip');
-  target.closest = function (selector) { return selector.startsWith('.sfeed-feed-list') ? container : this.control ? {} : null; };
-  swipe(10, 300, 200, 300);
-  assert.equal(backs, 3, 'with no system gesture to share, a list or reader also goes back from the left edge');
-  delete view.matchMedia;
-  unbind(); swipe(95, 300, 240, 300); assert.equal(backs, 3, 'listeners are removed after logout or switching to desktop');
+  unbind(); swipe(95, 300, 240, 300); assert.equal(backs, 1, 'listeners are removed after logout or switching to desktop');
 
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
   const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');

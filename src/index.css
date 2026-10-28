@@ -278,9 +278,6 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-web-pager::-webkit-scrollbar { display: none; }
   .sfeed-web-pager > * { flex: 0 0 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
   .sfeed-web-pager-back { display: flex; align-items: center; justify-content: center; color: var(--sfeed-mobile-muted); }
-  /* The framed site keeps every other touch; a faint handle shows where to swipe back. */
-  .sfeed-web-swipe { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 32px; }
-  .sfeed-web-swipe::after { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: #64748b; opacity: .35; }
   .sfeed-install-banner { bottom: calc(98px + env(safe-area-inset-bottom)); }
   .sfeed-install-banner button, .sfeed-mobile-settings-panel > button { min-height: 44px; }
   .sfeed-install-banner button[aria-label] { min-width: 44px; flex-shrink: 0; }
