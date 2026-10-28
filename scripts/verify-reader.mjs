@@ -22,6 +22,10 @@ try {
   assert.equal(extractReaderContent('<title>Sign in</title><main>' + body + '</main>', url, null), null);
   assert.equal(extractReaderContent('<title>Premium</title><script type="application/ld+json">{"isAccessibleForFree":false}</script><article>' + body + '</article>', url, null), null);
   assert.equal(extractReaderContent('<html><body><div id="app"></div></body></html>', url, null), null);
+  // A Tailwind site's classes would pick up the app's own utilities and stretch the body sideways.
+  const classed = extractReaderContent(`<article><div class="flex flex-col md:flex-row"><div class="grow shrink-0 basis-full min-w-0">${body}<p class="hidden md:block">Desktop duplicate</p><span class="sr-only">Screen reader note</span></div></div></article>`, url, null).fullContentHtml;
+  assert.ok(!/\sclass=/.test(classed) && classed.includes('<div><div>'), 'site classes are dropped and the structure kept');
+  assert.ok(!classed.includes('Desktop duplicate') && !classed.includes('Screen reader note'), 'what the site hid on phones stays hidden');
 
   // Decenter-style lazy images: a 1×1 stand-in sized to the photo, the real one in data-src.
   const lazyPage = `<html><head><title>Lazy</title></head><body><article>${body}<figure><img loading="lazy" data-src="/photo_P1.webp" src="https://static.example.test/img/1X1.png" width="649" height="392"></figure><img src="/spacer.gif" width="600" height="300"><img data-lazy-src="/wide.jpg" data-srcset="/wide-800.jpg 800w, /wide-1600.jpg 1600w" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><img src="/loading-dock.jpg"><img data-src="/lazy.png" src="/blank.gif"><p>${'More body text. '.repeat(10)}</p></article></body></html>`;

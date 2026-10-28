@@ -4,6 +4,7 @@ import { extractOriginalPublishedAt } from './publicationDate';
 import { extractPreviewImage } from './previewImage';
 import { publicPageUrl, renderPage } from './rssBuilder';
 import { revealLazyImages } from '../shared/lazyImages';
+import { dropSiteClasses } from '../shared/siteClasses';
 import type { Env } from './types';
 
 export const READER_FALLBACK_MARK = 'reader-fallback-content';
@@ -36,6 +37,7 @@ export function extractReaderContent(html: string, url: string, fallbackHtml: st
       if (/^on/i.test(name) || ['srcdoc', 'style'].includes(name.toLowerCase()) || (/^(?:href|src|action|formaction|xlink:href)$/i.test(name) && /^\s*(?:javascript|vbscript|data:text\/html)/i.test(value))) element.removeAttribute(name);
     }
   }
+  dropSiteClasses(safe.querySelector('#reader-body')!);
   const sanitized = sanitizeContentHtml(safe.querySelector('#reader-body')?.innerHTML || '', url);
   if (!sanitized || sanitized.replace(/<[^>]+>/g, '').trim().length <= 120) return null;
   return { fullContentHtml: sanitized, leadImageUrl, scrapedFromWeb: true, originalPublishedAt };

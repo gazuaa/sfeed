@@ -30,6 +30,7 @@ import {
 import { useTextSize } from '../client/textSize';
 import { useMobileViewport, useScrollChrome, withScrollReporter } from '../client/mobile';
 import { homeScreenApp } from '../client/swipeBack';
+import { dropSiteClasses } from '../shared/siteClasses';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
@@ -61,7 +62,12 @@ function loadWebZoom(account: string, feed: string): number {
 // The body is set as HTML, so its images are repaired in place after each change.
 function ArticleBody({ html, base, className, style }: { html: string; base: string; className: string; style: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => ref.current ? bindArticleImages(ref.current, base) : undefined, [html, base]);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    // Content saved before classes were dropped on the server.
+    dropSiteClasses(ref.current);
+    return bindArticleImages(ref.current, base);
+  }, [html, base]);
   return <div ref={ref} style={style} className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
