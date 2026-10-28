@@ -697,6 +697,8 @@ export const App: React.FC = () => {
     refreshingFeedsRef.current = true;
     unreadSessions.forEach((session) => session.clear());
     setRefreshingFeeds(true);
+    // Read rows above leave the list once it refreshes, so start again from the top.
+    articleListRef.current?.scrollTo({ top: 0 });
     try {
       await apiRequest('/api/feeds/refresh', {
         method: 'POST',
