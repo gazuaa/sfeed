@@ -274,7 +274,9 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   /* A framed site keeps its size while the bars come and go; the dock floats over it. */
   .sfeed-web-view[data-scroll-hidden], .sfeed-web-view[data-framed] { padding-bottom: env(safe-area-inset-bottom); }
   .sfeed-web-peek { position: absolute; z-index: 61; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--sfeed-mobile-line); border-radius: 50%; background: var(--sfeed-mobile-glass); color: var(--sfeed-text); box-shadow: 0 4px 16px #0002; backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); cursor: pointer; }
-  .sfeed-web-swipe { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 24px; }
+  /* The framed site keeps every other touch; a faint handle shows where to swipe back. */
+  .sfeed-web-swipe { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 32px; }
+  .sfeed-web-swipe::after { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: #64748b; opacity: .35; }
   .sfeed-install-banner { bottom: calc(98px + env(safe-area-inset-bottom)); }
   .sfeed-install-banner button, .sfeed-mobile-settings-panel > button { min-height: 44px; }
   .sfeed-install-banner button[aria-label] { min-width: 44px; flex-shrink: 0; }

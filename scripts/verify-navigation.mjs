@@ -98,8 +98,11 @@ try {
   view.matchMedia = (query) => ({ matches: query === '(display-mode: standalone)' });
   swipe(10, 300, 200, 300);
   assert.equal(backs, 2, 'a home-screen app goes back from the web view edge strip');
-  delete view.matchMedia; target.closest = function (selector) { return selector.startsWith('.sfeed-feed-list') ? container : this.control ? {} : null; };
-  unbind(); swipe(95, 300, 240, 300); assert.equal(backs, 2, 'listeners are removed after logout or switching to desktop');
+  target.closest = function (selector) { return selector.startsWith('.sfeed-feed-list') ? container : this.control ? {} : null; };
+  swipe(10, 300, 200, 300);
+  assert.equal(backs, 3, 'with no system gesture to share, a list or reader also goes back from the left edge');
+  delete view.matchMedia;
+  unbind(); swipe(95, 300, 240, 300); assert.equal(backs, 3, 'listeners are removed after logout or switching to desktop');
 
   const { app } = await vite.ssrLoadModule('/src/server/app.ts');
   const { LocalD1Database } = await vite.ssrLoadModule('/src/server/localD1.ts');

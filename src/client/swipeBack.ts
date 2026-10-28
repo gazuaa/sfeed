@@ -66,8 +66,9 @@ function present(document: Document, scene: SwipeScene) {
 /** A home-screen app has no system edge swipe, so nothing else claims the screen edges. */
 export const homeScreenApp = (view: Window) => Boolean(view.matchMedia?.('(display-mode: standalone)')?.matches || (view.navigator as (Navigator & { standalone?: boolean }) | undefined)?.standalone === true);
 
-// Ordinary rightward swipes use the same history as native Back. Leave the
-// screen edges to iOS so one gesture cannot trigger both navigation paths.
+// Ordinary rightward swipes use the same history as native Back. In Safari the
+// screen edges stay with iOS so one gesture cannot trigger both navigation paths;
+// a home-screen app has no such gesture, so a swipe from its left edge goes back too.
 export function bindSwipeBack(document: Document, navigation: SwipeNavigation) {
   const view = document.defaultView;
   if (!view) return () => {};
@@ -122,7 +123,7 @@ export function bindSwipeBack(document: Document, navigation: SwipeNavigation) {
       if (node.scrollWidth > node.clientWidth + 4 && /auto|scroll/.test(view.getComputedStyle(node).overflowX)) return;
     }
     const touch = event.touches[0];
-    if ((touch.clientX <= 24 && !(strip && homeScreenApp(view))) || touch.clientX >= view.innerWidth - 24) return;
+    if ((touch.clientX <= 24 && !homeScreenApp(view)) || touch.clientX >= view.innerWidth - 24) return;
     start = point(touch, event.timeStamp);
     last = start;
   };
