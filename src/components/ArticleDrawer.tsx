@@ -71,6 +71,32 @@ function ArticleBody({ html, base, className, style }: { html: string; base: str
   return <div ref={ref} style={style} className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+/**
+ * A framed site keeps its own touches, but on iOS a sideways drag the site cannot use carries
+ * over to this pager. Settling on the blank page to its left goes back, wherever the drag began.
+ */
+function WebPager({ enabled, onBack, children }: { enabled: boolean; onBack: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null), back = useRef(onBack);
+  back.current = onBack;
+  useLayoutEffect(() => {
+    const pager = ref.current;
+    if (!enabled || !pager) return;
+    let gone = false;
+    const home = () => { if (!gone) pager.scrollLeft = pager.scrollWidth - pager.clientWidth; };
+    home();
+    const observer = new ResizeObserver(home);
+    observer.observe(pager);
+    const scroll = () => { if (!gone && pager.scrollLeft <= 1) { gone = true; back.current(); } };
+    pager.addEventListener('scroll', scroll, { passive: true });
+    return () => { observer.disconnect(); pager.removeEventListener('scroll', scroll); };
+  }, [enabled]);
+  if (!enabled) return <>{children}</>;
+  return <div ref={ref} className="sfeed-web-pager">
+    <div className="sfeed-web-pager-back" aria-hidden="true"><ChevronLeft size={28} /></div>
+    {children}
+  </div>;
+}
+
 interface ArticleDrawerProps {
   accountId?: string;
   resources?: ArticleResources | null;
@@ -556,6 +582,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
+                <WebPager enabled={isMobile} onBack={onClose}>
                 <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
                   <iframe
                     key={article.id}
@@ -574,6 +601,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     referrerPolicy="strict-origin-when-cross-origin"
                   />
                 </div>
+                </WebPager>
               </>
             ) : webCopy?.articleId === article.id && webCopy.html ? (
               <>
@@ -593,6 +621,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
+                <WebPager enabled={isMobile} onBack={onClose}>
                 <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
                   {/* Scripts run only for the scroll reporter: the copy is stripped and its policy
                       blocks anything else. Without allow-same-origin it cannot reach the app; links open in new tabs. */}
@@ -612,6 +641,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     referrerPolicy="no-referrer"
                   />
                 </div>
+                </WebPager>
               </>
             ) : webCopy?.articleId !== article.id ? (
               <div className="flex-1 flex items-center justify-center gap-2 text-sm text-slate-400">
