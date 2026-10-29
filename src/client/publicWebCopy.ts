@@ -1,5 +1,6 @@
 import { fetchPublicWebPage } from '../shared/publicWebPage';
 import { revealLazyImages } from '../shared/lazyImages';
+import { dropSidebars } from '../shared/sidebars';
 
 export function sanitizePublicWebCopy(html: string, url: string): string {
   const document = new DOMParser().parseFromString(html, 'text/html');
@@ -19,6 +20,7 @@ export function sanitizePublicWebCopy(html: string, url: string): string {
       const next = parent.parentElement; parent.remove(); parent = next;
     }
   }
+  dropSidebars(document);
   const base = document.createElement('base'); base.setAttribute('href', url); base.setAttribute('target', '_blank');
   const charset = document.createElement('meta'); charset.setAttribute('charset', 'utf-8');
   document.head.prepend(charset, base);

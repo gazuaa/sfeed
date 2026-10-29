@@ -36,7 +36,7 @@ try {
   assert.match(lazy, /srcset="https:\/\/reader.example.test\/wide-800.jpg 800w, https:\/\/reader.example.test\/wide-1600.jpg 1600w"/, 'lazy srcsets resolve against the article, not the app');
   assert.match(lazy, /loading-dock\.jpg/, 'an ordinary photo whose name merely starts with a placeholder word stays');
   assert.match(lazy, /src="https:\/\/reader.example.test\/lazy.png"/, 'the lazy loader\'s own address is the real image, whatever it is called');
-  const { webCopy } = await vite.ssrLoadModule('/src/server/rssBuilder.ts');
+  const { webCopy, pickerSnapshot } = await vite.ssrLoadModule('/src/server/rssBuilder.ts');
   const lazyCopy = webCopy(lazyPage, url);
   assert.match(lazyCopy, /src="\/photo_P1.webp"/, 'the web copy shows the real photo too');
   assert.doesNotMatch(lazyCopy, /1X1\.png|spacer\.gif/);
@@ -67,6 +67,11 @@ try {
   // A sandboxed copy has no origin, and CDNs that answer only the site refuse its CORS requests (Cointelegraph).
   const styled = webCopy(`<html><head><title>Article</title><link rel="stylesheet" href="https://cdn.example.test/site.css" crossorigin integrity="sha384-x"></head><body><article><p>${'Paragraph text. '.repeat(10)}</p></article></body></html>`, url);
   assert.ok(styled.includes('href="https://cdn.example.test/site.css"') && !/<link(?=[^>]*stylesheet)[^>]*(?:crossorigin|integrity)/.test(styled), 'stylesheets load as plain requests');
+  // Columns of other stories beside the article go (Cointelegraph, TechCrunch); prose boxes and asides in the text stay.
+  const column = webCopy(`<html><head><title>Article</title></head><body><div class="flex"><div class="post"><h1>Title</h1><aside class="takeaways"><p>Key points of the story, in a sentence or two of plain prose.</p></aside><div class="body"><p>${'Paragraph text. '.repeat(10)}</p><aside class="quote">A pulled quote</aside><p>${'More text. '.repeat(10)}</p></div></div><aside class="w-[340px]"><h2>Editor's choice</h2><a href="/a">First other story headline</a><a href="/b">Second other story headline</a></aside><div class="article-sidebar"><div style="min-width:300px"></div></div><div class="sidebar-toggle"><a href="/menu">Menu</a></div></div></body></html>`, url);
+  assert.ok(!column.includes("Editor's choice") && !column.includes('article-sidebar'), 'link columns and blank sidebars beside the article go');
+  assert.ok(column.includes('Key points') && column.includes('A pulled quote') && column.includes('sidebar-toggle'), 'prose boxes, asides in the text and other names stay');
+  assert.ok(pickerSnapshot(`<html><body><div class="body"><p>${'Paragraph text. '.repeat(20)}</p></div><aside>${Array.from({ length: 12 }, (_, i) => `<a href="/s${i}">Story ${i}</a>`).join('')}</aside></body></html>`, url)?.includes('Story 11'), 'the RSS picker keeps side columns, whose links can be picked');
   globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
   assert.equal((await checkEmbeddable(url, 'https://sfeed.example.test')).reason, 'challenge');
   assert.equal((await scrapeFullArticle(url, '<p>Short feed preview</p>', 'Title')).fullContentHtml, null);

@@ -4,6 +4,7 @@ import { normalizeFeedUrl } from '../shared/feedDiscovery';
 import { revealLazyImages } from '../shared/lazyImages';
 import { dropEmptySlots } from '../shared/emptySlots';
 import { plainCopyStyles } from '../shared/copyStyles';
+import { dropSidebars } from '../shared/sidebars';
 import { PICK_SELECTOR, decodePick, extractPicked, type PickSelection } from '../shared/rssPicker';
 import { parsePublicationDate } from './publicationDate';
 import { decodeHtmlEntities } from './rssParser';
@@ -65,15 +66,17 @@ export function pickerSnapshot(html: string, pageUrl: string): string | undefine
  * server fetched it, with no scripts, shown in a sandbox. Links open in a new tab.
  */
 export function webCopy(html: string, pageUrl: string): string {
-  return pageCopy(html, pageUrl, { linkTarget: '_blank' })!;
+  return pageCopy(html, pageUrl, { linkTarget: '_blank', articleOnly: true })!;
 }
 
-function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget }: { minLinks?: number; linkTarget?: string }): string | undefined {
+// `articleOnly` drops the columns beside the article; the RSS picker keeps them, as their links can be picked.
+function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget, articleOnly }: { minLinks?: number; linkTarget?: string; articleOnly?: boolean }): string | undefined {
   const { document } = parseHTML(html);
   stripActiveContent(document);
   if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
   revealLazyImages(document);
   dropEmptySlots(document);
+  if (articleOnly) dropSidebars(document);
   plainCopyStyles(document);
   const head = document.head || document.documentElement;
   const base = document.createElement('base');
