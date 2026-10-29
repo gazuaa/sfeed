@@ -165,7 +165,9 @@ export const App: React.FC = () => {
     folderId: string | null;
     feedId: string | null;
     name: string;
-    searching: boolean;
+    // The list's search and 저장 filter, so only the articles it shows are marked.
+    search: string;
+    savedOnly: boolean;
   } | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
   const markingAllReadRef = useRef(false);
@@ -759,7 +761,7 @@ export const App: React.FC = () => {
     setMarkReadError(null);
     setMarkReadTarget({
       scope: activeScope, folderId: activeFolderId, feedId: activeFeedId,
-      name: headerInfo.title, searching: Boolean(searchQuery.trim()),
+      name: headerInfo.title, search: committedSearch.trim(), savedOnly: savedOnly && activeScope !== 'saved',
     });
   };
 
@@ -776,6 +778,8 @@ export const App: React.FC = () => {
           scope: markReadTarget.scope,
           folderId: markReadTarget.folderId,
           feedId: markReadTarget.feedId,
+          search: markReadTarget.search || undefined,
+          savedOnly: markReadTarget.savedOnly || undefined,
         }),
       });
       readerCache?.touch();
@@ -1090,12 +1094,12 @@ export const App: React.FC = () => {
         { id: 'save', label: article.is_saved ? '저장 취소' : '나중에 읽기', run: () => handleUpdateArticleState(articleCache.current.get(article.id) ?? article, { isSaved: !(articleCache.current.get(article.id) ?? article).is_saved }) });
     } else if (feed) {
       items.push({ id: 'open-feed', label: '피드 글 보기', run: () => openScope('feed', null, feed.feed_id) },
-        { id: 'mark-feed', label: '피드 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'feed', feedId: feed.feed_id, folderId: null, name: feed.title, searching: false }); } },
+        { id: 'mark-feed', label: '피드 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'feed', feedId: feed.feed_id, folderId: null, name: feed.title, search: '', savedOnly: false }); } },
         { id: 'updates', label: feed.paused_at ? '업데이트 다시 받기' : '업데이트 중지', separator: true, run: () => handleToggleFeedUpdates(feed) },
         { id: 'unsubscribe', label: '구독 취소…', danger: true, run: () => handleUnsubscribe(feed.id, feed.title) });
     } else if (folder) {
       items.push({ id: 'open-folder', label: '폴더 글 보기', run: () => openScope('folder', folder.id) },
-        { id: 'mark-folder', label: '폴더 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'folder', folderId: folder.id, feedId: null, name: folder.name, searching: false }); } },
+        { id: 'mark-folder', label: '폴더 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'folder', folderId: folder.id, feedId: null, name: folder.name, search: '', savedOnly: false }); } },
         { id: 'delete-folder', label: '폴더 삭제…', danger: true, separator: true, run: () => handleDeleteFolder(folder.id) });
     }
     const url = target.link || article?.url || feed?.html_url;
@@ -1247,7 +1251,8 @@ export const App: React.FC = () => {
       {markReadTarget && (
         <MarkAllReadDialog
           scopeName={markReadTarget.name}
-          searching={markReadTarget.searching}
+          search={markReadTarget.search}
+          savedOnly={markReadTarget.savedOnly}
           isDark={isDark}
           busy={markingAllRead}
           error={markReadError}

@@ -782,6 +782,10 @@ app.post('/api/sync', async (c) => {
   return c.json(await readerDelta(c.env.DB, c.get('user').id, body?.cursor));
 });
 
+// The list's search; marking all read uses the same match so only the results are marked.
+const SEARCH_MATCH = '(a.title LIKE ? OR a.summary LIKE ? OR a.author LIKE ? OR f.title LIKE ?)';
+const searchParams = (search: string) => Array<string>(4).fill(`%${search}%`);
+
 // Fetch articles with filtering, search, layout support
 app.get('/api/articles', async (c) => {
   const user = c.get('user');
@@ -834,11 +838,8 @@ app.get('/api/articles', async (c) => {
   }
 
   if (!articleId && search) {
-    conditions.push(
-      '(a.title LIKE ? OR a.summary LIKE ? OR a.author LIKE ? OR f.title LIKE ?)'
-    );
-    const likePattern = `%${search}%`;
-    params.push(likePattern, likePattern, likePattern, likePattern);
+    conditions.push(SEARCH_MATCH);
+    params.push(...searchParams(search));
   }
 
   if (!articleId && before) {
@@ -988,13 +989,16 @@ app.post('/api/articles/:id/state', async (c) => {
   });
 });
 
-// Mark all matching articles as read
+// Mark all matching articles as read. `search` and `savedOnly` narrow it to the
+// list on screen, as they narrow /api/articles.
 app.post('/api/articles/mark-all-read', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{
     scope?: string;
     folderId?: string;
     feedId?: string;
+    search?: string;
+    savedOnly?: boolean;
   }>();
 
   const scope = body.scope || 'all';
@@ -1014,6 +1018,12 @@ app.post('/api/articles/mark-all-read', async (c) => {
     conditions.push('a.published_at >= ?');
     params.push(twentyFourHoursAgo);
   }
+  if (body.savedOnly && scope !== 'saved') conditions.push('COALESCE(st.is_saved, 0) = 1');
+  const search = typeof body.search === 'string' ? body.search.trim() : '';
+  if (search) {
+    conditions.push(SEARCH_MATCH);
+    params.push(...searchParams(search));
+  }
 
   // Older articles already count as read, so only the unread window needs
   // marking — in one statement, as a per-article loop exceeds D1's query budget.
@@ -1024,6 +1034,7 @@ app.post('/api/articles/mark-all-read', async (c) => {
      SELECT s.user_id, a.id, 1, ?
      FROM articles a
      JOIN subscriptions s ON s.feed_id = a.feed_id
+     JOIN feeds f ON f.id = a.feed_id
      LEFT JOIN article_states st ON st.article_id = a.id AND st.user_id = s.user_id
      WHERE ${conditions.join(' AND ')} AND COALESCE(st.is_read, 0) = 0
      ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at`

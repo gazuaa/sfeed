@@ -66,7 +66,24 @@ try {
   assert.equal((await bootstrap(owner.token)).counts.totalUnread, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'a').first()).is_read, 1);
   assert.equal((await db.prepare('SELECT is_read FROM article_states WHERE user_id = ? AND article_id = ?').bind(owner.user.id, 'd').first()), null);
-  console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved.');
+  // Marking all read from search results, or a folder's 저장 tab, marks only that list.
+  for (const [id, feed, title] of [['bitcoin-one', 'one', 'Bitcoin rally'], ['bitcoin-two', 'two', 'Why bitcoin fell'], ['ether', 'two', 'Ether upgrade'], ['saved-loose', 'one', 'Saved note']]) {
+    await db.prepare('INSERT INTO articles(id,feed_id,guid,title,url,published_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(id, feed, id, title, `https://example.test/${id}`, now, now).run();
+  }
+  await db.prepare('INSERT INTO article_states(user_id,article_id,is_read,is_saved) VALUES(?,?,0,1)').bind(owner.user.id, 'saved-loose').run();
+  const markAll = async (body) => (await (await app.request('/api/articles/mark-all-read', {
+    method: 'POST', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }, env)).json()).markedCount;
+  const unreadIds = async () => (await list('scope=all&unreadOnly=true')).map((row) => row.id).sort();
+  assert.deepEqual((await list('scope=feed&feedId=two&search=BITCOIN')).map((row) => row.id), ['bitcoin-two']);
+  assert.equal(await markAll({ scope: 'feed', feedId: 'two', search: 'BITCOIN' }), 1, 'a search inside a feed marks only its results');
+  assert.deepEqual(await unreadIds(), ['bitcoin-one', 'd', 'ether', 'saved-loose']);
+  assert.equal(await markAll({ scope: 'all', search: '  bitcoin ' }), 1, 'the search matches as the list does');
+  assert.equal(await markAll({ scope: 'all', search: 'Loose feed' }), 2, 'a feed name finds its articles, as in the list');
+  assert.deepEqual(await unreadIds(), ['saved-loose']);
+  assert.equal(await markAll({ scope: 'folder', folderId: 'folder', savedOnly: true }), 1, 'a folder\'s 저장 tab marks only its bookmarks');
+  assert.deepEqual(await unreadIds(), []);
+  console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved; marking all read keeps to search results and 저장 tabs.');
 } finally {
   await vite.close();
 }
