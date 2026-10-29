@@ -679,6 +679,10 @@ app.put('/api/subscriptions/:id', async (c) => {
     folderId?: string | null;
     customTitle?: string | null;
   }>();
+  // A subscription may only go into one of the user's own folders.
+  if (body.folderId && !(await c.env.DB.prepare('SELECT 1 FROM folders WHERE id = ? AND user_id = ?').bind(body.folderId, user.id).first())) {
+    return c.json({ error: '폴더를 찾을 수 없습니다.' }, 404);
+  }
 
   await c.env.DB.prepare(
     `UPDATE subscriptions

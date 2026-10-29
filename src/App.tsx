@@ -26,6 +26,7 @@ import { ArticleDrawer } from './components/ArticleDrawer';
 import { ResizableWorkspace } from './components/ResizableWorkspace';
 import { DiscoverModal } from './components/DiscoverModal';
 import { MarkAllReadDialog } from './components/MarkAllReadDialog';
+import { MoveFeedDialog } from './components/MoveFeedDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { applyTheme, readStoredTheme } from './client/theme';
 import { useMobileViewport, useScrollChrome } from './client/mobile';
@@ -846,6 +847,33 @@ export const App: React.FC = () => {
     }
   };
 
+  // A feed's context menu moves it to another folder, or to a new one.
+  const [moveTarget, setMoveTarget] = useState<SubscriptionItem | null>(null);
+  const [movingFeed, setMovingFeed] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const confirmMoveFeed = async (target: { folderId: string | null } | { newFolder: string }) => {
+    if (!moveTarget || movingFeed) return;
+    setMovingFeed(true);
+    setMoveError(null);
+    readerCache?.touch();
+    try {
+      const folder = 'newFolder' in target
+        ? (await apiRequest<{ folder: FolderItem }>('/api/folders', { method: 'POST', body: JSON.stringify({ name: target.newFolder }) })).folder
+        : folders.find((item) => item.id === target.folderId) ?? null;
+      if ((folder?.id ?? null) !== (moveTarget.folder_id ?? null)) {
+        await apiRequest(`/api/subscriptions/${moveTarget.id}`, { method: 'PUT', body: JSON.stringify({ folderId: folder?.id ?? null }) });
+      }
+      readerCache?.touch();
+      await Promise.all([fetchBootstrap(), fetchArticles()]);
+      setNotice(`${moveTarget.title}: ${folder ? `‘${folder.name}’ 폴더로` : '미분류로'} 옮겼어요.`);
+      setMoveTarget(null);
+    } catch (err) {
+      setMoveError(err instanceof Error ? err.message : '옮기지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      setMovingFeed(false);
+    }
+  };
+
   const handleUnsubscribe = async (subscriptionId: string, title: string) => {
     setDeleteError(null);
     setDeleteTarget({ kind: 'feed', id: subscriptionId, name: title });
@@ -1114,6 +1142,7 @@ export const App: React.FC = () => {
     } else if (feed) {
       items.push({ id: 'open-feed', label: '피드 글 보기', run: () => openScope('feed', null, feed.feed_id) },
         { id: 'mark-feed', label: '피드 모두 읽음', run: () => { setMarkReadError(null); setMarkReadTarget({ scope: 'feed', feedId: feed.feed_id, folderId: null, name: feed.title, search: '', savedOnly: false }); } },
+        { id: 'move-feed', label: '폴더 옮기기…', run: () => { setMoveError(null); setMoveTarget(feed); } },
         { id: 'updates', label: feed.paused_at ? '업데이트 다시 받기' : '업데이트 중지', separator: true, run: () => handleToggleFeedUpdates(feed) },
         { id: 'unsubscribe', label: '구독 취소…', danger: true, run: () => handleUnsubscribe(feed.id, feed.title) });
     } else if (folder) {
@@ -1287,6 +1316,19 @@ export const App: React.FC = () => {
           error={markReadError}
           onCancel={() => { if (!markingAllRead) setMarkReadTarget(null); }}
           onConfirm={confirmMarkAllRead}
+        />
+      )}
+
+      {moveTarget && (
+        <MoveFeedDialog
+          feedTitle={moveTarget.title}
+          folders={folders}
+          currentFolderId={moveTarget.folder_id ?? null}
+          isDark={isDark}
+          busy={movingFeed}
+          error={moveError}
+          onCancel={() => { if (!movingFeed) setMoveTarget(null); }}
+          onMove={confirmMoveFeed}
         />
       )}
 

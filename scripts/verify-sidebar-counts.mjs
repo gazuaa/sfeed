@@ -95,7 +95,20 @@ try {
     method: 'POST', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ olderThan: 'outside' }),
   }, env)).status, 404, 'another user\'s article is no anchor');
   assert.deepEqual(await unreadIds(), ['row-1', 'row-2']);
-  console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved; marking all read keeps to search results and 저장 tabs.');
+  // A feed's context menu moves it between the user's own folders.
+  await db.prepare('INSERT INTO folders(id,user_id,name,created_at) VALUES(?,?,?,?)').bind('other-folder', other.user.id, 'Not yours', now).run();
+  const move = async (folderId) => (await app.request('/api/subscriptions/sub-two', {
+    method: 'PUT', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ folderId }),
+  }, env)).status;
+  const folderOf = async () => (await db.prepare('SELECT folder_id FROM subscriptions WHERE id = ?').bind('sub-two').first()).folder_id;
+  assert.equal(await move('folder'), 200);
+  assert.equal(await folderOf(), 'folder');
+  assert.ok((await list('scope=folder&folderId=folder')).some((row) => row.feed_id === 'two'), 'the folder lists the moved feed');
+  assert.equal(await move('other-folder'), 404, 'another user\'s folder is refused');
+  assert.equal(await folderOf(), 'folder');
+  assert.equal(await move(null), 200);
+  assert.equal(await folderOf(), null, 'a feed can go back to 미분류');
+  console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved; marking all read keeps to search results, 저장 tabs and one side of the open article; feeds move only into folders of the same user.');
 } finally {
   await vite.close();
 }
