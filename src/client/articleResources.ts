@@ -6,7 +6,7 @@ import { publicCoinDeskArticle } from '../shared/publicWebPage';
 import { loadPublicWebCopy } from './publicWebCopy';
 
 type ReaderResult = { fullContentHtml: string; publishedAt?: string };
-type WebResult = { html: string; url: string };
+type WebResult = { html: string; url: string; phone?: boolean };
 export class ArticleResources {
   private requests = new Map<string, Promise<unknown>>();
   private failures = new Map<string, number>();
@@ -48,6 +48,16 @@ export class ArticleResources {
         try { result = await this.request<WebResult>(`/api/articles/${article.id}/web-copy`); }
         catch (error) { throw deviceError || error; }
       }
+      if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `web:${article.id}`, result);
+      return result;
+    });
+  }
+  /** A copy laid out at phone width, replacing a saved one that only fits a desktop. */
+  phoneWeb(article: ArticleItem): Promise<WebResult> {
+    return this.once(`phone:${article.id}`, async () => {
+      const generation = cacheGeneration.get(this.account);
+      if (!this.current()) throw new Error('Session changed');
+      const result = { ...await this.request<WebResult>(`/api/articles/${article.id}/web-copy?layout=phone`), phone: true };
       if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `web:${article.id}`, result);
       return result;
     });

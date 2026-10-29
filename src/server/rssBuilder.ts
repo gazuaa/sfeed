@@ -3,6 +3,7 @@ import type { BuilderAnalysis, BuilderArticle, BuilderGroup, BuilderSite } from 
 import { normalizeFeedUrl } from '../shared/feedDiscovery';
 import { revealLazyImages } from '../shared/lazyImages';
 import { dropEmptySlots } from '../shared/emptySlots';
+import { plainCopyStyles } from '../shared/copyStyles';
 import { PICK_SELECTOR, decodePick, extractPicked, type PickSelection } from '../shared/rssPicker';
 import { parsePublicationDate } from './publicationDate';
 import { decodeHtmlEntities } from './rssParser';
@@ -73,6 +74,7 @@ function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget }: {
   if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
   revealLazyImages(document);
   dropEmptySlots(document);
+  plainCopyStyles(document);
   const head = document.head || document.documentElement;
   const base = document.createElement('base');
   base.setAttribute('href', pageUrl);
@@ -202,12 +204,14 @@ export async function fetchPage(url: string, accept = 'text/html,application/xht
   throw new Error('사이트 이동이 너무 많습니다.');
 }
 
-export async function renderPage(url: string, env: Pick<Env, 'BROWSER'>, content: 'links' | 'article' = 'links'): Promise<{ html: string; url: string }> {
+/** `phone` lays the page out at phone width, for sites whose scripts pick the phone layout. */
+export async function renderPage(url: string, env: Pick<Env, 'BROWSER'>, content: 'links' | 'article' = 'links', phone = false): Promise<{ html: string; url: string }> {
   if (!env.BROWSER) throw new Error('이 사이트는 브라우저 렌더링이 필요합니다.');
   const { default: puppeteer } = await import('@cloudflare/puppeteer');
   const browser = await puppeteer.launch(env.BROWSER);
   try {
     const page = await browser.newPage();
+    if (phone) await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     await page.setRequestInterception(true);
     page.on('request', (request) => {
       try {

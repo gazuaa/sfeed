@@ -2,7 +2,7 @@ import type { ArticleItem } from './api';
 import { openDeviceDatabase } from './deviceDatabase';
 import { cacheGeneration, CONTENT_LIMIT, estimateBytes, retentionAge, SNAPSHOT_LIMITS } from './cachePolicy';
 
-export interface ContentEntry { account: string; key: string; data: Partial<ArticleItem> | { html: string; url: string }; savedAt: number; size: number }
+export interface ContentEntry { account: string; key: string; data: Partial<ArticleItem> | { html: string; url: string; phone?: boolean }; savedAt: number; size: number }
 const memory = new Map<string, ContentEntry>();
 const pending = new Set<Promise<unknown>>();
 // Sweeping walks every key of the account, so it runs periodically rather than per write.

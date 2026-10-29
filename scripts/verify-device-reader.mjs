@@ -48,6 +48,11 @@ try {
     assert.match((await diskContent.cachedArticle('owner', articles[0])).full_content_html, /Prepared/, 'a fresh runtime loads the reader from IndexedDB');
     assert.match((await diskContent.readContent('owner', 'web:a0')).data.html, /Original layout/, 'web copies also survive a fresh runtime');
   } finally { await restarted.close(); }
+  const phoneRequests = [];
+  const phone = await new ArticleResources('owner', () => true, async (path) => { phoneRequests.push(path); return { html: '<html><body>Phone layout</body></html>', url: 'https://example.test/a' }; }).phoneWeb(articles[0]);
+  assert.deepEqual(phoneRequests, ['/api/articles/a0/web-copy?layout=phone']); assert.equal(phone.phone, true);
+  const refitted = await new ArticleResources('owner', () => true, request).cachedWeb(articles[0]);
+  assert.match(refitted.html, /Phone layout/); assert.equal(refitted.phone, true, 'the phone-width copy replaces the saved one and is never fitted again');
   assert.equal(await content.readContent('other', 'article:a0'), undefined);
   await deviceSnapshots.write({ account: 'owner', key: 'bootstrap', savedAt: Date.now(), size: 512, data: {} });
   const usage = await content.maintainDeviceCache('owner'); assert.ok(usage.bytes > 512); assert.ok(usage.entries > 5);

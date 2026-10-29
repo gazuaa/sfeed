@@ -64,6 +64,9 @@ try {
   const slots = webCopy(`<html><head><title>Article</title></head><body><article><p>${'Paragraph text. '.repeat(10)}</p><div class="my-8 flex"><div style="min-width:300px;min-height:250px"></div></div><p>Next paragraph.</p><div style="height:280px"><img src="/chart.png"></div><div aria-hidden="true" style="background-image:radial-gradient(#fff 1px, transparent 0);height:1440px"></div><div style="position:fixed;top:16px;bottom:16px"></div><div style="min-height:20px"></div></article></body></html>`, url);
   assert.ok(!slots.includes('min-height:250px') && !slots.includes('class="my-8 flex"'), 'an empty ad slot and its emptied wrapper go');
   assert.ok(slots.includes('/chart.png') && slots.includes('radial-gradient') && slots.includes('position:fixed') && slots.includes('min-height:20px'), 'slots with content, painted or positioned boxes and small spacers stay');
+  // A sandboxed copy has no origin, and CDNs that answer only the site refuse its CORS requests (Cointelegraph).
+  const styled = webCopy(`<html><head><title>Article</title><link rel="stylesheet" href="https://cdn.example.test/site.css" crossorigin integrity="sha384-x"></head><body><article><p>${'Paragraph text. '.repeat(10)}</p></article></body></html>`, url);
+  assert.ok(styled.includes('href="https://cdn.example.test/site.css"') && !/<link(?=[^>]*stylesheet)[^>]*(?:crossorigin|integrity)/.test(styled), 'stylesheets load as plain requests');
   globalThis.fetch = async () => new Response('challenge', { status: 429, headers: { 'x-vercel-mitigated': 'challenge' } });
   assert.equal((await checkEmbeddable(url, 'https://sfeed.example.test')).reason, 'challenge');
   assert.equal((await scrapeFullArticle(url, '<p>Short feed preview</p>', 'Title')).fullContentHtml, null);

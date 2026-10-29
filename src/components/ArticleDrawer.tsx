@@ -146,7 +146,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [webZoom, setWebZoom] = useState(() => loadWebZoom(accountId, article?.feed_id || ''));
   const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
   // Sites that refuse to be framed get a script-free copy fetched by the server.
-  const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null; error?: string } | null>(null);
+  const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null; error?: string; phone?: boolean; fitting?: boolean } | null>(null);
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const isMobile = useMobileViewport();
@@ -218,7 +218,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     const load = async () => {
       const cached = await resources?.cachedWeb(article);
       if (!active) return;
-      if (cached) { setFrame({ articleId: article.id, embeddable: false, url: cached.url }); setWebCopy({ articleId: article.id, html: cached.html }); return; }
+      if (cached) { setFrame({ articleId: article.id, embeddable: false, url: cached.url }); setWebCopy({ articleId: article.id, html: cached.html, phone: cached.phone }); return; }
       if (resources && publicCoinDeskArticle(article.url)) {
         setFrame({ articleId: article.id, embeddable: false, url: article.url, reason: 'framing' });
         try { const copy = await resources.web(article); if (active) setWebCopy({ articleId: article.id, html: copy.html }); }
@@ -237,6 +237,22 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     void load().catch(() => {});
     return () => { active = false; };
   }, [article?.id, mode, resources]);
+
+  // A copy whose text runs in a sliver beside desktop columns (see framedCopy) gives way,
+  // once, to one the server laid out at phone width.
+  useEffect(() => {
+    if (!isMobile || !resources || !article || webCopy?.articleId !== article.id || !webCopy.html || webCopy.phone) return;
+    const target = article;
+    const message = (event: MessageEvent) => {
+      if (event.source !== copyRef.current?.contentWindow || !event.data?.sfeedSqueezed) return;
+      setWebCopy((copy) => copy?.articleId === target.id ? { ...copy, phone: true, fitting: true } : copy);
+      resources.phoneWeb(target)
+        .then((copy) => setWebCopy((current) => current?.articleId === target.id ? { articleId: target.id, html: copy.html, phone: true } : current))
+        .catch(() => setWebCopy((current) => current?.articleId === target.id ? { ...current, fitting: false } : current));
+    };
+    window.addEventListener('message', message);
+    return () => window.removeEventListener('message', message);
+  }, [isMobile, resources, article?.id, webCopy?.articleId, webCopy?.html, webCopy?.phone]);
 
   useEffect(() => {
     if (!article || article.body_deferred || article.date_source === 'original') { setCheckingDate(false); return; }
@@ -613,7 +629,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
                     isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
                   }`}
                 >
-                  <span className="min-w-0">사이트가 직접 표시를 막아 사본으로 보여드려요. 동영상·댓글은 원문에서 동작해요.</span>
+                  <span className="min-w-0">{webCopy.fitting ? '휴대폰 화면에 맞춘 사본을 준비하고 있어요.' : '사이트가 직접 표시를 막아 사본으로 보여드려요. 동영상·댓글은 원문에서 동작해요.'}</span>
                   <a
                     href={frame.url}
                     target="_blank"

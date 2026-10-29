@@ -21,6 +21,7 @@ try {
   const { framedCopy } = await vite.ssrLoadModule('/src/client/mobile.ts');
   assert.match(framedCopy('<!doctype html><html lang="ko"><head><base href="https://site.example.test/"></head><body></body></html>'), /^<!doctype html><html lang="ko"><style>html,body\{overflow-x:hidden!important\}<\/style><meta http-equiv="Content-Security-Policy" content="script-src 'nonce-sfeed-scroll'"><script nonce="sfeed-scroll">/, 'the copy never pans sideways, and its policy comes before any page script');
   assert.ok(framedCopy('<p>bare</p>').startsWith('<style>'));
+  assert.match(framedCopy('<p>bare</p>'), /sfeedSqueezed/, 'a copy laid out for a desktop says so');
 
   const { MobileLibrary } = await vite.ssrLoadModule('/src/components/MobileLibrary.tsx');
   const { MobileSettings } = await vite.ssrLoadModule('/src/components/MobileChrome.tsx');

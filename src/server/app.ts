@@ -1095,6 +1095,7 @@ app.get('/api/articles/:id/embeddable', async (c) => {
 });
 
 // Web view for sites that refuse to be framed: a script-free copy of the page.
+// ?layout=phone asks for one laid out at phone width when the served page only fits a desktop.
 app.get('/api/articles/:id/web-copy', async (c) => {
   const article = await c.env.DB.prepare(
     'SELECT a.url FROM articles a WHERE a.id = ? AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id = a.feed_id AND s.user_id = ?)'
@@ -1103,7 +1104,7 @@ app.get('/api/articles/:id/web-copy', async (c) => {
     .first<{ url: string }>();
   if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
   try {
-    return c.json(await fetchWebView(article.url, c.env));
+    return c.json(await fetchWebView(article.url, c.env, c.req.query('layout') === 'phone'));
   } catch {
     return c.json({ error: '원문 페이지를 불러오지 못했습니다.' }, 502);
   }
