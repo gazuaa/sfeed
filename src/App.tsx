@@ -45,7 +45,7 @@ import { ReaderSync } from './client/readerSync';
 import { DesktopContextMenu, type AppContextAction, type AppContextTarget } from './components/DesktopContextMenu';
 import { ArticleResources } from './client/articleResources';
 import { maintainDeviceCache } from './client/deviceContent';
-import { readDevicePreferences, saveDevicePreferences, readFeedPreference, saveFeedPreference } from './client/devicePreferences';
+import { readDevicePreferences, saveDevicePreferences, readFeedPreference, feedViewPreference } from './client/devicePreferences';
 import { useListAnchor } from './client/listAnchor';
 import { notifyNewArticles, useLocalNotifications } from './client/localNotifications';
 
@@ -68,6 +68,8 @@ export const App: React.FC = () => {
   const articleResources = useMemo(() => readerCache ? new ArticleResources(readerCache.account, () => readerCache.active && activeCache.current === readerCache) : null, [readerCache]);
   const stateWrites = useRef(new Map<string, Promise<unknown>>());
   const confirmedStates = useRef(new Map<string, ArticleItem>());
+  const confirmedFeedViews = useRef(new Map<string, ArticleViewMode | null>());
+  const importedFeedViews = useMemo(() => new Set<string>(), [readerCache]);
   const bootstrapFlight = useRef<{ cache: ReaderCache; revision: number; promise: Promise<void> } | null>(null);
   const bootstrapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (bootstrapTimer.current) clearTimeout(bootstrapTimer.current); bootstrapTimer.current = null; }, [readerCache]);
@@ -184,6 +186,7 @@ export const App: React.FC = () => {
     displayedArticleQuery.current = '';
     stateWrites.current.clear();
     confirmedStates.current.clear();
+    confirmedFeedViews.current.clear();
     setRestoredArticle(null);
     return () => { articleRequestRef.current++; articleQueryRef.current = ''; };
   }, [user?.id]);
@@ -686,11 +689,43 @@ export const App: React.FC = () => {
     );
   };
 
-  // Appearance and per-feed view choices stay on this device.
-  const [, setFeedPreferenceVersion] = useState(0);
+  // Body views are account preferences. Existing change-only sync carries them
+  // to other devices without another polling request or article download.
+  const saveFeedViewMode = (feedId: string, viewMode: ArticleViewMode, onlyIfUnset = false) => {
+    const cache = readerCache, token = getStoredToken();
+    if (!user || !cache?.active) return;
+    const key = `view:${feedId}`, previous = stateWrites.current.get(key);
+    const current = () => activeCache.current === cache && cache.active && getStoredToken() === token;
+    const before = subscriptions.find((sub) => sub.feed_id === feedId)?.view_mode ?? null;
+    if (!previous && !onlyIfUnset && before === viewMode) return;
+    if (!previous) confirmedFeedViews.current.set(feedId, before);
+    const apply = (view: ArticleViewMode | null) => {
+      const update = (sub: SubscriptionItem) => sub.feed_id === feedId ? { ...sub, view_mode: view } : sub;
+      setSubscriptions((items) => items.map(update));
+      cache.updateBootstrap((data) => ({ ...data, subscriptions: data.subscriptions.map(update) }));
+    };
+    if (!onlyIfUnset) apply(viewMode);
+    const work: Promise<void> = (previous ?? Promise.resolve()).catch(() => {}).then(async () => {
+      if (!current()) return;
+      const result = await apiRequest<{ viewMode: ArticleViewMode }>(`/api/feeds/${feedId}/view-mode`, {
+        method: 'PUT', body: JSON.stringify({ viewMode, ...(onlyIfUnset ? { onlyIfUnset: true } : {}) }),
+      });
+      if (!current()) return;
+      confirmedFeedViews.current.set(feedId, result.viewMode);
+      if (stateWrites.current.get(key) === work) apply(result.viewMode);
+    });
+    stateWrites.current.set(key, work);
+    void work.catch(() => {
+      if (current() && stateWrites.current.get(key) === work) {
+        apply(confirmedFeedViews.current.get(feedId) ?? null);
+        setNotice('보기 방식을 동기화하지 못했습니다. 다시 선택해 주세요.');
+      }
+    }).finally(() => {
+      if (stateWrites.current.get(key) === work) { stateWrites.current.delete(key); confirmedFeedViews.current.delete(feedId); }
+    });
+  };
   const handleChangeViewMode = (feedId: string, viewMode: ArticleViewMode) => {
-    if (user) saveFeedPreference(user.id, feedId, { view: viewMode });
-    setFeedPreferenceVersion((value) => value + 1);
+    saveFeedViewMode(feedId, viewMode);
   };
 
   const handleRefreshFeeds = useCallback(async () => {
@@ -874,10 +909,18 @@ export const App: React.FC = () => {
       if (!selectedArticle.is_read) void handleUpdateArticleState(selectedArticle, { isRead: true });
     }
   }, [selectedArticle, handleUpdateArticleState]);
-  const selectedViewMode: ArticleViewMode =
-    (user && selectedArticle ? readFeedPreference(user.id, selectedArticle.feed_id).view : null)
-    // A choice saved on the server before settings moved to the device stays the default.
-    ?? subscriptions.find((s) => s.feed_id === selectedArticle?.feed_id)?.view_mode ?? 'feed';
+  const selectedSubscription = subscriptions.find((sub) => sub.feed_id === selectedArticle?.feed_id);
+  const selectedViewMode = user && selectedArticle
+    ? feedViewPreference(user.id, selectedArticle.feed_id, selectedSubscription?.view_mode) : 'feed';
+  useEffect(() => {
+    if (!user || !selectedSubscription || selectedSubscription.view_mode || importedFeedViews.has(selectedSubscription.feed_id)) return;
+    const legacy = readFeedPreference(user.id, selectedSubscription.feed_id).view;
+    if (legacy !== 'feed' && legacy !== 'reader' && legacy !== 'web') return;
+    importedFeedViews.add(selectedSubscription.feed_id);
+    // Only initialize an empty shared choice; another device's explicit choice
+    // wins even when it was made after this device's cached snapshot.
+    saveFeedViewMode(selectedSubscription.feed_id, legacy, true);
+  }, [user?.id, selectedSubscription, importedFeedViews]);
 
   const selectedIndex = useMemo(
     () => articles.findIndex((a) => a.id === selectedArticleId),

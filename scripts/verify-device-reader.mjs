@@ -13,11 +13,18 @@ try {
   assert.equal(prefs.readDevicePreferences('owner', 'desktop', { theme: 'dark' }).theme, 'light');
   assert.equal(prefs.readDevicePreferences('owner', 'mobile').autoRefreshMinutes, 30);
   prefs.saveFeedPreference('owner', 'one', { zoom: 0.75, view: 'web' }, 'desktop');
+  prefs.saveFeedPreference('owner', 'one', { zoom: 1, view: 'reader' }, 'mobile');
   prefs.saveFeedPreference('owner', 'two', { zoom: 1.25 }, 'desktop');
   assert.equal(prefs.readFeedPreference('owner', 'one', 'desktop').zoom, 0.75);
   assert.equal(prefs.readFeedPreference('owner', 'two', 'desktop').zoom, 1.25);
-  assert.equal(prefs.readFeedPreference('owner', 'one', 'mobile').zoom, undefined);
+  assert.equal(prefs.readFeedPreference('owner', 'one', 'mobile').zoom, 1, 'web zoom stays separate from the synchronized body view');
   assert.equal(prefs.readFeedPreference('other', 'one', 'desktop').zoom, undefined);
+  for (const kind of ['desktop', 'mobile']) {
+    assert.equal(prefs.feedViewPreference('owner', 'one', 'feed', kind), 'feed', 'shared feed mode overrides an older device choice');
+    assert.equal(prefs.feedViewPreference('owner', 'one', 'web', kind), 'web');
+  }
+  assert.equal(prefs.feedViewPreference('owner', 'one', null, 'desktop'), 'web', 'the local choice is shown until its first safe import');
+  assert.equal(prefs.feedViewPreference('other', 'one', null, 'desktop'), 'feed', 'legacy view fallback is account-scoped');
 
   const content = await vite.ssrLoadModule('/src/client/deviceContent.ts');
   const { setRetentionDays, retentionDays } = await vite.ssrLoadModule('/src/client/cachePolicy.ts');
@@ -83,7 +90,7 @@ try {
   const renewed = await expiry(); await getMe(); assert.equal(await expiry(), renewed, 'normal polling does not keep writing session expiry');
   await app.request('/api/user/logout', { method: 'POST', headers: { authorization: `Bearer ${token}` } }, env);
   assert.equal((await getMe()).status, 401, 'explicit logout remains revoked');
-  console.log('PASS: independent device/feed preferences; serial bounded prefetch; zero-request cached reader/web; IndexedDB usage, expiry and account-safe deletion; late-write guards; renewable one-year sessions.');
+  console.log('PASS: shared body-view precedence with device-specific settings/zoom; serial bounded prefetch; zero-request cached reader/web; IndexedDB usage, expiry and account-safe deletion; late-write guards; renewable one-year sessions.');
 } finally {
   Date.now = originalNow; await vite.close();
   for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }

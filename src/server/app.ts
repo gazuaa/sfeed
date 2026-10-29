@@ -1047,9 +1047,9 @@ app.post('/api/articles/:id/publication-date', async (c) => {
 app.put('/api/feeds/:feedId/view-mode', async (c) => {
   const user = c.get('user');
   const feedId = c.req.param('feedId');
-  const { viewMode } = await c.req
-    .json<{ viewMode?: string }>()
-    .catch(() => ({ viewMode: undefined }));
+  const { viewMode, onlyIfUnset } = await c.req
+    .json<{ viewMode?: string; onlyIfUnset?: boolean }>()
+    .catch(() => ({ viewMode: undefined, onlyIfUnset: false }));
   if (viewMode !== 'feed' && viewMode !== 'reader' && viewMode !== 'web') {
     return c.json({ error: '보기 방식은 feed, reader, web 중 하나여야 합니다.' }, 400);
   }
@@ -1059,11 +1059,14 @@ app.put('/api/feeds/:feedId/view-mode', async (c) => {
   if (!subscribed) return c.json({ error: '구독 중인 피드가 아닙니다.' }, 404);
   await c.env.DB.prepare(
     `INSERT INTO feed_view_modes (user_id, feed_id, view_mode, updated_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(user_id, feed_id) DO UPDATE SET view_mode = excluded.view_mode, updated_at = excluded.updated_at`
+     ON CONFLICT(user_id, feed_id) ${onlyIfUnset === true ? 'DO NOTHING' : 'DO UPDATE SET view_mode = excluded.view_mode, updated_at = excluded.updated_at'}`
   )
     .bind(user.id, feedId, viewMode, new Date().toISOString())
     .run();
-  return c.json({ viewMode });
+  const saved = onlyIfUnset === true
+    ? await c.env.DB.prepare('SELECT view_mode FROM feed_view_modes WHERE user_id = ? AND feed_id = ?').bind(user.id, feedId).first<{ view_mode: SubscriptionItem['view_mode'] }>()
+    : null;
+  return c.json({ viewMode: saved?.view_mode ?? viewMode });
 });
 
 // Thumbnail for an article whose feed shipped none: look up the page's

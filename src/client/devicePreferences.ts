@@ -20,6 +20,11 @@ const feedKey = (account: string, feed: string, kind = deviceKind()) => `${key(a
 export function readFeedPreference(account: string, feed: string, kind = deviceKind()): { view?: ArticleViewMode; zoom?: number } {
   try { return JSON.parse(localStorage.getItem(feedKey(account, feed, kind)) || '{}'); } catch { return {}; }
 }
+export function feedViewPreference(account: string, feed: string, shared: ArticleViewMode | null | undefined, kind = deviceKind()): ArticleViewMode {
+  if (shared === 'feed' || shared === 'reader' || shared === 'web') return shared;
+  const legacy = readFeedPreference(account, feed, kind).view;
+  return legacy === 'reader' || legacy === 'web' ? legacy : 'feed';
+}
 export function saveFeedPreference(account: string, feed: string, next: { view?: ArticleViewMode; zoom?: number }, kind = deviceKind()) {
   try { localStorage.setItem(feedKey(account, feed, kind), JSON.stringify({ ...readFeedPreference(account, feed, kind), ...next })); } catch {}
 }

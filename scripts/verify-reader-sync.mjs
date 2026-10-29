@@ -56,6 +56,30 @@ try {
   assert.equal(sql.length, 2, 'idle polling needs only session authentication and the change clock');
   assert.ok(sql.every((query) => !/COUNT\(|FROM articles/i.test(query)), 'idle sync never counts or loads articles');
 
+  const phoneCache = new ReaderCache(owner.user.id, { async read() {}, async write() {}, async remove() {} }, () => now);
+  const phoneSync = new ReaderSync(phoneCache, request);
+  await phoneSync.check(() => true, async () => {});
+  const changeView = (feed, viewMode, onlyIfUnset = false, token = owner.token) => request(`/api/feeds/${feed}/view-mode`, { method: 'PUT', body: JSON.stringify({ viewMode, onlyIfUnset }) }, token);
+  await changeView('one', 'web');
+  network = []; sql = [];
+  await sync.check(() => true, async () => {});
+  assert.deepEqual(network, ['/api/sync'], 'body-view changes use the existing delta without a full bootstrap or article download');
+  assert.ok(sql.every((query) => !/COUNT\(|FROM articles/i.test(query)), 'changing only the view never recounts the article archive');
+  await phoneSync.check(() => true, async () => {});
+  const view = async (device, feed) => (await device.get('bootstrap')).subscriptions.find((sub) => sub.feed_id === feed).view_mode;
+  assert.equal(await view(cache, 'one'), 'web'); assert.equal(await view(phoneCache, 'one'), 'web');
+  await changeView('one', 'reader');
+  await sync.check(() => true, async () => {}); await phoneSync.check(() => true, async () => {});
+  assert.equal(await view(cache, 'one'), 'reader'); assert.equal(await view(phoneCache, 'one'), 'reader', 'a change in either device reaches the other');
+  assert.equal((await changeView('one', 'web', true)).viewMode, 'reader', 'a legacy device choice never overwrites a shared choice');
+  assert.equal((await changeView('two', 'web', true)).viewMode, 'web', 'a previously local choice initializes an unset feed');
+  assert.equal((await changeView('two', 'reader', true)).viewMode, 'web', 'simultaneous legacy imports keep the first shared choice');
+  await sync.check(() => true, async () => {});
+  assert.equal(await view(cache, 'one'), 'reader'); assert.equal(await view(cache, 'two'), 'web', 'each feed keeps its own body mode');
+  const deniedView = await app.request('/api/feeds/one/view-mode', { method: 'PUT', headers: { authorization: `Bearer ${other.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ viewMode: 'feed' }) }, env);
+  assert.equal(deniedView.status, 404, 'another account cannot change an unsubscribed feed choice');
+  await phoneCache.close();
+
   await insert('new-one', 'one', now + 1); await insert('new-two', 'one', now + 2);
   const cursor = (await cache.get('bootstrap')).syncCursor;
   const delta = await request('/api/sync', { method: 'POST', body: JSON.stringify({ cursor }) });
