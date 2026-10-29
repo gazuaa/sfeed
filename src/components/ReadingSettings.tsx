@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Minus, Plus, Settings2, LayoutList, LayoutGrid, AlignJustify } from 'lucide-react';
 import type { LayoutMode } from '../client/api';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
 import { CacheSettings } from './CacheSettings';
 import { FONT_SCALES, useTextSize } from '../client/textSize';
 import { AUTO_REFRESH_OPTIONS } from '../shared/preferences';
+import { useOutsideDismiss } from '../client/outsideDismiss';
 
 export interface ScrollReadSettingsProps {
   markReadOnScroll: boolean;
@@ -21,6 +22,18 @@ export function TextSizeControl({ className = '' }: { className?: string }) {
   </div>;
 }
 
+/** Settings come in titled groups; lines divide the groups, not every setting. */
+export function SettingGroup({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="sfeed-setting-group" aria-label={title}><p className="sfeed-setting-group-title">{title}</p><div className="sfeed-setting-items">{children}</div></section>;
+}
+/** One setting: its name on the left, its control on the right. */
+export function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="sfeed-setting-row"><span>{label}</span>{children}</div>;
+}
+export function TextSizeSetting() {
+  return <SettingRow label="글자 크기"><TextSizeControl /></SettingRow>;
+}
+
 export function ScrollReadSetting({ markReadOnScroll, onChangeMarkReadOnScroll }: ScrollReadSettingsProps) {
   return <label className="sfeed-scroll-read-setting"><span>스크롤 시 읽음 처리<small>위로 지나간 글을 읽음으로 표시</small></span><input type="checkbox" role="switch" aria-label="스크롤 시 읽음 처리" checked={markReadOnScroll} onChange={(event) => onChangeMarkReadOnScroll(event.target.checked)} /></label>;
 }
@@ -31,35 +44,27 @@ export interface RefreshSettingsProps {
 }
 export interface LayoutSettingsProps { layout: LayoutMode; onChangeLayout: (layout: LayoutMode) => void }
 export function LayoutSetting({ layout, onChangeLayout }: LayoutSettingsProps) {
-  return <><p className="sfeed-setting-label">목록 보기</p><div className="sfeed-layout-options">{([{ id: 'magazine', label: '매거진 뷰', Icon: LayoutList }, { id: 'cards', label: '카드 뷰', Icon: LayoutGrid }, { id: 'list', label: '리스트 뷰', Icon: AlignJustify }] as const).map(({ id, label, Icon }) => <button key={id} type="button" aria-label={label} aria-pressed={layout === id} onClick={() => onChangeLayout(id)}><Icon size={19} /></button>)}</div></>;
+  return <SettingRow label="목록 보기"><div className="sfeed-segmented" role="group" aria-label="목록 보기">{([{ id: 'magazine', label: '매거진 뷰', Icon: LayoutList }, { id: 'cards', label: '카드 뷰', Icon: LayoutGrid }, { id: 'list', label: '리스트 뷰', Icon: AlignJustify }] as const).map(({ id, label, Icon }) => <button key={id} type="button" aria-label={label} title={label} aria-pressed={layout === id} onClick={() => onChangeLayout(id)}><Icon size={17} /></button>)}</div></SettingRow>;
 }
 export type ArticleSort = 'newest' | 'oldest';
 export interface SortSettingProps { sort: ArticleSort; onChangeSort: (sort: ArticleSort) => void }
 export function SortSetting({ sort, onChangeSort }: SortSettingProps) {
-  return <><p className="sfeed-setting-label">정렬</p><div className="sfeed-layout-options">{([{ id: 'newest', label: '최신순' }, { id: 'oldest', label: '오래된순' }] as const).map(({ id, label }) => <button key={id} type="button" aria-pressed={sort === id} onClick={() => onChangeSort(id)}>{label}</button>)}</div></>;
+  return <SettingRow label="정렬"><div className="sfeed-segmented" role="group" aria-label="정렬">{([{ id: 'newest', label: '최신순' }, { id: 'oldest', label: '오래된순' }] as const).map(({ id, label }) => <button key={id} type="button" aria-pressed={sort === id} onClick={() => onChangeSort(id)}>{label}</button>)}</div></SettingRow>;
 }
 export function AutoRefreshSetting({ autoRefreshMinutes, onChangeAutoRefreshMinutes }: RefreshSettingsProps) {
-  return <><label className="sfeed-auto-refresh-setting"><span>자동 새로고침</span><select aria-label="자동 새로고침 주기" value={autoRefreshMinutes} onChange={(event) => onChangeAutoRefreshMinutes(Number(event.target.value))}>{AUTO_REFRESH_OPTIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes ? `${minutes}분마다` : '수동'}</option>)}</select></label><small className="sfeed-auto-refresh-help">변경된 내용만 확인합니다. 피드 수집은 15분 주기입니다.</small></>;
+  return <div><label className="sfeed-auto-refresh-setting"><span>자동 새로고침<small>바뀐 내용만 가볍게 확인해요</small></span><select aria-label="자동 새로고침 주기" value={autoRefreshMinutes} onChange={(event) => onChangeAutoRefreshMinutes(Number(event.target.value))}>{AUTO_REFRESH_OPTIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes ? `${minutes}분마다` : '수동'}</option>)}</select></label></div>;
 }
 export interface DesktopSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps, LayoutSettingsProps { accountId?: string }
 export function DesktopReadingSettings({ autoRefreshMinutes, onChangeAutoRefreshMinutes, layout, onChangeLayout, accountId, ...props }: DesktopSettingsProps) {
   const ref = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const outside = (event: PointerEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) ref.current.open = false; };
-    document.addEventListener('pointerdown', outside);
-    const resize = () => { if (ref.current) ref.current.open = false; };
-    window.addEventListener('resize', resize);
-    return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', resize); };
-  }, []);
+  useOutsideDismiss(ref);
   return <details ref={ref} className="sfeed-desktop-settings" onKeyDown={(event) => { if (event.key === 'Escape' && ref.current) { ref.current.open = false; ref.current.querySelector('summary')?.focus(); } }}>
     <summary aria-label="환경설정"><Settings2 size={17} /></summary>
     <div className="sfeed-desktop-settings-panel">
-      <section className="sfeed-setting-section"><p className="sfeed-setting-label">글자 크기</p><TextSizeControl /></section>
-      <section className="sfeed-setting-section"><LayoutSetting layout={layout} onChangeLayout={onChangeLayout} /></section>
-      <section className="sfeed-setting-section"><ScrollReadSetting {...props} /></section>
-      <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
-      {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}
-      {accountId && <section className="sfeed-setting-section"><CacheSettings accountId={accountId} /></section>}
+      <SettingGroup title="보기"><TextSizeSetting /><LayoutSetting layout={layout} onChangeLayout={onChangeLayout} /></SettingGroup>
+      <SettingGroup title="읽기"><ScrollReadSetting {...props} /></SettingGroup>
+      <SettingGroup title="새 글"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} />{accountId && <LocalNotificationSetting accountId={accountId} />}</SettingGroup>
+      {accountId && <SettingGroup title="이 기기"><CacheSettings accountId={accountId} /></SettingGroup>}
     </div>
   </details>;
 }

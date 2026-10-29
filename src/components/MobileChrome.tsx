@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
-import { ScrollReadSetting, TextSizeControl, LayoutSetting, SortSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps, type SortSettingProps } from './ReadingSettings';
+import { ScrollReadSetting, TextSizeSetting, LayoutSetting, SortSetting, AutoRefreshSetting, SettingGroup, SettingRow, type ScrollReadSettingsProps, type RefreshSettingsProps, type SortSettingProps } from './ReadingSettings';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
 import { CacheSettings } from './CacheSettings';
 import { RefreshIcon } from './RefreshIcon';
+import { useOutsideDismiss } from '../client/outsideDismiss';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
 export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps, Partial<SortSettingProps> {
@@ -20,30 +21,23 @@ export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSet
 export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, sort, onChangeSort, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes, accountId }: MobileSettingsProps & { library?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const close = () => { if (ref.current) ref.current.open = false; };
-  useEffect(() => {
-    const outside = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) close(); };
-    document.addEventListener('pointerdown', outside);
-    window.addEventListener('resize', close);
-    return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', close); };
-  }, []);
+  useOutsideDismiss(ref);
   return <details ref={ref} className="sfeed-mobile-settings" onKeyDown={(event) => { if (event.key === 'Escape') { close(); ref.current?.querySelector('summary')?.focus(); } }}>
     <summary aria-label="보기 설정" className="sfeed-mobile-icon"><Settings2 size={21} /></summary>
     <div className="sfeed-mobile-settings-panel">
-      <section className="sfeed-setting-section">
-      <p className="sfeed-mobile-eyebrow">화면</p>
-      <div className="sfeed-mobile-setting-options">{(['light', 'dark'] as const).map((value) => { const Icon = value === 'light' ? Sun : Moon; return <button key={value} aria-label={value === 'light' ? '낮 모드' : '밤 모드'} aria-pressed={theme === value} onClick={() => onChangeTheme(value)}><Icon size={20} /></button>; })}</div>
-      <p className="sfeed-mobile-eyebrow">글자 크기</p><TextSizeControl />
-      </section>
-      {!library && <section className="sfeed-setting-section"><LayoutSetting layout={layout} onChangeLayout={(value) => { onChangeLayout(value); close(); }} /></section>}
-      {!library && sort && onChangeSort && <section className="sfeed-setting-section"><SortSetting sort={sort} onChangeSort={(value) => { onChangeSort(value); close(); }} /></section>}
-      {!library && <section className="sfeed-setting-section"><ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} /></section>}
-      <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
-      {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}
-      {accountId && <section className="sfeed-setting-section"><CacheSettings accountId={accountId} /></section>}
-      <section className="sfeed-setting-section">
-      <button className="sfeed-mobile-settings-row" onClick={() => { close(); onOpenOpml(); }}><FileCode2 size={18} />OPML 가져오기 / 내보내기</button>
-      <InstallAppButton />
-      </section>
+      <SettingGroup title="보기">
+        <SettingRow label="화면"><div className="sfeed-segmented" role="group" aria-label="화면">{(['light', 'dark'] as const).map((value) => { const Icon = value === 'light' ? Sun : Moon; return <button key={value} aria-label={value === 'light' ? '낮 모드' : '밤 모드'} aria-pressed={theme === value} onClick={() => onChangeTheme(value)}><Icon size={17} /></button>; })}</div></SettingRow>
+        <TextSizeSetting />
+        {!library && <LayoutSetting layout={layout} onChangeLayout={(value) => { onChangeLayout(value); close(); }} />}
+        {!library && sort && onChangeSort && <SortSetting sort={sort} onChangeSort={(value) => { onChangeSort(value); close(); }} />}
+      </SettingGroup>
+      {!library && <SettingGroup title="읽기"><ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} /></SettingGroup>}
+      <SettingGroup title="새 글"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} />{accountId && <LocalNotificationSetting accountId={accountId} />}</SettingGroup>
+      {accountId && <SettingGroup title="이 기기"><CacheSettings accountId={accountId} /></SettingGroup>}
+      <SettingGroup title="기타">
+        <button type="button" onClick={() => { close(); onOpenOpml(); }}><FileCode2 size={17} />OPML 가져오기 / 내보내기</button>
+        <InstallAppButton />
+      </SettingGroup>
     </div>
   </details>;
 }

@@ -26,23 +26,33 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 .sfeed-sort-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--sfeed-border); border-radius: 12px; background: var(--sfeed-panel); font-size: 12px; white-space: nowrap; cursor: pointer; }
 .sfeed-feed-logo { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; background: var(--sfeed-background); color: #10b981; font-size: 22px; font-weight: 750; }
 .sfeed-feed-logo img { width: 44%; height: 44%; max-width: 64px; max-height: 64px; object-fit: contain; }
-.sfeed-setting-section + .sfeed-setting-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--sfeed-border); }
-.sfeed-setting-label { margin: 0 0 8px; color: var(--sfeed-muted); font-size: 12px; }
-.sfeed-setting-section > .sfeed-text-size-control { display: flex; width: 100%; }
-.sfeed-setting-section > .sfeed-text-size-control > button { flex: 1; min-height: 40px; }
-.sfeed-setting-section > .sfeed-scroll-read-setting, .sfeed-setting-section > .sfeed-auto-refresh-setting { padding: 0; margin: 0; border: 0; }
-.sfeed-setting-section > .sfeed-scroll-read-setting { min-height: 44px; }
-.sfeed-layout-options { display: flex; gap: 6px; padding: 3px; border-radius: 13px; background: var(--sfeed-background); }
-.sfeed-layout-options button { display: flex; flex: 1; align-items: center; justify-content: center; min-height: 40px; border-radius: 10px; cursor: pointer; }
-.sfeed-layout-options button[aria-pressed="true"] { color: #059669; background: var(--sfeed-panel); box-shadow: 0 1px 3px #0001; }
-.sfeed-setting-message { margin-top: 8px; color: var(--sfeed-muted); font-size: 12px; line-height: 1.5; }
+/* Settings panels: titled groups of rows, each a name on the left and its control on the right. */
+.sfeed-setting-group + .sfeed-setting-group { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--sfeed-border); }
+.sfeed-setting-group-title { margin: 0 0 8px; color: var(--sfeed-muted); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.sfeed-setting-items { display: grid; gap: 12px; }
+.sfeed-setting-row, .sfeed-scroll-read-setting, .sfeed-auto-refresh-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; margin: 0; padding: 0; border: 0; font-size: 13px; color: var(--sfeed-text); }
+.sfeed-scroll-read-setting { cursor: pointer; }
+.sfeed-setting-row > span, .sfeed-scroll-read-setting > span, .sfeed-auto-refresh-setting > span { min-width: 0; }
+.sfeed-scroll-read-setting small, .sfeed-auto-refresh-setting small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--sfeed-muted); }
+.sfeed-segmented, .sfeed-setting-row > .sfeed-text-size-control { display: inline-flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 0; border-radius: 10px; background: var(--sfeed-background); }
+.sfeed-segmented button, .sfeed-setting-row > .sfeed-text-size-control > button { display: flex; align-items: center; justify-content: center; min-width: 36px; min-height: 30px; padding: 0 10px; border-radius: 8px; font-size: 12px; color: var(--sfeed-muted); cursor: pointer; }
+.sfeed-setting-row > .sfeed-text-size-control > button { color: var(--sfeed-text); }
+.sfeed-segmented button[aria-pressed="true"] { color: #059669; font-weight: 600; background: var(--sfeed-panel); box-shadow: 0 1px 2px #0002; }
+.sfeed-segmented button:focus-visible { outline: 2px solid #10b981; outline-offset: 1px; }
+html:not(.dark) :is(.sfeed-segmented, .sfeed-setting-row > .sfeed-text-size-control) { background: #f1f5f9; }
+.sfeed-auto-refresh-setting select { flex-shrink: 0; max-width: 120px; padding: 6px 8px; border: 1px solid var(--sfeed-border); border-radius: 8px; background: var(--sfeed-panel); color: var(--sfeed-text); font-size: 12px; }
+.sfeed-setting-message { margin-top: 6px; color: var(--sfeed-muted); font-size: 11px; line-height: 1.5; }
+.sfeed-cache-usage { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 12px; color: var(--sfeed-muted); }
+.sfeed-cache-usage output { color: var(--sfeed-text); font-variant-numeric: tabular-nums; }
+.sfeed-cache-confirm { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--sfeed-muted); }
+.sfeed-cache-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.sfeed-cache-clear, .sfeed-cache-actions button { flex-shrink: 0; padding: 6px 10px; border: 1px solid var(--sfeed-border); border-radius: 8px; font-size: 12px; color: var(--sfeed-text); cursor: pointer; }
+.sfeed-cache-actions button[data-danger] { border-color: #f43f5e80; color: #f43f5e; }
 .sfeed-desktop-settings-panel, .sfeed-mobile-settings-panel { max-height: calc(100dvh - 96px - env(safe-area-inset-top)); overflow-y: auto; }
 .sfeed-text-size-control { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--sfeed-border); border-radius: 12px; color: var(--sfeed-text); }
 .sfeed-text-size-control > button { display: flex; align-items: center; justify-content: center; min-width: 34px; min-height: 34px; padding: 4px 8px; border-radius: 9px; cursor: pointer; }
 .sfeed-text-size-control > button:hover { background: var(--sfeed-background); }
 .sfeed-text-size-control > button:disabled { opacity: .3; cursor: default; }
-.sfeed-scroll-read-setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; margin-bottom: 8px; border-top: 1px solid var(--sfeed-border); font-size: 13px; cursor: pointer; color: var(--sfeed-text); }
-.sfeed-scroll-read-setting small { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--sfeed-muted); }
 .sfeed-scroll-read-setting input { appearance: none; -webkit-appearance: none; position: relative; width: 38px; height: 22px; border-radius: 12px; background: var(--sfeed-border); flex-shrink: 0; cursor: pointer; }
 .sfeed-scroll-read-setting input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
 .sfeed-scroll-read-setting input:checked { background: #10b981; }
@@ -51,19 +61,11 @@ body { margin: 0; min-height: 100dvh; background: var(--sfeed-background); color
 .sfeed-desktop-settings { position: relative; }
 .sfeed-desktop-settings summary { display: flex; align-items: center; padding: 9px; border: 1px solid var(--sfeed-border); border-radius: 12px; list-style: none; cursor: pointer; }
 .sfeed-desktop-settings summary::-webkit-details-marker { display: none; }
-.sfeed-desktop-settings-panel { position: absolute; right: 0; top: calc(100% + 12px); z-index: 80; width: 280px; padding: 16px; border: 1px solid var(--sfeed-border); border-radius: 18px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 12px 40px #0003; }
-.sfeed-cache-usage, .sfeed-cache-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 12px; }
-.sfeed-cache-clear, .sfeed-cache-actions button { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--sfeed-border); border-radius: 10px; font-size: 12px; cursor: pointer; }
+.sfeed-desktop-settings-panel { position: absolute; right: 0; top: calc(100% + 12px); z-index: 80; width: 300px; padding: 16px; border: 1px solid var(--sfeed-border); border-radius: 18px; background: var(--sfeed-panel); color: var(--sfeed-text); box-shadow: 0 12px 40px #0003; }
 @media (min-width: 1024px) {
   .sfeed-workspace-header { position: relative; z-index: 90; isolation: isolate; overflow: visible; }
   .sfeed-content-panes { position: relative; z-index: 0; }
 }
-.sfeed-desktop-settings-panel > p { margin-bottom: 8px; font-size: 12px; color: var(--sfeed-muted); }
-.sfeed-auto-refresh-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--sfeed-border); font-size: 13px; }
-.sfeed-auto-refresh-setting select { max-width: 130px; padding: 7px 9px; border: 1px solid var(--sfeed-border); border-radius: 9px; background: var(--sfeed-panel); color: var(--sfeed-text); }
-.sfeed-auto-refresh-help { display: block; margin-top: 8px; font-size: 11px; color: var(--sfeed-muted); }
-.sfeed-desktop-settings-panel > .sfeed-text-size-control, .sfeed-mobile-settings-panel > .sfeed-text-size-control { display: flex; width: 100%; margin-bottom: 16px; }
-.sfeed-desktop-settings-panel > .sfeed-text-size-control > button, .sfeed-mobile-settings-panel > .sfeed-text-size-control > button { flex: 1; min-height: 40px; }
 .sfeed-workspace { display: flex; }
 .sfeed-content-panes { display: flex; }
 .sfeed-feed-list { flex: 1; container-type: inline-size; }
@@ -172,12 +174,13 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-mobile-settings { position: relative; }
   .sfeed-mobile-settings summary { list-style: none; }
   .sfeed-mobile-settings summary::-webkit-details-marker { display: none; }
-  .sfeed-mobile-settings-panel { max-height: calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); position: absolute; right: -42px; top: 52px; z-index: 8; width: min(272px, calc(100vw - 36px)); padding: 16px; border-radius: 22px; border: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); box-shadow: 0 12px 40px #0003; }
-  .sfeed-mobile-eyebrow { color: var(--sfeed-mobile-muted); font-size: 11px; margin: 0 0 8px; }
-  .sfeed-mobile-setting-options { display: flex; gap: 6px; margin-bottom: 16px; padding: 3px; border-radius: 14px; background: var(--sfeed-mobile-raised); }
-  .sfeed-mobile-setting-options button { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 44px; border-radius: 11px; cursor: pointer; }
-  .sfeed-mobile-setting-options button[aria-pressed=true] { color: #059669; background: var(--sfeed-mobile-surface); box-shadow: 0 1px 3px #0001; }
-  .sfeed-mobile-settings-row { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; }
+  .sfeed-mobile-settings-panel { max-height: calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); position: absolute; right: -42px; top: 52px; z-index: 8; width: min(304px, calc(100vw - 32px)); padding: 16px; border-radius: 22px; border: 1px solid var(--sfeed-mobile-line); background: var(--sfeed-mobile-surface); box-shadow: 0 12px 40px #0003; }
+  /* The phone's panel uses the phone palette for the shared settings styles. */
+  .sfeed-mobile-settings-panel { --sfeed-border: var(--sfeed-mobile-line); --sfeed-muted: var(--sfeed-mobile-muted); --sfeed-background: var(--sfeed-mobile-raised); --sfeed-panel: var(--sfeed-mobile-surface); }
+  .sfeed-mobile-settings-panel :is(.sfeed-setting-row, .sfeed-scroll-read-setting, .sfeed-auto-refresh-setting) { min-height: 38px; font-size: 14px; }
+  .sfeed-mobile-settings-panel :is(.sfeed-segmented, .sfeed-setting-row > .sfeed-text-size-control) button { min-height: 34px; }
+  .sfeed-mobile-settings-panel .sfeed-setting-items > button { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0; border-radius: 0; font-size: 14px; color: var(--sfeed-text); background: none; }
+  .sfeed-mobile-settings-panel .sfeed-setting-items > button svg { color: #10b981; }
   /* Closed unless open, or revealed under the list while swiping back to it. */
   .sfeed-mobile-library-host:not([data-open]) { display: none; }
   html[data-sfeed-swipe="library"] .sfeed-mobile-library-host { display: block; }
