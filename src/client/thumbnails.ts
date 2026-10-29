@@ -1,76 +1,85 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest, type ArticleItem } from './api';
+import { apiRequest, getStoredToken, type ArticleItem } from './api';
+import { readContent, writeContent } from './deviceContent';
+import { cacheGeneration } from './cachePolicy';
 
-// Feeds without images: look up the article page's og:image once the article
-// nears the viewport, a few at a time. The server stores the answer ('' when
-// the page has none), so every article is looked up only once.
-const MAX_PARALLEL = 4;
-const lookups = new Map<string, Promise<string>>();
-const waiting: Array<() => void> = [];
-let running = 0;
+type ThumbnailResult = { thumbnailUrl: string | null; retryable?: boolean };
+type ThumbnailArticle = Pick<ArticleItem, 'id' | 'url' | 'thumbnail_url'>;
+const identity = (account: string, article: ThumbnailArticle) => JSON.stringify([account, article.id, article.url]);
 
-function lookupThumbnail(articleId: string): Promise<string> {
-  let lookup = lookups.get(articleId);
-  if (!lookup) {
-    lookup = new Promise<void>((resolve) => {
-      const start = () => {
-        running++;
-        resolve();
-      };
-      if (running < MAX_PARALLEL) start();
-      else waiting.push(start);
-    })
-      .then(() =>
-        apiRequest<{ thumbnailUrl: string | null }>(`/api/articles/${articleId}/thumbnail`, {
-          method: 'POST',
-        })
-      )
-      .then(
-        (res) => res.thumbnailUrl ?? '',
-        () => ''
-      )
-      .finally(() => {
-        running--;
-        waiting.shift()?.();
-      });
-    lookups.set(articleId, lookup);
+/** Resolve nearby missing images, four at a time, and retain answers on the device. */
+export class ThumbnailLoader {
+  private requests = new Map<string, Promise<string | undefined>>();
+  private retryAfter = new Map<string, number>();
+  private waiting: Array<() => void> = [];
+  private running = 0;
+  constructor(private request = apiRequest, private session = getStoredToken) {}
+  private async slot<T>(load: () => Promise<T>) {
+    await new Promise<void>((resolve) => {
+      const start = () => { this.running++; resolve(); };
+      if (this.running < 4) start(); else this.waiting.push(start);
+    });
+    try { return await load(); } finally { this.running--; this.waiting.shift()?.(); }
   }
-  return lookup;
+  lookup(account: string, article: ThumbnailArticle): Promise<string | undefined> {
+    if (article.thumbnail_url) return Promise.resolve(article.thumbnail_url);
+    const key = identity(account, article), existing = this.requests.get(key);
+    if (existing) return existing;
+    const token = this.session(), generation = cacheGeneration.get(account);
+    const current = () => this.session() === token && cacheGeneration.get(account) === generation;
+    const work = (async () => {
+      const cached = await readContent(account, `thumbnail:${article.id}`);
+      const data = cached?.data as Partial<ArticleItem> | undefined;
+      if (!current()) return;
+      if (data?.url === article.url && typeof data.thumbnail_url === 'string' && (data.thumbnail_url || cached!.savedAt + 86400_000 > Date.now())) return data.thumbnail_url;
+      if ((this.retryAfter.get(key) || 0) > Date.now()) return;
+      try {
+        return await this.slot(async () => {
+          if (!current()) return;
+          const result = await this.request<ThumbnailResult>(`/api/articles/${article.id}/thumbnail`, { method: 'POST' });
+          if (!current()) return;
+          if (result.retryable) throw new Error('Temporary thumbnail failure');
+          const thumbnail = result.thumbnailUrl || '';
+          await writeContent(account, `thumbnail:${article.id}`, { url: article.url, thumbnail_url: thumbnail });
+          return current() ? thumbnail : undefined;
+        });
+      } catch {
+        this.retryAfter.set(key, Date.now() + 60_000);
+        if (this.retryAfter.size > 512) this.retryAfter.delete(this.retryAfter.keys().next().value!);
+      }
+    })().finally(() => this.requests.delete(key));
+    this.requests.set(key, work);
+    return work;
+  }
 }
+const thumbnails = new ThumbnailLoader();
 
-/**
- * The thumbnail to show for an article: the stored one, or one looked up when
- * the element behind `ref` becomes visible. `pending` is true while unknown.
- */
-export function useArticleThumbnail<T extends Element>(article: ArticleItem) {
-  const ref = useRef<T>(null);
-  const stored = article.thumbnail_url; // null: never looked up, '': no image
-  const [found, setFound] = useState<string | null>(null);
-
+export function useArticleThumbnail<T extends Element>(article: ArticleItem, account: string, onResolved?: (id: string, fields: Partial<ArticleItem>) => void) {
+  const ref = useRef<T>(null), publish = useRef(onResolved);
+  publish.current = onResolved;
+  const key = identity(account, article);
+  const [found, setFound] = useState<{ key: string; url: string } | null>(null);
   useEffect(() => {
     const element = ref.current;
-    if (stored !== null || !element) return;
+    if (!account || article.thumbnail_url || !element) return;
     let active = true;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        observer.disconnect();
-        lookupThumbnail(article.id).then((url) => {
-          if (active) setFound(url);
-        });
-      },
-      { rootMargin: '300px 0px' }
-    );
-    observer.observe(element);
-    return () => {
-      active = false;
-      observer.disconnect();
+    let observer: IntersectionObserver | undefined, retry: ReturnType<typeof setTimeout> | undefined;
+    const load = () => {
+      void thumbnails.lookup(account, article).then((url) => {
+        if (!active) return;
+        if (url === undefined) { retry = setTimeout(() => { if (active) { if (observer) observer.observe(element); else load(); } }, 60_000); return; }
+        setFound({ key, url });
+        if (url !== article.thumbnail_url) publish.current?.(article.id, { thumbnail_url: url });
+      });
     };
-  }, [article.id, stored]);
-
-  return {
-    ref,
-    url: stored || found || null,
-    pending: stored === null && found === null,
-  };
+    const cleanup = () => { active = false; clearTimeout(retry); observer?.disconnect(); };
+    if (typeof IntersectionObserver === 'undefined') { load(); return cleanup; }
+    observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer!.disconnect(); load();
+    }, { rootMargin: '300px 0px' });
+    observer.observe(element);
+    return cleanup;
+  }, [account, article.id, article.url, article.thumbnail_url]);
+  return { ref, url: article.thumbnail_url || (found?.key === key ? found.url : null) };
 }

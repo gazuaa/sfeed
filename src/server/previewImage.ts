@@ -37,10 +37,22 @@ export async function fetchPreviewImage(pageUrl: string): Promise<string | null 
     });
     if (!res.ok) {
       await res.body?.cancel();
-      return res.status >= 400 && res.status < 500 ? null : undefined;
+      return res.status === 404 || res.status === 410 ? null : undefined;
     }
+    if (res.headers.get('x-vercel-mitigated') === 'challenge' || res.headers.get('cf-mitigated') === 'challenge') { await res.body?.cancel(); return undefined; }
     // The tags live in <head>; the first part of the page is enough.
-    const html = (await res.text()).slice(0, 300_000);
+    const reader = res.body?.getReader(); if (!reader) return null;
+    const decoder = new TextDecoder(); let html = '', bytes = 0;
+    try {
+      while (bytes < 300_000) {
+        const chunk = await reader.read(); if (chunk.done) break;
+        const part = chunk.value.subarray(0, 300_000 - bytes); bytes += part.byteLength;
+        html += decoder.decode(part, { stream: true });
+        if (/<\/head\s*>/i.test(html)) break;
+      }
+      html += decoder.decode();
+    } finally { await reader.cancel().catch(() => {}); }
+    if (/<title[^>]*>\s*(?:Vercel Security Checkpoint|Just a moment|Access Denied|Verify you are human)/i.test(html)) return undefined;
     return extractPreviewImage(html, res.url || pageUrl);
   } catch {
     return undefined;

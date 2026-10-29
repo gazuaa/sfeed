@@ -1081,22 +1081,22 @@ app.put('/api/feeds/:feedId/view-mode', async (c) => {
 });
 
 // Thumbnail for an article whose feed shipped none: look up the page's
-// og:image once. '' records "looked up, none" so the page is not fetched
-// again; unreachable pages are left unchecked for a later try.
+// og:image for nearby list rows. Device caching prevents repeated page fetches;
+// old empty answers may be retried and temporary failures are never definitive.
 app.post('/api/articles/:id/thumbnail', async (c) => {
-  const article = await c.env.DB.prepare('SELECT id, url, thumbnail_url FROM articles WHERE id = ?')
-    .bind(c.req.param('id'))
+  const article = await c.env.DB.prepare('SELECT id, url, thumbnail_url FROM articles a WHERE id = ? AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id = a.feed_id AND s.user_id = ?)')
+    .bind(c.req.param('id'), c.get('user').id)
     .first<{ id: string; url: string; thumbnail_url: string | null }>();
   if (!article) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
-  if (article.thumbnail_url !== null) return c.json({ thumbnailUrl: article.thumbnail_url || null });
+  if (article.thumbnail_url) return c.json({ thumbnailUrl: article.thumbnail_url });
 
   const found = await fetchPreviewImage(article.url);
   if (found !== undefined) {
-    await c.env.DB.prepare('UPDATE articles SET thumbnail_url = ? WHERE id = ? AND thumbnail_url IS NULL')
+    await c.env.DB.prepare("UPDATE articles SET thumbnail_url = ? WHERE id = ? AND (thumbnail_url IS NULL OR thumbnail_url = '')")
       .bind(found ?? '', article.id)
       .run();
   }
-  return c.json({ thumbnailUrl: found ?? null });
+  return c.json({ thumbnailUrl: found ?? null, retryable: found === undefined });
 });
 
 // Web view: may the original page be framed inside the reader pane?

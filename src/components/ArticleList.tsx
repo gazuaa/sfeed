@@ -14,7 +14,8 @@ import {
   type ArticleItem,
   type LayoutMode,
 } from '../client/api';
-// Missing/broken thumbnails use the site's logo without server-side page scraping.
+import { useArticleThumbnail } from '../client/thumbnails';
+// Keep the site's logo visible while a nearby article's image is being resolved.
 export function FeedLogo({ article }: { article: ArticleItem }) {
   const [failed, setFailed] = useState(0);
   let origin = '';
@@ -23,17 +24,18 @@ export function FeedLogo({ article }: { article: ArticleItem }) {
   const logo = candidates[failed];
   return <div className="sfeed-feed-logo" aria-label={`${article.feed_title} 로고`}>{logo ? <img src={logo} alt="" loading="lazy" onError={() => setFailed((value) => value + 1)} /> : <span>{(article.feed_title || 'RSS').slice(0, 2)}</span>}</div>;
 }
-function Thumbnail({ article, card = false, isDark = false }: { article: ArticleItem; card?: boolean; isDark?: boolean }) {
-  const [broken, setBroken] = useState(false);
-  const url = article.thumbnail_url;
-  return <div className={card ? 'h-full w-full' : `sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-    {url && !broken ? <img src={url} alt={article.title} loading="lazy" className="w-full h-full object-cover" onError={() => setBroken(true)} /> : <FeedLogo article={article} />}
+function Thumbnail({ article, accountId, onUpdateArticleFields, card = false, isDark = false }: { article: ArticleItem; accountId: string; onUpdateArticleFields?: ArticleListProps['onUpdateArticleFields']; card?: boolean; isDark?: boolean }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  const { ref, url } = useArticleThumbnail<HTMLDivElement>(article, accountId, onUpdateArticleFields);
+  return <div ref={ref} className={card ? 'h-full w-full' : `sfeed-magazine-thumbnail h-16 w-16 rounded-lg overflow-hidden shrink-0 border ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+    {url && url !== broken ? <img src={url} alt={article.title} loading="lazy" referrerPolicy="no-referrer" className="w-full h-full object-cover" onError={() => setBroken(url)} /> : <FeedLogo article={article} />}
   </div>;
 }
 const MagazineThumbnail = Thumbnail;
-const CardCover = ({ article }: { article: ArticleItem }) => <Thumbnail article={article} card />;
 
 interface ArticleListProps {
+  accountId?: string;
+  onUpdateArticleFields?: (id: string, fields: Partial<ArticleItem>) => void;
   articles: ArticleItem[];
   layout: LayoutMode;
   selectedArticleId: string | null;
@@ -48,6 +50,8 @@ interface ArticleListProps {
 }
 
 export const ArticleList: React.FC<ArticleListProps> = ({
+  accountId = '',
+  onUpdateArticleFields,
   articles,
   layout,
   selectedArticleId,
@@ -266,7 +270,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
               <div>
                 {/* Cover Image or Stylish Gradient Banner */}
                 <div className="h-44 w-full overflow-hidden relative bg-gradient-to-br from-slate-800 via-slate-900 to-emerald-950">
-                  <CardCover article={article} />
+                  <Thumbnail article={article} accountId={accountId} onUpdateArticleFields={onUpdateArticleFields} card />
 
                   {!article.is_read && (
                     <span className="absolute top-3 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-slate-950 shadow">
@@ -406,7 +410,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 : 'bg-white border-slate-200 hover:border-slate-300'
             }`}
           >
-            <MagazineThumbnail article={article} isDark={isDark} />
+            <MagazineThumbnail article={article} accountId={accountId} onUpdateArticleFields={onUpdateArticleFields} isDark={isDark} />
 
             <div className="sfeed-magazine-copy flex-1 min-w-0">
               {/* Always one line: source and author truncate instead of wrapping.

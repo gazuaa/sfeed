@@ -1220,6 +1220,8 @@ export const App: React.FC = () => {
         }
       >
         <ArticleList
+          accountId={user.id}
+          onUpdateArticleFields={handleUpdateArticleFields}
           articles={articles}
           layout={layout}
           selectedArticleId={selectedArticleId}
