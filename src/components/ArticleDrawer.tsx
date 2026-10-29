@@ -31,6 +31,7 @@ import { useTextSize } from '../client/textSize';
 import { useMobileViewport, useScrollChrome, framedCopy } from '../client/mobile';
 import { dropSiteClasses } from '../shared/siteClasses';
 import { dropArticleChrome, titleKey } from '../shared/articleChrome';
+import { presentReaderSlide } from '../client/swipeBack';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
@@ -75,7 +76,10 @@ function ArticleBody({ html, base, title, className, style }: { html: string; ba
 
 /**
  * A framed site keeps its own touches, but on iOS a sideways drag the site cannot use carries
- * over to this pager. Settling on the blank page to its left goes back, wherever the drag began.
+ * over to this pager. Settling on the empty page to its left goes back, wherever the drag began.
+ * While it scrolls, the reader slides as it does in the other views: the whole screen moves with
+ * the drag and the list comes in underneath. The site page is held back by the reader's shift,
+ * so it stays under the finger at the scroll's own pace.
  */
 function WebPager({ enabled, onBack, children }: { enabled: boolean; onBack: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null), back = useRef(onBack);
@@ -84,17 +88,29 @@ function WebPager({ enabled, onBack, children }: { enabled: boolean; onBack: () 
     const pager = ref.current;
     if (!enabled || !pager) return;
     let gone = false;
+    let slide: ReturnType<typeof presentReaderSlide> = null;
+    const page = pager.lastElementChild as HTMLElement | null;
+    const rest = () => { slide?.clear(); slide = null; page?.style.removeProperty('transform'); };
     const home = () => { if (!gone) pager.scrollLeft = pager.scrollWidth - pager.clientWidth; };
     home();
     const observer = new ResizeObserver(home);
     observer.observe(pager);
-    const scroll = () => { if (!gone && pager.scrollLeft <= 1) { gone = true; back.current(); } };
+    const scroll = () => {
+      if (gone) return;
+      if (pager.scrollLeft <= 1) { gone = true; back.current(); return; }
+      const dx = Math.max(0, pager.scrollWidth - pager.clientWidth - pager.scrollLeft);
+      if (dx < 1) { rest(); return; }
+      slide ??= presentReaderSlide(document);
+      if (!slide) return;
+      slide.place(dx, false);
+      if (page) page.style.transform = `translate3d(${-dx}px, 0, 0)`;
+    };
     pager.addEventListener('scroll', scroll, { passive: true });
-    return () => { observer.disconnect(); pager.removeEventListener('scroll', scroll); };
+    return () => { observer.disconnect(); pager.removeEventListener('scroll', scroll); rest(); };
   }, [enabled]);
   if (!enabled) return <>{children}</>;
   return <div ref={ref} className="sfeed-web-pager">
-    <div className="sfeed-web-pager-back" aria-hidden="true"><ChevronLeft size={28} /></div>
+    <div className="sfeed-web-pager-back" aria-hidden="true" />
     {children}
   </div>;
 }

@@ -280,7 +280,7 @@ aside.fixed { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-ar
   .sfeed-web-pager { display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
   .sfeed-web-pager::-webkit-scrollbar { display: none; }
   .sfeed-web-pager > * { flex: 0 0 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
-  .sfeed-web-pager-back { display: flex; align-items: center; justify-content: center; color: var(--sfeed-mobile-muted); }
+  .sfeed-web-pager-back { pointer-events: none; }
   .sfeed-install-banner { bottom: calc(98px + env(safe-area-inset-bottom)); }
   .sfeed-install-banner button, .sfeed-mobile-settings-panel > button { min-height: 44px; }
   .sfeed-install-banner button[aria-label] { min-width: 44px; flex-shrink: 0; }

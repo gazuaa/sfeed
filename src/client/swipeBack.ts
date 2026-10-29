@@ -21,14 +21,20 @@ export interface SwipeNavigation {
 // from a little to the left, the way iOS navigation does.
 interface SwipeScene { top: HTMLElement[]; under: HTMLElement[]; revealLibrary: boolean }
 
-function findScene(document: Document, navigation: SwipeNavigation): SwipeScene | null {
+function readerScene(document: Document): SwipeScene | null {
   const view = document.defaultView;
   if (!view || view.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return null;
   const reader = document.querySelector<HTMLElement>('.sfeed-article-reader');
-  if (reader && view.getComputedStyle(reader).position === 'fixed' && reader.querySelector('.sfeed-reader')) {
-    const under = [document.querySelector<HTMLElement>('.sfeed-workspace-header'), document.querySelector<HTMLElement>('.sfeed-feed-list')];
-    return { top: [reader], under: under.filter((node): node is HTMLElement => Boolean(node)), revealLibrary: false };
-  }
+  if (!reader || view.getComputedStyle(reader).position !== 'fixed' || !reader.querySelector('.sfeed-reader')) return null;
+  const under = [document.querySelector<HTMLElement>('.sfeed-workspace-header'), document.querySelector<HTMLElement>('.sfeed-feed-list')];
+  return { top: [reader], under: under.filter((node): node is HTMLElement => Boolean(node)), revealLibrary: false };
+}
+
+function findScene(document: Document, navigation: SwipeNavigation): SwipeScene | null {
+  const view = document.defaultView;
+  if (!view || view.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return null;
+  const reader = readerScene(document);
+  if (reader) return reader;
   const workspace = document.querySelector<HTMLElement>('.sfeed-workspace');
   if (!workspace || navigation.backTarget?.() !== 'library') return null;
   const docks = Array.from(document.querySelectorAll<HTMLElement>('.sfeed-mobile-dock')).filter((dock) => !dock.closest('.sfeed-mobile-library') && !dock.classList.contains('sfeed-mobile-reader-dock'));
@@ -61,6 +67,15 @@ function present(document: Document, scene: SwipeScene) {
     delete root.dataset.sfeedSwipe;
   };
   return { width, place, clear };
+}
+
+/**
+ * The open article's back slide for a drag this module cannot see: one over a framed
+ * site, which only reaches the app as scrolling (see WebPager). Null without motion.
+ */
+export function presentReaderSlide(document: Document) {
+  const scene = readerScene(document);
+  return scene ? present(document, scene) : null;
 }
 
 // Ordinary rightward swipes use the same history as native Back. Leave the
