@@ -30,6 +30,7 @@ import {
 import { useTextSize } from '../client/textSize';
 import { useMobileViewport, useScrollChrome, framedCopy } from '../client/mobile';
 import { dropSiteClasses } from '../shared/siteClasses';
+import { dropArticleChrome, titleKey } from '../shared/articleChrome';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
@@ -60,14 +61,15 @@ function loadWebZoom(account: string, feed: string): number {
 }
 
 // The body is set as HTML, so its images are repaired in place after each change.
-function ArticleBody({ html, base, className, style }: { html: string; base: string; className: string; style: React.CSSProperties }) {
+function ArticleBody({ html, base, title, className, style }: { html: string; base: string; title?: string; className: string; style: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!ref.current) return;
-    // Content saved before classes were dropped on the server.
+    // Content saved before classes and the page's own header were dropped on the server.
     dropSiteClasses(ref.current);
+    if (title) dropArticleChrome(ref.current, [titleKey(title)]);
     return bindArticleImages(ref.current, base);
-  }, [html, base]);
+  }, [html, base, title]);
   return <div ref={ref} style={style} className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -883,6 +885,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
             <ArticleBody
               html={activeHtml}
               base={article.url}
+              title={showingReader ? article.title : undefined}
               style={{ fontSize: `calc(var(--sfeed-article-font) * ${fontScale})` }}
               className={`sfeed-article-content ${
                 isDark ? 'text-slate-200' : 'text-slate-800'

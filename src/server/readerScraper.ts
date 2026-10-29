@@ -5,6 +5,7 @@ import { extractPreviewImage } from './previewImage';
 import { publicPageUrl, renderPage } from './rssBuilder';
 import { revealLazyImages } from '../shared/lazyImages';
 import { dropSiteClasses } from '../shared/siteClasses';
+import { dropArticleChrome, pageTitles } from '../shared/articleChrome';
 import type { Env } from './types';
 
 export const READER_FALLBACK_MARK = 'reader-fallback-content';
@@ -24,6 +25,7 @@ export function extractReaderContent(html: string, url: string, fallbackHtml: st
   if (/security checkpoint|just a moment|verify you are human|access denied|sign in|log in/i.test(document.querySelector('title')?.textContent || '') || /"isAccessibleForFree"\s*:\s*false/.test(html)) return null;
   const leadImageUrl = extractPreviewImage(html, url);
   const originalPublishedAt = extractOriginalPublishedAt(html, url) || extractOriginalPublishedAt(fallbackHtml, url);
+  const titles = pageTitles(document);
   document.querySelectorAll('script,style,noscript,template,nav,header,footer,aside,form,iframe,object,embed,svg,math,link,meta,base,[hidden],[aria-hidden="true"]').forEach((node) => node.remove());
   revealLazyImages(document, url);
   const readable = (node: { textContent: string | null }) => (node.textContent || '').replace(/\s+/g, ' ').trim().length > 120;
@@ -37,6 +39,7 @@ export function extractReaderContent(html: string, url: string, fallbackHtml: st
       if (/^on/i.test(name) || ['srcdoc', 'style'].includes(name.toLowerCase()) || (/^(?:href|src|action|formaction|xlink:href)$/i.test(name) && /^\s*(?:javascript|vbscript|data:text\/html)/i.test(value))) element.removeAttribute(name);
     }
   }
+  dropArticleChrome(safe.querySelector('#reader-body')!, titles);
   dropSiteClasses(safe.querySelector('#reader-body')!);
   const sanitized = sanitizeContentHtml(safe.querySelector('#reader-body')?.innerHTML || '', url);
   if (!sanitized || sanitized.replace(/<[^>]+>/g, '').trim().length <= 120) return null;
