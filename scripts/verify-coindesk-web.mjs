@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import { DOMParser } from 'linkedom';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
+import { createServer } from 'vite';
+
+const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
+const originalFetch = globalThis.fetch, originals = new Map(['DOMParser', 'indexedDB', 'IDBKeyRange'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+for (const [key, value] of Object.entries({ DOMParser, indexedDB, IDBKeyRange })) Object.defineProperty(globalThis, key, { configurable: true, value });
+try {
+  const { publicCoinDeskArticle, fetchPublicWebPage } = await vite.ssrLoadModule('/src/shared/publicWebPage.ts');
+  const { ArticleResources } = await vite.ssrLoadModule('/src/client/articleResources.ts');
+  const { sanitizePublicWebCopy } = await vite.ssrLoadModule('/src/client/publicWebCopy.ts');
+  const { readContent, maintainDeviceCache } = await vite.ssrLoadModule('/src/client/deviceContent.ts');
+  const url = 'https://www.coindesk.com/tech/2026/10/28/public-article';
+  assert.equal(publicCoinDeskArticle(url + '?utm_source=feed&token=private#fragment'), url);
+  for (const value of ['https://coindesk.com.evil.test/tech/2026/10/28/public-article', 'https://www.coindesk.com/auth/login?token=secret', 'https://secret@www.coindesk.com/tech/2026/10/28/public-article', 'https://www.coindesk.com:8443/tech/2026/10/28/public-article', 'https://private.example.test/article', 'file:///etc/passwd']) assert.equal(publicCoinDeskArticle(value), null, value);
+  let calls = [], external = 'page', serverCalls = 0;
+  const html = '<!doctype html><html><head><title>Public CoinDesk article</title><link rel="stylesheet" href="/site.css"><script>steal()</script><meta http-equiv="refresh" content="0;url=https://evil.test"></head><body><div style="height:280px"><div class="ad-container"><iframe src="https://ad.example.test"></iframe></div></div><header>CoinDesk</header><article><h1>Public CoinDesk article</h1><p>' + 'A real public article with its original layout. '.repeat(10) + '</p><a href="javascript:steal()">Bad link</a><img data-src="/photo.jpg" src="/blank.gif" onerror="steal()"><iframe src="https://evil.test"></iframe></article></body></html>';
+  globalThis.fetch = async (target, options = {}) => {
+    calls.push({ url: String(target), options });
+    if (external === 'limited') return new Response('Rate limited', { status: 429 });
+    if (external === 'challenge') return new Response(html.replace('Public CoinDesk article', 'Vercel Security Checkpoint'));
+    if (external === 'paywall') return new Response(html.replace('</head>', '<script type="application/ld+json">{"isAccessibleForFree":false}</script></head>'));
+    if (external === 'text') return new Response('Title: Article\nMarkdown Content: not the original web page');
+    if (external === 'large') return new Response('<html>' + 'x'.repeat(2_000_001) + '</html>');
+    return new Response(html);
+  };
+  const server = async () => { serverCalls++; throw new Error('Server network blocked'); };
+  const article = { id: 'coindesk', url: url + '?token=private', feed_id: 'coindesk' };
+  const copy = await new ArticleResources('owner', () => true, server).web(article);
+  assert.equal(calls.length, 1); assert.equal(serverCalls, 0, 'the public web copy is fetched and prepared on the device'); assert.equal(copy.url, url);
+  assert.match(copy.html, /<header>CoinDesk<\/header>/); assert.match(copy.html, /stylesheet/); assert.match(copy.html, /real public article/); assert.match(copy.html, /https:\/\/www.coindesk.com\/photo.jpg/);
+  assert.doesNotMatch(copy.html, /<script|<iframe|onerror=|javascript:|http-equiv|blank.gif|ad-container|height:280px/i);
+  assert.ok(calls[0].url === 'https://r.jina.ai/' + url && !calls[0].url.includes('private'));
+  assert.equal(calls[0].options.credentials, 'omit');
+  assert.equal(calls[0].options.redirect, 'manual');
+  assert.ok(!('Cookie' in calls[0].options.headers) && !('Authorization' in calls[0].options.headers));
+  calls = []; const reused = await new ArticleResources('owner', () => true, server).web(article);
+  assert.match(reused.html, /real public article/); assert.ok(reused.html.includes(`href="${url}"`)); assert.equal(calls.length, 0); assert.equal(serverCalls, 0, 'reopening reuses the device cache without any server request');
+  assert.equal(await readContent('other', 'web:coindesk'), undefined);
+  for (const failure of ['challenge', 'paywall', 'text', 'large', 'limited']) {
+    external = failure;
+    await assert.rejects(() => new ArticleResources('owner', () => true, server).web({ ...article, id: failure }), /Server network blocked/);
+    assert.equal(await readContent('owner', 'web:' + failure), undefined, 'failed or restricted pages are never cached');
+  }
+  calls = [];
+  const normalServer = async () => ({ html: '<html>Normal server copy</html>', url: 'https://other.example.test/article' });
+  await new ArticleResources('owner', () => true, normalServer).web({ id: 'other-publisher', url: 'https://other.example.test/article' });
+  assert.equal(calls.length, 0, 'other publishers and account URLs are never sent to the external renderer');
+  assert.equal(await fetchPublicWebPage('https://www.coindesk.com/auth/login'), null);
+  assert.throws(() => sanitizePublicWebCopy('<html><head><title>Sign in</title></head><body><main>Login</main></body></html>', url));
+  await maintainDeviceCache('owner', true);
+  console.log('PASS: device-side CoinDesk public HTML with original styles/body; no server round-trip; scripts/frames removed and lazy photos revealed; query/token removal, response limits, account-scoped local reuse and no caching of challenges/paywalls/errors.');
+} finally {
+  globalThis.fetch = originalFetch;
+  for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+  await vite.close();
+}

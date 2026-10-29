@@ -2,6 +2,8 @@ import { apiRequest, type ArticleItem } from './api';
 import { cachedArticle, readContent, writeContent } from './deviceContent';
 import { cacheGeneration } from './cachePolicy';
 import { revealCopyImages } from './articleImages';
+import { publicCoinDeskArticle } from '../shared/publicWebPage';
+import { loadPublicWebCopy } from './publicWebCopy';
 
 type ReaderResult = { fullContentHtml: string; publishedAt?: string };
 type WebResult = { html: string; url: string };
@@ -34,7 +36,14 @@ export class ArticleResources {
       const generation = cacheGeneration.get(this.account), stored = await this.cachedWeb(article);
       if (stored) return stored;
       if (!this.current()) throw new Error('Session changed');
-      const result = await this.request<WebResult>(`/api/articles/${article.id}/web-copy`);
+      let result: WebResult | null = null;
+      // The device's request succeeds even when the publisher blocks the
+      // server network. Keep the original page layout and cache it locally.
+      if (publicCoinDeskArticle(article.url)) {
+        try { result = await loadPublicWebCopy(article.url); } catch { /* Try the normal server copy below. */ }
+      }
+      if (!this.current()) throw new Error('Session changed');
+      result ??= await this.request<WebResult>(`/api/articles/${article.id}/web-copy`);
       if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `web:${article.id}`, result);
       return result;
     });

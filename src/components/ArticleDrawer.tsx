@@ -33,6 +33,7 @@ import { dropSiteClasses } from '../shared/siteClasses';
 import type { ArticleResources } from '../client/articleResources';
 import { readFeedPreference, saveFeedPreference } from '../client/devicePreferences';
 import { TextSizeControl } from './ReadingSettings';
+import { publicCoinDeskArticle } from '../shared/publicWebPage';
 import { bindArticleImages, bodyShowsImage } from '../client/articleImages';
 
 const VIEW_MODES = [
@@ -218,6 +219,12 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       const cached = await resources?.cachedWeb(article);
       if (!active) return;
       if (cached) { setFrame({ articleId: article.id, embeddable: false, url: cached.url }); setWebCopy({ articleId: article.id, html: cached.html }); return; }
+      if (resources && publicCoinDeskArticle(article.url)) {
+        setFrame({ articleId: article.id, embeddable: false, url: article.url, reason: 'framing' });
+        try { const copy = await resources.web(article); if (active) setWebCopy({ articleId: article.id, html: copy.html }); }
+        catch { if (active) setWebCopy({ articleId: article.id, html: null }); }
+        return;
+      }
       const result = await apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`);
       if (!active) return;
       setFrame({ articleId: article.id, ...result });

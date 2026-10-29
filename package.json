@@ -33,6 +33,7 @@
     "test:panels": "node scripts/verify-panel-widths.mjs",
     "test:builder": "node scripts/verify-rss-builder.mjs",
     "test:reader": "node scripts/verify-reader.mjs",
+    "test:coindesk-web": "node scripts/verify-coindesk-web.mjs",
     "test:feed-pause": "node scripts/verify-feed-pause.mjs"
   },
   "dependencies": {
