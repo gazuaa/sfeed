@@ -37,13 +37,17 @@ export class ArticleResources {
       if (stored) return stored;
       if (!this.current()) throw new Error('Session changed');
       let result: WebResult | null = null;
+      let deviceError: unknown;
       // The device's request succeeds even when the publisher blocks the
       // server network. Keep the original page layout and cache it locally.
       if (publicCoinDeskArticle(article.url)) {
-        try { result = await loadPublicWebCopy(article.url); } catch { /* Try the normal server copy below. */ }
+        try { result = await loadPublicWebCopy(article.url); } catch (error) { deviceError = error; }
       }
       if (!this.current()) throw new Error('Session changed');
-      result ??= await this.request<WebResult>(`/api/articles/${article.id}/web-copy`);
+      if (!result) {
+        try { result = await this.request<WebResult>(`/api/articles/${article.id}/web-copy`); }
+        catch (error) { throw deviceError || error; }
+      }
       if (this.current() && generation === cacheGeneration.get(this.account)) await writeContent(this.account, `web:${article.id}`, result);
       return result;
     });

@@ -12,24 +12,34 @@ export interface PublicPage { html: string; url: string }
 const MAX_HTML_BYTES = 2_000_000;
 export async function fetchPublicWebPage(value: string): Promise<PublicPage | null> {
   const url = publicCoinDeskArticle(value); if (!url) return null;
-  const response = await fetch(`https://r.jina.ai/${url}`, {
-    redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(20000),
-    headers: { Accept: 'text/plain', 'X-Return-Format': 'html', 'X-Assert-Status-Code': '200', 'X-Timeout': '15' },
-  });
-  if (!response.ok) { await response.body?.cancel(); throw new Error(`공개 웹 사본 응답 오류 (HTTP ${response.status})`); }
-  const reader = response.body?.getReader(); if (!reader) throw new Error('공개 웹 사본이 비어 있습니다.');
-  const chunks: Uint8Array[] = []; let size = 0;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    for (;;) {
-      const { done, value: chunk } = await reader.read(); if (done) break;
-      size += chunk.byteLength;
-      if (size > MAX_HTML_BYTES) throw new Error('공개 웹 사본이 너무 큽니다.');
-      chunks.push(chunk);
-    }
-  } finally { await reader.cancel().catch(() => {}); }
-  const bytes = new Uint8Array(size); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  const html = new TextDecoder().decode(bytes);
-  if (!/^\s*(?:<!doctype\s+html[^>]*>\s*)?<html[\s>]/i.test(html)) throw new Error('원본 HTML 형식이 아닙니다.');
-  return { html, url };
+    const response = await fetch(`https://r.jina.ai/${url}`, {
+      redirect: 'manual', credentials: 'omit', signal: controller.signal,
+      // The renderer can report an intermediate 302 even after rendering the
+      // complete article. Validate the returned HTML instead of asserting 200.
+      headers: { Accept: 'text/plain', 'X-Return-Format': 'html', 'X-Timeout': '15' },
+    });
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`공개 웹 사본 응답 오류 (HTTP ${response.status})`); }
+    const reader = response.body?.getReader(); if (!reader) throw new Error('공개 웹 사본이 비어 있습니다.');
+    const chunks: Uint8Array[] = []; let size = 0;
+    try {
+      for (;;) {
+        const { done, value: chunk } = await reader.read(); if (done) break;
+        size += chunk.byteLength;
+        if (size > MAX_HTML_BYTES) throw new Error('공개 웹 사본이 너무 큽니다.');
+        chunks.push(chunk);
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const html = new TextDecoder().decode(bytes);
+    if (!/^\s*(?:<!doctype\s+html[^>]*>\s*)?<html[\s>]/i.test(html)) throw new Error('원본 HTML 형식이 아닙니다.');
+    return { html, url };
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('웹 사본 응답이 늦어지고 있습니다. 다시 시도해 주세요.');
+    if (error instanceof TypeError) throw new Error('웹 사본에 연결하지 못했습니다. 연결 상태를 확인해 주세요.');
+    throw error;
+  } finally { clearTimeout(timer); }
 }

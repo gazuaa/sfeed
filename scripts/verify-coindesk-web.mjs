@@ -5,6 +5,9 @@ import { createServer } from 'vite';
 
 const vite = await createServer({ configFile: false, server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'silent' });
 const originalFetch = globalThis.fetch, originals = new Map(['DOMParser', 'indexedDB', 'IDBKeyRange'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+const originalTimeout = Object.getOwnPropertyDescriptor(AbortSignal, 'timeout');
+// Older WebKit has AbortController but no AbortSignal.timeout.
+Object.defineProperty(AbortSignal, 'timeout', { configurable: true, value: undefined });
 for (const [key, value] of Object.entries({ DOMParser, indexedDB, IDBKeyRange })) Object.defineProperty(globalThis, key, { configurable: true, value });
 try {
   const { publicCoinDeskArticle, fetchPublicWebPage } = await vite.ssrLoadModule('/src/shared/publicWebPage.ts');
@@ -14,11 +17,15 @@ try {
   const url = 'https://www.coindesk.com/tech/2026/10/28/public-article';
   assert.equal(publicCoinDeskArticle(url + '?utm_source=feed&token=private#fragment'), url);
   for (const value of ['https://coindesk.com.evil.test/tech/2026/10/28/public-article', 'https://www.coindesk.com/auth/login?token=secret', 'https://secret@www.coindesk.com/tech/2026/10/28/public-article', 'https://www.coindesk.com:8443/tech/2026/10/28/public-article', 'https://private.example.test/article', 'file:///etc/passwd']) assert.equal(publicCoinDeskArticle(value), null, value);
-  let calls = [], external = 'page', serverCalls = 0;
+  let calls = [], external = 'redirected', serverCalls = 0;
   const html = '<!doctype html><html><head><title>Public CoinDesk article</title><link rel="stylesheet" href="/site.css"><script>steal()</script><meta http-equiv="refresh" content="0;url=https://evil.test"></head><body><div style="height:280px"><div class="ad-container"><iframe src="https://ad.example.test"></iframe></div></div><header>CoinDesk</header><article><h1>Public CoinDesk article</h1><p>' + 'A real public article with its original layout. '.repeat(10) + '</p><a href="javascript:steal()">Bad link</a><img data-src="/photo.jpg" src="/blank.gif" onerror="steal()"><iframe src="https://evil.test"></iframe></article></body></html>';
   globalThis.fetch = async (target, options = {}) => {
     calls.push({ url: String(target), options });
+    // A real renderer response: an intermediate publisher redirect is reported
+    // as 422 only when the caller asserts status 200, despite usable final HTML.
+    if (external === 'redirected' && new Headers(options.headers).has('X-Assert-Status-Code')) return Response.json({ message: 'Expected status code 200 but got 302' }, { status: 422 });
     if (external === 'limited') return new Response('Rate limited', { status: 429 });
+    if (external === 'network') throw new TypeError('Load failed');
     if (external === 'challenge') return new Response(html.replace('Public CoinDesk article', 'Vercel Security Checkpoint'));
     if (external === 'paywall') return new Response(html.replace('</head>', '<script type="application/ld+json">{"isAccessibleForFree":false}</script></head>'));
     if (external === 'text') return new Response('Title: Article\nMarkdown Content: not the original web page');
@@ -34,25 +41,31 @@ try {
   assert.ok(calls[0].url === 'https://r.jina.ai/' + url && !calls[0].url.includes('private'));
   assert.equal(calls[0].options.credentials, 'omit');
   assert.equal(calls[0].options.redirect, 'manual');
+  assert.equal(new Headers(calls[0].options.headers).has('X-Assert-Status-Code'), false, 'an intermediate publisher redirect must not reject the final article');
   assert.ok(!('Cookie' in calls[0].options.headers) && !('Authorization' in calls[0].options.headers));
   calls = []; const reused = await new ArticleResources('owner', () => true, server).web(article);
   assert.match(reused.html, /real public article/); assert.ok(reused.html.includes(`href="${url}"`)); assert.equal(calls.length, 0); assert.equal(serverCalls, 0, 'reopening reuses the device cache without any server request');
   assert.equal(await readContent('other', 'web:coindesk'), undefined);
-  for (const failure of ['challenge', 'paywall', 'text', 'large', 'limited']) {
+  for (const [failure, message] of [['challenge', /공개 기사 본문/], ['paywall', /공개 기사 본문/], ['text', /HTML 형식/], ['large', /너무 큽니다/], ['limited', /HTTP 429/], ['network', /연결하지 못했습니다/]]) {
     external = failure;
-    await assert.rejects(() => new ArticleResources('owner', () => true, server).web({ ...article, id: failure }), /Server network blocked/);
+    await assert.rejects(() => new ArticleResources('owner', () => true, server).web({ ...article, id: failure }), message, 'the device failure remains available when the server fallback also fails');
     assert.equal(await readContent('owner', 'web:' + failure), undefined, 'failed or restricted pages are never cached');
   }
   calls = [];
   const normalServer = async () => ({ html: '<html>Normal server copy</html>', url: 'https://other.example.test/article' });
+  external = 'limited';
+  const fallback = await new ArticleResources('owner', () => true, normalServer).web({ ...article, id: 'server-fallback' });
+  assert.match(fallback.html, /Normal server copy/, 'a successful server fallback still displays');
+  calls = [];
   await new ArticleResources('owner', () => true, normalServer).web({ id: 'other-publisher', url: 'https://other.example.test/article' });
   assert.equal(calls.length, 0, 'other publishers and account URLs are never sent to the external renderer');
   assert.equal(await fetchPublicWebPage('https://www.coindesk.com/auth/login'), null);
   assert.throws(() => sanitizePublicWebCopy('<html><head><title>Sign in</title></head><body><main>Login</main></body></html>', url));
   await maintainDeviceCache('owner', true);
-  console.log('PASS: device-side CoinDesk public HTML with original styles/body; no server round-trip; scripts/frames removed and lazy photos revealed; query/token removal, response limits, account-scoped local reuse and no caching of challenges/paywalls/errors.');
+  console.log('PASS: redirected CoinDesk public HTML without status assertion or AbortSignal.timeout; original layout, device cache, safe markup and URL restrictions; useful device errors and server fallback; no caching of challenges/paywalls/errors.');
 } finally {
   globalThis.fetch = originalFetch;
+  if (originalTimeout) Object.defineProperty(AbortSignal, 'timeout', originalTimeout); else delete AbortSignal.timeout;
   for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   await vite.close();
 }

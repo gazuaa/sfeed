@@ -146,7 +146,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
   const [webZoom, setWebZoom] = useState(() => loadWebZoom(accountId, article?.feed_id || ''));
   const [sizeToolsOpen, setSizeToolsOpen] = useState(false);
   // Sites that refuse to be framed get a script-free copy fetched by the server.
-  const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null } | null>(null);
+  const [webCopy, setWebCopy] = useState<{ articleId: string; html: string | null; error?: string } | null>(null);
   const [shareNotice, setShareNotice] = useState('');
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const isMobile = useMobileViewport();
@@ -222,7 +222,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       if (resources && publicCoinDeskArticle(article.url)) {
         setFrame({ articleId: article.id, embeddable: false, url: article.url, reason: 'framing' });
         try { const copy = await resources.web(article); if (active) setWebCopy({ articleId: article.id, html: copy.html }); }
-        catch { if (active) setWebCopy({ articleId: article.id, html: null }); }
+        catch (error) { if (active) setWebCopy({ articleId: article.id, html: null, error: error instanceof Error ? error.message : undefined }); }
         return;
       }
       const result = await apiRequest<{ embeddable: boolean; url: string; reason?: string }>(`/api/articles/${article.id}/embeddable`);
@@ -232,7 +232,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
       try {
         const copy = await (resources ? resources.web(article) : apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`));
         if (active) setWebCopy({ articleId: article.id, html: copy.html });
-      } catch { if (active) setWebCopy({ articleId: article.id, html: null }); }
+      } catch (error) { if (active) setWebCopy({ articleId: article.id, html: null, error: error instanceof Error ? error.message : undefined }); }
     };
     void load().catch(() => {});
     return () => { active = false; };
@@ -259,7 +259,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
     setFrame({ articleId: article.id, embeddable: false, url: article.url }); setWebCopy(null);
     void (resources ? resources.web(article) : apiRequest<{ html: string }>(`/api/articles/${article.id}/web-copy`))
       .then((copy) => setWebCopy({ articleId: article.id, html: copy.html }))
-      .catch(() => setWebCopy({ articleId: article.id, html: null }));
+      .catch((error) => setWebCopy({ articleId: article.id, html: null, error: error instanceof Error ? error.message : undefined }));
   };
 
   const chooseViewMode = (mode: ViewMode) => {
@@ -655,7 +655,7 @@ export const ArticleDrawer: React.FC<ArticleDrawerProps> = ({
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
                 <Globe className="w-9 h-9 text-slate-400" aria-hidden="true" />
                 <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                  {frame.reason === 'challenge' ? '사이트의 보안 확인 때문에 웹 보기를 열 수 없어요.' : frame.reason === 'http' ? '사이트에서 페이지를 불러오지 못했어요.' : '이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.'}
+                  {webCopy?.articleId === article.id && webCopy.error ? webCopy.error : frame.reason === 'challenge' ? '사이트의 보안 확인 때문에 웹 보기를 열 수 없어요.' : frame.reason === 'http' ? '사이트에서 페이지를 불러오지 못했어요.' : '이 사이트는 다른 서비스 안에서 열리지 않도록 막아 두었어요.'}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <button type="button" className="sfeed-cache-clear" onClick={showWebCopy}>웹 사본 다시 시도</button>
