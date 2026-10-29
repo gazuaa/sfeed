@@ -990,7 +990,8 @@ app.post('/api/articles/:id/state', async (c) => {
 });
 
 // Mark all matching articles as read. `search` and `savedOnly` narrow it to the
-// list on screen, as they narrow /api/articles.
+// list on screen, as they narrow /api/articles; `olderThan` / `newerThan` (an
+// article id) keep to one side of that article in the list's order.
 app.post('/api/articles/mark-all-read', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{
@@ -999,6 +1000,8 @@ app.post('/api/articles/mark-all-read', async (c) => {
     feedId?: string;
     search?: string;
     savedOnly?: boolean;
+    olderThan?: string;
+    newerThan?: string;
   }>();
 
   const scope = body.scope || 'all';
@@ -1023,6 +1026,16 @@ app.post('/api/articles/mark-all-read', async (c) => {
   if (search) {
     conditions.push(SEARCH_MATCH);
     params.push(...searchParams(search));
+  }
+  const edge = body.olderThan || body.newerThan;
+  if (edge) {
+    const anchor = await c.env.DB.prepare('SELECT a.published_at FROM articles a WHERE a.id = ? AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.feed_id = a.feed_id AND s.user_id = ?)')
+      .bind(edge, user.id)
+      .first<{ published_at: string }>();
+    if (!anchor) return c.json({ error: '아티클을 찾을 수 없습니다.' }, 404);
+    const side = body.olderThan ? '<' : '>';
+    conditions.push(`(a.published_at ${side} ? OR (a.published_at = ? AND a.id ${side} ?))`);
+    params.push(anchor.published_at, anchor.published_at, edge);
   }
 
   // Older articles already count as read, so only the unread window needs

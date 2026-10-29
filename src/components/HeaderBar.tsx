@@ -109,7 +109,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           <button
             type="button"
             onClick={onMarkAllRead}
-            title="현재 목록 모두 읽음 처리"
+            title="현재 목록 모두 읽음 처리 (단축키: A, 선택한 글 위·아래만: Q·W)"
             aria-label="모두 읽음"
             className={`shrink-0 p-2 rounded-xl border flex items-center transition cursor-pointer ${
               isDark

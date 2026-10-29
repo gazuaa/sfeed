@@ -83,6 +83,18 @@ try {
   assert.deepEqual(await unreadIds(), ['saved-loose']);
   assert.equal(await markAll({ scope: 'folder', folderId: 'folder', savedOnly: true }), 1, 'a folder\'s 저장 tab marks only its bookmarks');
   assert.deepEqual(await unreadIds(), []);
+  // Q / W: one side of the open article, which itself stays as it is.
+  for (let i = 0; i < 5; i++) {
+    await db.prepare('INSERT INTO articles(id,feed_id,guid,title,url,published_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(`row-${i}`, i % 2 ? 'two' : 'one', `row-${i}`, `Row ${i}`, `https://example.test/row-${i}`, new Date(Date.now() - (i + 1) * 60_000).toISOString(), now).run();
+  }
+  assert.equal(await markAll({ scope: 'all', olderThan: 'row-2' }), 2, 'older than the open article');
+  assert.deepEqual(await unreadIds(), ['row-0', 'row-1', 'row-2']);
+  assert.equal(await markAll({ scope: 'feed', feedId: 'one', newerThan: 'row-2' }), 1, 'newer than it, within the list');
+  assert.deepEqual(await unreadIds(), ['row-1', 'row-2']);
+  assert.equal((await app.request('/api/articles/mark-all-read', {
+    method: 'POST', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ olderThan: 'outside' }),
+  }, env)).status, 404, 'another user\'s article is no anchor');
+  assert.deepEqual(await unreadIds(), ['row-1', 'row-2']);
   console.log('PASS: All/Unread/Saved navigation counts and filters; per-feed saved counts and saved-only folder/feed lists; Today navigation removed; read bookmarks included; folder/feed counts and user isolation preserved; marking all read keeps to search results and 저장 tabs.');
 } finally {
   await vite.close();

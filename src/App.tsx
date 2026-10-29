@@ -168,6 +168,10 @@ export const App: React.FC = () => {
     // The list's search and 저장 filter, so only the articles it shows are marked.
     search: string;
     savedOnly: boolean;
+    // Q / W: only the articles above or below the open one; `older` is that side in time.
+    edge?: { articleId: string; side: 'above' | 'below'; older: boolean };
+    // Opened from the keyboard, so Enter confirms.
+    keyboard?: boolean;
   } | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
   const markingAllReadRef = useRef(false);
@@ -757,13 +761,19 @@ export const App: React.FC = () => {
 
   const pullDistance = usePullRefresh(isMobile && Boolean(user) && !selectedArticleId && !discoverOpen && !markReadTarget, refreshingFeeds, handleRefreshFeeds);
 
-  const handleMarkAllRead = () => {
+  const askMarkRead = (side?: 'above' | 'below', keyboard = false) => {
     setMarkReadError(null);
     setMarkReadTarget({
       scope: activeScope, folderId: activeFolderId, feedId: activeFeedId,
       name: headerInfo.title, search: committedSearch.trim(), savedOnly: savedOnly && activeScope !== 'saved',
+      edge: side && selectedArticle ? { articleId: selectedArticle.id, side, older: (side === 'below') === (articleSort === 'newest') } : undefined,
+      keyboard,
     });
   };
+  const handleMarkAllRead = () => askMarkRead();
+  // The keyboard handler binds once and asks with the current list and article.
+  const markReadShortcut = useRef<(side?: 'above' | 'below') => void>(() => {});
+  markReadShortcut.current = (side) => askMarkRead(side, true);
 
   const confirmMarkAllRead = async () => {
     if (!markReadTarget || markingAllReadRef.current) return;
@@ -780,6 +790,7 @@ export const App: React.FC = () => {
           feedId: markReadTarget.feedId,
           search: markReadTarget.search || undefined,
           savedOnly: markReadTarget.savedOnly || undefined,
+          [markReadTarget.edge?.older ? 'olderThan' : 'newerThan']: markReadTarget.edge?.articleId,
         }),
       });
       readerCache?.touch();
@@ -949,7 +960,7 @@ export const App: React.FC = () => {
     [articles, selectedIndex, handleSelectArticle]
   );
 
-  // Global Keyboard Shortcuts (J/K/M/S/R/ESC)
+  // Global Keyboard Shortcuts (J/K/M/S/R/A/Q/W/ESC)
   useEffect(() => {
     if (!user || markReadTarget) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -983,6 +994,14 @@ export const App: React.FC = () => {
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         handleRefreshFeeds();
+      } else if (e.metaKey || e.ctrlKey || e.altKey) {
+        // Cmd/Ctrl+A, Q and W stay the browser's and the system's.
+      } else if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        markReadShortcut.current();
+      } else if ((e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W') && selectedArticle) {
+        e.preventDefault();
+        markReadShortcut.current(/q/i.test(e.key) ? 'above' : 'below');
       }
     };
 
@@ -1212,6 +1231,12 @@ export const App: React.FC = () => {
                 <strong className="text-slate-400">R</strong> 피드 새로고침
               </span>
               <span>
+                <strong className="text-slate-400">A</strong> 모두 읽음
+              </span>
+              <span>
+                <strong className="text-slate-400">Q / W</strong> 선택 글 위·아래 모두 읽음
+              </span>
+              <span>
                 <strong className="text-slate-400">ESC</strong> 리더 뷰 닫기
               </span>
             </div>
@@ -1255,6 +1280,8 @@ export const App: React.FC = () => {
           scopeName={markReadTarget.name}
           search={markReadTarget.search}
           savedOnly={markReadTarget.savedOnly}
+          side={markReadTarget.edge?.side}
+          focusConfirm={markReadTarget.keyboard}
           isDark={isDark}
           busy={markingAllRead}
           error={markReadError}
