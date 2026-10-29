@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react';
 import { Archive, ArrowLeft, Bookmark, CheckCheck, LayoutGrid, LayoutList, AlignJustify, Plus, Rss, Search, Settings2, Sun, Moon, X, FileCode2 } from 'lucide-react';
 import type { LayoutMode, ThemeMode } from '../client/api';
 import { InstallAppButton } from './PwaInstall';
-import { ScrollReadSetting, TextSizeControl, LayoutSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps } from './ReadingSettings';
+import { ScrollReadSetting, TextSizeControl, LayoutSetting, SortSetting, AutoRefreshSetting, type ScrollReadSettingsProps, type RefreshSettingsProps, type SortSettingProps } from './ReadingSettings';
 import { LocalNotificationSetting } from './LocalNotificationSetting';
 import { CacheSettings } from './CacheSettings';
 import { RefreshIcon } from './RefreshIcon';
 
 export type LibraryTab = 'all' | 'unread' | 'saved';
-export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps {
+export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSettingsProps, Partial<SortSettingProps> {
   accountId?: string;
   theme: ThemeMode;
   onChangeTheme: (theme: ThemeMode) => void;
@@ -17,7 +17,7 @@ export interface MobileSettingsProps extends ScrollReadSettingsProps, RefreshSet
   onOpenOpml: () => void;
 }
 
-export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes, accountId }: MobileSettingsProps & { library?: boolean }) {
+export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, sort, onChangeSort, onOpenOpml, library, markReadOnScroll, onChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes, accountId }: MobileSettingsProps & { library?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const close = () => { if (ref.current) ref.current.open = false; };
   useEffect(() => {
@@ -35,6 +35,7 @@ export function MobileSettings({ theme, onChangeTheme, layout, onChangeLayout, o
       <p className="sfeed-mobile-eyebrow">글자 크기</p><TextSizeControl />
       </section>
       {!library && <section className="sfeed-setting-section"><LayoutSetting layout={layout} onChangeLayout={(value) => { onChangeLayout(value); close(); }} /></section>}
+      {!library && sort && onChangeSort && <section className="sfeed-setting-section"><SortSetting sort={sort} onChangeSort={(value) => { onChangeSort(value); close(); }} /></section>}
       {!library && <section className="sfeed-setting-section"><ScrollReadSetting markReadOnScroll={markReadOnScroll} onChangeMarkReadOnScroll={onChangeMarkReadOnScroll} /></section>}
       <section className="sfeed-setting-section"><AutoRefreshSetting autoRefreshMinutes={autoRefreshMinutes} onChangeAutoRefreshMinutes={onChangeAutoRefreshMinutes} /></section>
       {accountId && <section className="sfeed-setting-section"><LocalNotificationSetting accountId={accountId} /></section>}

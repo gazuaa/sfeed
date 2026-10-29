@@ -38,8 +38,10 @@ try {
   assert.ok(!library.includes('매거진 뷰') && !library.includes('목록 보기'));
   assert.ok(!library.includes('type="range"') && !library.includes('%'));
   assert.match(library, /글자 작게/); assert.match(library, /글자 크게/); assert.ok(!library.includes('스크롤 시 읽음 처리')); assert.match(library, /자동 새로고침/);
+  assert.ok(!renderToStaticMarkup(React.createElement(MobileSettings, { ...settings, sort: 'newest', onChangeSort() {}, library: true })).includes('오래된순'), 'the library has no article order');
   const list = renderToStaticMarkup(React.createElement(MobileSettings, settings));
   assert.match(list, /매거진 뷰/);
+  assert.match(renderToStaticMarkup(React.createElement(MobileSettings, { ...settings, sort: 'oldest', onChangeSort() {} })), /aria-pressed="false"[^>]*>최신순<\/button><button[^>]*aria-pressed="true"[^>]*>오래된순/, 'a list offers newest and oldest first, marking the current order');
   assert.match(list, /스크롤 시 읽음 처리/); assert.match(list, /자동 새로고침/);
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const storage = new Map([['sfeed_font_scale', '1.2']]);

@@ -33,6 +33,11 @@ export interface LayoutSettingsProps { layout: LayoutMode; onChangeLayout: (layo
 export function LayoutSetting({ layout, onChangeLayout }: LayoutSettingsProps) {
   return <><p className="sfeed-setting-label">목록 보기</p><div className="sfeed-layout-options">{([{ id: 'magazine', label: '매거진 뷰', Icon: LayoutList }, { id: 'cards', label: '카드 뷰', Icon: LayoutGrid }, { id: 'list', label: '리스트 뷰', Icon: AlignJustify }] as const).map(({ id, label, Icon }) => <button key={id} type="button" aria-label={label} aria-pressed={layout === id} onClick={() => onChangeLayout(id)}><Icon size={19} /></button>)}</div></>;
 }
+export type ArticleSort = 'newest' | 'oldest';
+export interface SortSettingProps { sort: ArticleSort; onChangeSort: (sort: ArticleSort) => void }
+export function SortSetting({ sort, onChangeSort }: SortSettingProps) {
+  return <><p className="sfeed-setting-label">정렬</p><div className="sfeed-layout-options">{([{ id: 'newest', label: '최신순' }, { id: 'oldest', label: '오래된순' }] as const).map(({ id, label }) => <button key={id} type="button" aria-pressed={sort === id} onClick={() => onChangeSort(id)}>{label}</button>)}</div></>;
+}
 export function AutoRefreshSetting({ autoRefreshMinutes, onChangeAutoRefreshMinutes }: RefreshSettingsProps) {
   return <><label className="sfeed-auto-refresh-setting"><span>자동 새로고침</span><select aria-label="자동 새로고침 주기" value={autoRefreshMinutes} onChange={(event) => onChangeAutoRefreshMinutes(Number(event.target.value))}>{AUTO_REFRESH_OPTIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes ? `${minutes}분마다` : '수동'}</option>)}</select></label><small className="sfeed-auto-refresh-help">변경된 내용만 확인합니다. 피드 수집은 15분 주기입니다.</small></>;
 }

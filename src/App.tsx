@@ -1123,7 +1123,7 @@ export const App: React.FC = () => {
     if (activeScope === 'folder' || activeScope === 'feed') applyMobileFilter(tab);
     else selectMobileTab(tab);
   };
-  const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml'), markReadOnScroll, onChangeMarkReadOnScroll: handleChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes: handleChangeAutoRefreshMinutes, accountId: user.id };
+  const mobileSettings = { theme, onChangeTheme: handleChangeTheme, layout, onChangeLayout: handleChangeLayout, onOpenOpml: () => openMobileDiscover('opml'), sort: articleSort, onChangeSort: setArticleSort, markReadOnScroll, onChangeMarkReadOnScroll: handleChangeMarkReadOnScroll, autoRefreshMinutes, onChangeAutoRefreshMinutes: handleChangeAutoRefreshMinutes, accountId: user.id };
 
   const contextActions = (target: AppContextTarget): AppContextAction[] => {
     const items: AppContextAction[] = [];
