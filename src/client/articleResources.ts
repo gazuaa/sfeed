@@ -2,7 +2,7 @@ import { apiRequest, type ArticleItem } from './api';
 import { cachedArticle, readContent, writeContent } from './deviceContent';
 import { cacheGeneration } from './cachePolicy';
 import { revealCopyImages } from './articleImages';
-import { publicCoinDeskArticle } from '../shared/publicWebPage';
+import { publicDeviceArticle } from '../shared/publicWebPage';
 import { loadPublicWebCopy } from './publicWebCopy';
 
 type ReaderResult = { fullContentHtml: string; publishedAt?: string };
@@ -40,7 +40,7 @@ export class ArticleResources {
       let deviceError: unknown;
       // The device's request succeeds even when the publisher blocks the
       // server network. Keep the original page layout and cache it locally.
-      if (publicCoinDeskArticle(article.url)) {
+      if (publicDeviceArticle(article.url)) {
         try { result = await loadPublicWebCopy(article.url); } catch (error) { deviceError = error; }
       }
       if (!this.current()) throw new Error('Session changed');

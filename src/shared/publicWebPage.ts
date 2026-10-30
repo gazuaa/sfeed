@@ -1,17 +1,26 @@
-// Only dated, public CoinDesk articles can use the device-side HTML renderer.
+// Only public article pages of publishers that turn server requests away (CoinDesk's
+// Vercel check, The Block's Cloudflare check) can use the device-side HTML renderer.
 // Never send account URLs, credentials, query tokens or browser cookies to it.
-export function publicCoinDeskArticle(value: string): string | null {
+const DEVICE_SITES = [
+  { host: 'www.coindesk.com', hosts: ['www.coindesk.com', 'coindesk.com'], path: /^\/(?:markets|business|tech|technology|policy|opinion|finance|consensus-magazine|coindesk-indices|daybook-us|learn|research)\/\d{4}\/\d{2}\/\d{2}\/[a-z0-9][a-z0-9-]*\/?$/i },
+  // /news/business/2026-10-29-utah-criminal-charges-kalshi-432104, and older /post/123456/slug.
+  { host: 'www.theblock.co', hosts: ['www.theblock.co', 'theblock.co'], path: /^\/(?:news\/[a-z0-9-]+\/\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*|post\/\d+(?:\/[a-z0-9][a-z0-9-]*)?)\/?$/i },
+];
+function publicArticle(value: string, sites = DEVICE_SITES): string | null {
   try {
     const url = new URL(value);
-    if (!['www.coindesk.com', 'coindesk.com'].includes(url.hostname) || url.username || url.password || url.port || !/^https?:$/.test(url.protocol)) return null;
-    if (!/^\/(?:markets|business|tech|technology|policy|opinion|finance|consensus-magazine|coindesk-indices|daybook-us|learn|research)\/\d{4}\/\d{2}\/\d{2}\/[a-z0-9][a-z0-9-]*\/?$/i.test(url.pathname)) return null;
-    return `https://www.coindesk.com${url.pathname}`;
+    if (url.username || url.password || url.port || !/^https?:$/.test(url.protocol)) return null;
+    const site = sites.find((item) => item.hosts.includes(url.hostname) && item.path.test(url.pathname));
+    return site ? `https://${site.host}${url.pathname}` : null;
   } catch { return null; }
 }
+/** A public article on one of the sites whose pages the device prepares. */
+export const publicDeviceArticle = (value: string) => publicArticle(value);
+export const publicCoinDeskArticle = (value: string) => publicArticle(value, DEVICE_SITES.slice(0, 1));
 export interface PublicPage { html: string; url: string }
 const MAX_HTML_BYTES = 2_000_000;
 export async function fetchPublicWebPage(value: string): Promise<PublicPage | null> {
-  const url = publicCoinDeskArticle(value); if (!url) return null;
+  const url = publicDeviceArticle(value); if (!url) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {

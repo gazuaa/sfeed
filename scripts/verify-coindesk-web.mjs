@@ -10,7 +10,7 @@ const originalTimeout = Object.getOwnPropertyDescriptor(AbortSignal, 'timeout');
 Object.defineProperty(AbortSignal, 'timeout', { configurable: true, value: undefined });
 for (const [key, value] of Object.entries({ DOMParser, indexedDB, IDBKeyRange })) Object.defineProperty(globalThis, key, { configurable: true, value });
 try {
-  const { publicCoinDeskArticle, fetchPublicWebPage } = await vite.ssrLoadModule('/src/shared/publicWebPage.ts');
+  const { publicCoinDeskArticle, publicDeviceArticle, fetchPublicWebPage } = await vite.ssrLoadModule('/src/shared/publicWebPage.ts');
   const { ArticleResources } = await vite.ssrLoadModule('/src/client/articleResources.ts');
   const { sanitizePublicWebCopy } = await vite.ssrLoadModule('/src/client/publicWebCopy.ts');
   const { readContent, maintainDeviceCache } = await vite.ssrLoadModule('/src/client/deviceContent.ts');
@@ -60,9 +60,19 @@ try {
   await new ArticleResources('owner', () => true, normalServer).web({ id: 'other-publisher', url: 'https://other.example.test/article' });
   assert.equal(calls.length, 0, 'other publishers and account URLs are never sent to the external renderer');
   assert.equal(await fetchPublicWebPage('https://www.coindesk.com/auth/login'), null);
+  // The Block turns servers away with a Cloudflare check; its public articles take the same device path.
+  const block = 'https://www.theblock.co/news/business/2026-10-29-utah-criminal-charges-kalshi-432104';
+  assert.equal(publicDeviceArticle(block + '?utm_source=rss&token=private#top'), block);
+  assert.equal(publicDeviceArticle('https://theblock.co/post/123456/older-article'), 'https://www.theblock.co/post/123456/older-article');
+  assert.equal(publicCoinDeskArticle(block), null, 'the CoinDesk check stays CoinDesk only');
+  for (const value of ['https://www.theblock.co/', 'https://www.theblock.co/login?next=/news', 'https://www.theblock.co/data/crypto-markets', 'https://www.theblock.co.evil.test/news/business/2026-10-29-a-1', 'https://user@www.theblock.co/news/business/2026-10-29-a-1', 'https://www.theblock.co:8443/news/business/2026-10-29-a-1']) assert.equal(publicDeviceArticle(value), null, value);
+  calls = []; external = 'ok';
+  const blockCopy = await new ArticleResources('owner', () => true, server).web({ id: 'theblock', url: block + '?utm_source=rss', feed_id: 'theblock' });
+  assert.equal(calls.length, 1); assert.equal(calls[0].url, 'https://r.jina.ai/' + block); assert.equal(calls[0].options.credentials, 'omit');
+  assert.equal(blockCopy.url, block); assert.match(blockCopy.html, /real public article/);
   assert.throws(() => sanitizePublicWebCopy('<html><head><title>Sign in</title></head><body><main>Login</main></body></html>', url));
   await maintainDeviceCache('owner', true);
-  console.log('PASS: redirected CoinDesk public HTML without status assertion or AbortSignal.timeout; original layout, device cache, safe markup and URL restrictions; useful device errors and server fallback; no caching of challenges/paywalls/errors.');
+  console.log('PASS: The Block articles on the same device path; redirected CoinDesk public HTML without status assertion or AbortSignal.timeout; original layout, device cache, safe markup and URL restrictions; useful device errors and server fallback; no caching of challenges/paywalls/errors.');
 } finally {
   globalThis.fetch = originalFetch;
   if (originalTimeout) Object.defineProperty(AbortSignal, 'timeout', originalTimeout); else delete AbortSignal.timeout;

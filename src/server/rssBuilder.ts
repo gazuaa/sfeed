@@ -5,6 +5,7 @@ import { revealLazyImages } from '../shared/lazyImages';
 import { dropEmptySlots } from '../shared/emptySlots';
 import { plainCopyStyles } from '../shared/copyStyles';
 import { dropSidebars } from '../shared/sidebars';
+import { dropConsentBanners } from '../shared/consentBanners';
 import { PICK_SELECTOR, decodePick, extractPicked, type PickSelection } from '../shared/rssPicker';
 import { parsePublicationDate } from './publicationDate';
 import { decodeHtmlEntities } from './rssParser';
@@ -76,6 +77,7 @@ function pageCopy(html: string, pageUrl: string, { minLinks = 0, linkTarget, art
   if (document.querySelectorAll('a[href]').length < minLinks) return undefined;
   revealLazyImages(document);
   dropEmptySlots(document);
+  dropConsentBanners(document);
   if (articleOnly) dropSidebars(document);
   plainCopyStyles(document);
   const head = document.head || document.documentElement;

@@ -2,6 +2,7 @@ import { revealLazyImages } from '../shared/lazyImages';
 import { dropEmptySlots } from '../shared/emptySlots';
 import { plainCopyStyles } from '../shared/copyStyles';
 import { dropSidebars } from '../shared/sidebars';
+import { dropConsentBanners } from '../shared/consentBanners';
 
 // A picture's name without its size variant: photo_T1.jpg and photo_P1.jpg,
 // or photo-300x200.jpg and photo.jpg, are the same picture.
@@ -63,10 +64,11 @@ export function bindArticleImages(container: HTMLElement, base: string) {
 
 /** The same repairs for a saved web copy, which renders in a sandbox the app cannot reach into. */
 export function revealCopyImages(html: string) {
-  if (typeof DOMParser === 'undefined' || !/<img|<source|height|crossorigin|integrity|<aside|complementary|sidebar/i.test(html)) return html;
+  if (typeof DOMParser === 'undefined' || !/<img|<source|height|crossorigin|integrity|<aside|complementary|sidebar|dialog|onetrust|consent|cookie/i.test(html)) return html;
   const document = new DOMParser().parseFromString(html, 'text/html');
   revealLazyImages(document);
   dropEmptySlots(document);
+  dropConsentBanners(document);
   dropSidebars(document);
   plainCopyStyles(document);
   return '<!doctype html>' + document.documentElement.outerHTML;
